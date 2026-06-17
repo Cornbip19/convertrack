@@ -1,0 +1,39 @@
+name: Build & Release
+
+# Packages the plugin into a correctly-structured zip and attaches it to a
+# GitHub Release whenever a version tag (e.g. v1.0.1) is pushed. Connected
+# WordPress sites pick up the new version from that release automatically.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build plugin zip
+        run: |
+          PLUGIN=convertrack
+          mkdir -p build/$PLUGIN
+          rsync -a \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'build' \
+            --exclude '*.zip' \
+            --exclude '.gitignore' \
+            ./ build/$PLUGIN/
+          cd build && zip -r "../$PLUGIN.zip" "$PLUGIN"
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: convertrack.zip
+          generate_release_notes: true

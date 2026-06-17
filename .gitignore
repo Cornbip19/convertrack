@@ -1,0 +1,12 @@
+# Build artifacts
+/build/
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Dependencies (none required at runtime)
+/node_modules/
+/vendor/

@@ -1,0 +1,61 @@
+<?php
+/**
+ * Convertrack uninstall routine.
+ *
+ * Runs when the plugin is deleted from the Plugins screen. Removes all tables,
+ * options, transients and scheduled jobs. Self-contained: plugin classes are
+ * not loaded during uninstall.
+ *
+ * @package Convertrack
+ */
+
+if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
+	exit;
+}
+
+global $wpdb;
+
+// Drop custom tables.
+$tables = array(
+	$wpdb->prefix . 'convertrack_events',
+	$wpdb->prefix . 'convertrack_sessions',
+	$wpdb->prefix . 'convertrack_daily',
+);
+foreach ( $tables as $table ) {
+	$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB
+}
+
+// Remove options.
+delete_option( 'convertrack_settings' );
+delete_option( 'convertrack_db_version' );
+
+// Remove transients (including any per-IP rate-limit keys).
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%'" ); // phpcs:ignore WordPress.DB
+
+// Clear scheduled jobs.
+wp_clear_scheduled_hook( 'convertrack_hourly' );
+wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
+
+// Multisite: best-effort cleanup across sites.
+if ( is_multisite() ) {
+	$blog_ids = $wpdb->get_col( "SELECT blog_id FROM {$wpdb->blogs}" ); // phpcs:ignore WordPress.DB
+	foreach ( (array) $blog_ids as $blog_id ) {
+		switch_to_blog( $blog_id );
+
+		$mt = array(
+			$wpdb->prefix . 'convertrack_events',
+			$wpdb->prefix . 'convertrack_sessions',
+			$wpdb->prefix . 'convertrack_daily',
+		);
+		foreach ( $mt as $table ) {
+			$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB
+		}
+		delete_option( 'convertrack_settings' );
+		delete_option( 'convertrack_db_version' );
+		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%'" ); // phpcs:ignore WordPress.DB
+		wp_clear_scheduled_hook( 'convertrack_hourly' );
+		wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
+
+		restore_current_blog();
+	}
+}
