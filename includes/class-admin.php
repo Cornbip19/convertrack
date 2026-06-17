@@ -22,6 +22,70 @@ class Admin {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
 		add_filter( 'plugin_action_links_' . CONVERTRACK_BASENAME, array( $this, 'action_links' ) );
+		add_action( 'admin_post_convertrack_seed_demo', array( $this, 'handle_seed_demo' ) );
+		add_action( 'admin_post_convertrack_reset_data', array( $this, 'handle_reset_data' ) );
+	}
+
+	/**
+	 * Tools: insert sample data so the dashboard can be evaluated without
+	 * waiting for live traffic.
+	 */
+	public function handle_seed_demo() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'convertrack' ) );
+		}
+		check_admin_referer( 'convertrack_seed_demo' );
+		$rows = Database::seed_demo();
+		wp_safe_redirect( add_query_arg( array( 'cvtrk_notice' => 'seeded', 'cvtrk_rows' => (int) $rows ), admin_url( 'admin.php?page=convertrack-settings' ) ) );
+		exit;
+	}
+
+	/**
+	 * Tools: delete all tracked data (events, sessions, rollups).
+	 */
+	public function handle_reset_data() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'convertrack' ) );
+		}
+		check_admin_referer( 'convertrack_reset_data' );
+		Database::reset_all();
+		wp_safe_redirect( add_query_arg( array( 'cvtrk_notice' => 'reset' ), admin_url( 'admin.php?page=convertrack-settings' ) ) );
+		exit;
+	}
+
+	/**
+	 * Render the shared header (brand + live pill) and tab navigation.
+	 *
+	 * @param string $current Active tab key: overview|pages|settings.
+	 */
+	public static function render_header( $current ) {
+		$tabs = array(
+			'overview' => array( 'label' => __( 'Overview', 'convertrack' ), 'icon' => 'chart-area', 'page' => 'convertrack' ),
+			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
+			'settings' => array( 'label' => __( 'Settings', 'convertrack' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
+		);
+		?>
+		<div class="cvtrk-header">
+			<h1 class="cvtrk-brand">
+				<span class="dashicons dashicons-chart-line"></span>
+				<?php esc_html_e( 'Convertrack', 'convertrack' ); ?>
+				<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
+			</h1>
+			<div class="cvtrk-live">
+				<span class="cvtrk-dot"></span>
+				<b data-cvtrk="active">–</b>
+				<span><?php esc_html_e( 'on the site now', 'convertrack' ); ?></span>
+			</div>
+		</div>
+		<nav class="cvtrk-tabs">
+			<?php foreach ( $tabs as $key => $tab ) : ?>
+				<a class="cvtrk-tab <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $tab['page'] ) ); ?>">
+					<span class="dashicons dashicons-<?php echo esc_attr( $tab['icon'] ); ?>"></span>
+					<?php echo esc_html( $tab['label'] ); ?>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+		<?php
 	}
 
 	/**

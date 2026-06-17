@@ -9,15 +9,12 @@ namespace Convertrack;
 
 defined( 'ABSPATH' ) || exit;
 ?>
-<div class="wrap convertrack-wrap" id="convertrack-pages">
-	<h1 class="convertrack-title">
-		<span class="dashicons dashicons-list-view"></span>
-		<?php esc_html_e( 'Pages & Buttons', 'convertrack' ); ?>
-	</h1>
+<div class="wrap convertrack" id="convertrack-pages">
+	<?php Admin::render_header( 'pages' ); ?>
 
-	<div class="convertrack-toolbar">
-		<label class="convertrack-range">
-			<?php esc_html_e( 'Range', 'convertrack' ); ?>
+	<div class="cvtrk-toolbar">
+		<label class="cvtrk-field">
+			<?php esc_html_e( 'Date range', 'convertrack' ); ?>
 			<select id="convertrack-range" data-cvtrk="range">
 				<option value="7" selected><?php esc_html_e( 'Last 7 days', 'convertrack' ); ?></option>
 				<option value="30"><?php esc_html_e( 'Last 30 days', 'convertrack' ); ?></option>
@@ -25,23 +22,31 @@ defined( 'ABSPATH' ) || exit;
 			</select>
 		</label>
 
-		<label class="convertrack-range">
-			<?php esc_html_e( 'Page', 'convertrack' ); ?>
+		<label class="cvtrk-field">
+			<?php esc_html_e( 'Filter by page', 'convertrack' ); ?>
 			<select id="convertrack-post" data-cvtrk="post">
 				<option value="0"><?php esc_html_e( 'All pages', 'convertrack' ); ?></option>
 			</select>
 		</label>
 	</div>
 
-	<div class="convertrack-columns">
-		<div class="convertrack-panel">
-			<h2><?php esc_html_e( 'Pages ranked by clicks', 'convertrack' ); ?></h2>
-			<p class="description"><?php esc_html_e( 'Click a page to see which buttons its visitors click.', 'convertrack' ); ?></p>
-			<div class="convertrack-list" data-cvtrk="top-pages"></div>
-		</div>
-		<div class="convertrack-panel">
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
 			<h2 data-cvtrk="buttons-title"><?php esc_html_e( 'Buttons clicked', 'convertrack' ); ?></h2>
-			<div class="convertrack-list" data-cvtrk="top-buttons"></div>
+			<span class="cvtrk-card-sub"><?php esc_html_e( 'Every tracked button & link, ranked by clicks', 'convertrack' ); ?></span>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="top-buttons"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+		</div>
+	</div>
+
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<h2><?php esc_html_e( 'Pages ranked by clicks', 'convertrack' ); ?></h2>
+			<span class="cvtrk-card-sub"><?php esc_html_e( 'Select a page to see only its buttons', 'convertrack' ); ?></span>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="top-pages"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
 		</div>
 	</div>
 </div>

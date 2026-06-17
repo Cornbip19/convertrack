@@ -21,12 +21,22 @@ $latest    = ( is_array( $release ) && ! empty( $release['version'] ) ) ? $relea
 $repo_url  = 'https://github.com/' . CONVERTRACK_GITHUB_OWNER . '/' . CONVERTRACK_GITHUB_REPO;
 $check_url = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'upgrade-core' );
 ?>
-<div class="wrap convertrack-wrap">
-	<h1 class="convertrack-title">
-		<span class="dashicons dashicons-admin-settings"></span>
-		<?php esc_html_e( 'Convertrack Settings', 'convertrack' ); ?>
-	</h1>
+<div class="wrap convertrack">
+	<?php Admin::render_header( 'settings' ); ?>
+	<?php
+	// Display-only notices after a Tools action (our own redirect).
+	if ( isset( $_GET['cvtrk_notice'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$cvtrk_n = sanitize_key( wp_unslash( $_GET['cvtrk_notice'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( 'seeded' === $cvtrk_n ) :
+			$cvtrk_rows = isset( $_GET['cvtrk_rows'] ) ? (int) $_GET['cvtrk_rows'] : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			?>
+			<div class="cvtrk-notice"><?php printf( esc_html__( 'Inserted %d sample events across the last 7 days — open Overview to see the dashboard populated.', 'convertrack' ), (int) $cvtrk_rows ); ?></div>
+		<?php elseif ( 'reset' === $cvtrk_n ) : ?>
+			<div class="cvtrk-notice"><?php esc_html_e( 'All tracked data was deleted.', 'convertrack' ); ?></div>
+		<?php endif; ?>
+	<?php endif; ?>
 
+	<div class="cvtrk-card"><div class="cvtrk-card-body">
 	<form method="post" action="options.php">
 		<?php settings_fields( Admin::SETTINGS_GROUP ); ?>
 
@@ -179,4 +189,27 @@ $check_url = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'u
 
 		<?php submit_button(); ?>
 	</form>
+	</div></div>
+
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<h2><?php esc_html_e( 'Tools', 'convertrack' ); ?></h2>
+			<span class="cvtrk-card-sub"><?php esc_html_e( 'Preview or clear your data', 'convertrack' ); ?></span>
+		</div>
+		<div class="cvtrk-card-body">
+			<div class="cvtrk-tools">
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="convertrack_seed_demo" />
+					<?php wp_nonce_field( 'convertrack_seed_demo' ); ?>
+					<button type="submit" class="button"><?php esc_html_e( 'Insert sample data', 'convertrack' ); ?></button>
+				</form>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('<?php echo esc_js( __( 'Delete ALL tracked data? This cannot be undone.', 'convertrack' ) ); ?>');">
+					<input type="hidden" name="action" value="convertrack_reset_data" />
+					<?php wp_nonce_field( 'convertrack_reset_data' ); ?>
+					<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Reset all data', 'convertrack' ); ?></button>
+				</form>
+			</div>
+			<p class="description"><?php esc_html_e( 'Sample data lets you preview the dashboard without waiting for live traffic. Reset permanently deletes all events, sessions and rollups.', 'convertrack' ); ?></p>
+		</div>
+	</div>
 </div>

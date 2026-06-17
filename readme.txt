@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,12 @@ In three custom tables: raw events, live sessions, and daily aggregates. No thir
 Add CSS selectors (e.g. `.cvtrk-convert`) or destination paths (e.g. `/thank-you`) in Settings. Matching clicks and pageviews are flagged as conversions.
 
 == Changelog ==
+
+= 1.0.1 =
+* Redesigned admin dashboard: tabbed navigation, KPI cards, activity chart, and sortable buttons/pages tables.
+* Buttons clicked are now shown in a dedicated, prominent table on the Pages & Buttons screen.
+* Added Tools: insert sample data to preview the dashboard, and reset all data.
+* Caching and batched cleanup improvements for high-traffic sites.
 
 = 1.0.0 =
 * Initial release: click tracking, pageviews, conversions, live visitor count, daily rollups, GitHub self-updating.

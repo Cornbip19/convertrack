@@ -149,6 +149,109 @@ class Database {
 	}
 
 	/**
+	 * Delete all tracked data but keep the tables (Tools → Reset).
+	 */
+	public static function reset_all() {
+		global $wpdb;
+		$wpdb->query( 'TRUNCATE TABLE ' . self::events_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'TRUNCATE TABLE ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'TRUNCATE TABLE ' . self::daily_table() ); // phpcs:ignore WordPress.DB
+		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
+	}
+
+	/**
+	 * Insert a week of realistic sample data so the dashboard can be evaluated
+	 * before any live traffic exists (Tools → Insert sample data).
+	 *
+	 * @return int Number of sample events inserted.
+	 */
+	public static function seed_demo() {
+		$pages    = get_posts( array( 'post_type' => array( 'post', 'page' ), 'numberposts' => 4, 'post_status' => 'publish' ) );
+		$page_map = array();
+		foreach ( $pages as $p ) {
+			$page_map[] = array(
+				'id'    => (int) $p->ID,
+				'url'   => wp_make_link_relative( get_permalink( $p->ID ) ),
+				'title' => $p->post_title,
+			);
+		}
+		if ( empty( $page_map ) ) {
+			$page_map[] = array( 'id' => 0, 'url' => '/', 'title' => 'Home' );
+		}
+
+		$buttons = array(
+			array( 'txt' => 'Buy Now',     'sel' => 'a#buy-now',          'tag' => 'a',      'cls' => 'btn btn-primary', 'href' => '/checkout', 'conv' => 1 ),
+			array( 'txt' => 'Add to Cart', 'sel' => 'button.add-to-cart', 'tag' => 'button', 'cls' => 'add-to-cart',     'href' => '',          'conv' => 0 ),
+			array( 'txt' => 'Subscribe',   'sel' => 'button#subscribe',   'tag' => 'button', 'cls' => 'btn',             'href' => '',          'conv' => 1 ),
+			array( 'txt' => 'Contact Us',  'sel' => 'a.contact-link',     'tag' => 'a',      'cls' => 'contact-link',    'href' => '/contact', 'conv' => 0 ),
+			array( 'txt' => 'Learn More',  'sel' => 'a.learn-more',       'tag' => 'a',      'cls' => 'learn-more',      'href' => '/about',   'conv' => 0 ),
+		);
+
+		$now_ts = current_time( 'timestamp' );
+		$rows   = array();
+
+		for ( $d = 6; $d >= 0; $d-- ) {
+			for ( $v = 0; $v < 18; $v++ ) {
+				$vid  = self::uuid();
+				$sid  = self::uuid();
+				$page = $page_map[ array_rand( $page_map ) ];
+				$ts   = $now_ts - ( $d * DAY_IN_SECONDS ) - wp_rand( 60, 80000 );
+
+				$rows[] = array(
+					'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'pageview',
+					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
+					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
+					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0,
+					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ), 'created_at' => gmdate( 'Y-m-d H:i:s', $ts ),
+				);
+
+				$clicks = wp_rand( 0, 3 );
+				for ( $c = 0; $c < $clicks; $c++ ) {
+					$pick   = $buttons[ array_rand( $buttons ) ];
+					$rows[] = array(
+						'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'click',
+						'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
+						'element_tag' => $pick['tag'], 'element_id' => '', 'element_classes' => $pick['cls'],
+						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
+						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop',
+						'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 5, 600 ) ),
+					);
+				}
+			}
+		}
+
+		$inserted = 0;
+		foreach ( array_chunk( $rows, 100 ) as $chunk ) {
+			$inserted += self::insert_events( $chunk );
+		}
+
+		for ( $d = 6; $d >= 0; $d-- ) {
+			self::rollup_day( self::date_days_ago( $d ) );
+		}
+
+		// A few visitors "on the site now".
+		for ( $i = 0; $i < 4; $i++ ) {
+			$pg = $page_map[ array_rand( $page_map ) ];
+			self::touch_session( self::uuid(), self::uuid(), $pg['url'], $pg['id'], 1, wp_rand( 0, 3 ) );
+		}
+
+		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
+		return $inserted;
+	}
+
+	/**
+	 * Generate a v4 UUID.
+	 *
+	 * @return string
+	 */
+	private static function uuid() {
+		$d    = random_bytes( 16 );
+		$d[6] = chr( ( ord( $d[6] ) & 0x0f ) | 0x40 );
+		$d[8] = chr( ( ord( $d[8] ) & 0x3f ) | 0x80 );
+		return vsprintf( '%s%s-%s-%s-%s-%s%s%s', str_split( bin2hex( $d ), 4 ) );
+	}
+
+	/**
 	 * Bulk-insert validated event rows in a single query.
 	 *
 	 * @param array $rows Each row is an ordered associative array already sanitized by Collector.
