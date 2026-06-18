@@ -58,6 +58,7 @@
 
 	var queue = [];
 	var device = detectDevice();
+	var source = detectSource();
 	var selector = buildSelector( cfg.selectors );
 	var batchMax = cfg.batchMax > 0 ? cfg.batchMax : 25;
 
@@ -100,7 +101,12 @@
 			sel: cssPath( el ),
 			href: href,
 			conv: isConversion( el, href ) ? 1 : 0,
-			dev: device
+			dev: device,
+			src: source.src,
+			rh: source.rh,
+			us: source.us,
+			um: source.um,
+			uc: source.uc
 		} );
 
 		// Flush immediately if this click is likely to navigate away, so the
@@ -129,7 +135,12 @@
 		sel: '',
 		href: '',
 		conv: isConversionUrl( currentPath() ) ? 1 : 0,
-		dev: device
+		dev: device,
+		src: source.src,
+		rh: source.rh,
+		us: source.us,
+		um: source.um,
+		uc: source.uc
 	} );
 
 	heartbeat();
@@ -355,6 +366,70 @@
 			return 'tablet';
 		}
 		return 'desktop';
+	}
+
+	function param( name ) {
+		var m = new RegExp( '[?&]' + name + '=([^&#]*)' ).exec( location.search || '' );
+		if ( ! m ) {
+			return '';
+		}
+		try {
+			return decodeURIComponent( m[ 1 ].replace( /\+/g, ' ' ) );
+		} catch ( e ) {
+			return m[ 1 ];
+		}
+	}
+
+	function referrerHost() {
+		try {
+			if ( ! document.referrer ) {
+				return '';
+			}
+			var a = document.createElement( 'a' );
+			a.href = document.referrer;
+			return ( a.hostname || '' ).toLowerCase().replace( /^www\./, '' );
+		} catch ( e ) {
+			return '';
+		}
+	}
+
+	function cap( s ) {
+		s = String( s || '' );
+		return s ? s.charAt( 0 ).toUpperCase() + s.slice( 1 ) : s;
+	}
+
+	// Classify the visit's traffic source from UTM params and the referrer.
+	function detectSource() {
+		var us = param( 'utm_source' ).substring( 0, 100 );
+		var um = param( 'utm_medium' ).substring( 0, 100 );
+		var uc = param( 'utm_campaign' ).substring( 0, 150 );
+		var rh = referrerHost().substring( 0, 191 );
+		var self = ( location.hostname || '' ).toLowerCase().replace( /^www\./, '' );
+		var src;
+
+		if ( um ) {
+			if ( /cpc|ppc|paid/i.test( um ) ) {
+				src = 'Paid search';
+			} else if ( /email|newsletter/i.test( um ) ) {
+				src = 'Newsletter';
+			} else if ( /social/i.test( um ) ) {
+				src = 'Social';
+			} else {
+				src = cap( us || um );
+			}
+		} else if ( us ) {
+			src = cap( us );
+		} else if ( ! rh || rh === self ) {
+			src = 'Direct';
+		} else if ( /(^|\.)(google|bing|duckduckgo|yahoo|yandex|baidu|ecosia)\./.test( rh ) ) {
+			src = 'Organic search';
+		} else if ( /(^|\.)(facebook|fb|instagram|twitter|x|linkedin|youtube|reddit|pinterest|tiktok)\.|t\.co/.test( rh ) ) {
+			src = 'Social';
+		} else {
+			src = 'Referral';
+		}
+
+		return { src: src.substring( 0, 100 ), rh: rh, us: us, um: um, uc: uc };
 	}
 
 	function currentPath() {

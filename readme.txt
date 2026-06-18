@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -54,6 +54,11 @@ In three custom tables: raw events, live sessions, and daily aggregates. No thir
 Add CSS selectors (e.g. `.cvtrk-convert`) or destination paths (e.g. `/thank-you`) in Settings. Matching clicks and pageviews are flagged as conversions.
 
 == Changelog ==
+
+= 1.0.2 =
+* Traffic sources: visits are now classified (Direct, Organic search, Social, Referral, Paid search, Newsletter) from referrer + UTM parameters, with a "Traffic sources" card on the dashboard.
+* Period-over-period comparison: KPI cards show the % change vs. the previous equal-length window.
+* CSV export of buttons, pages, traffic sources, and daily activity for the selected range.
 
 = 1.0.1 =
 * Redesigned admin dashboard: tabbed navigation, KPI cards, activity chart, and sortable buttons/pages tables.

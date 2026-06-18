@@ -28,6 +28,10 @@ defined( 'ABSPATH' ) || exit;
 				<option value="0"><?php esc_html_e( 'All pages', 'convertrack' ); ?></option>
 			</select>
 		</label>
+
+		<span class="cvtrk-field"><?php esc_html_e( 'Export CSV', 'convertrack' ); ?></span>
+		<a class="button" data-cvtrk-export data-type="buttons"><?php esc_html_e( 'Buttons', 'convertrack' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="pages"><?php esc_html_e( 'Pages', 'convertrack' ); ?></a>
 	</div>
 
 	<div class="cvtrk-card">

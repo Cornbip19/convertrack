@@ -205,6 +205,22 @@
 .cvtrk-kpi.is-accent .cvtrk-kpi-icon { background: #ecfdf3; color: var(--cvtrk-green); }
 .cvtrk-kpi.is-amber .cvtrk-kpi-icon { background: #fff7ed; color: var(--cvtrk-amber); }
 
+.cvtrk-kpi-delta {
+	display: inline-block;
+	font-size: 11px;
+	font-weight: 600;
+	margin-top: 4px;
+	min-height: 14px;
+}
+
+.cvtrk-kpi-delta.is-up { color: var(--cvtrk-green); }
+.cvtrk-kpi-delta.is-down { color: #dc2626; }
+.cvtrk-kpi-delta.is-flat { color: var(--cvtrk-muted); }
+
+.convertrack .cvtrk-toolbar .button {
+	text-decoration: none;
+}
+
 /* Cards / panels --------------------------------------------------------- */
 .cvtrk-grid {
 	display: grid;

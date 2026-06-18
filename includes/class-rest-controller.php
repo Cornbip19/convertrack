@@ -162,6 +162,7 @@ class Rest_Controller {
 				'totals'      => Database::overview_stats( $range ),
 				'top_buttons' => $this->decorate_buttons( Database::top_buttons( $range, 25, $post_id ) ),
 				'top_pages'   => $this->decorate_pages( Database::top_pages( $range, 25 ) ),
+				'top_sources' => Database::top_sources( $range, 8 ),
 				'series'      => Database::clicks_timeseries( $range ),
 			);
 			wp_cache_set( $cache_key, $data, 'convertrack', 15 );

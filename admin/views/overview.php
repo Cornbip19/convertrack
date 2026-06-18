@@ -22,6 +22,12 @@ defined( 'ABSPATH' ) || exit;
 				<option value="90"><?php esc_html_e( 'Last 90 days', 'convertrack' ); ?></option>
 			</select>
 		</label>
+
+		<span class="cvtrk-field"><?php esc_html_e( 'Export CSV', 'convertrack' ); ?></span>
+		<a class="button" data-cvtrk-export data-type="buttons"><?php esc_html_e( 'Buttons', 'convertrack' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="pages"><?php esc_html_e( 'Pages', 'convertrack' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="sources"><?php esc_html_e( 'Sources', 'convertrack' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="daily"><?php esc_html_e( 'Daily', 'convertrack' ); ?></a>
 	</div>
 
 	<div class="cvtrk-kpis">
@@ -41,6 +47,7 @@ defined( 'ABSPATH' ) || exit;
 				<span class="cvtrk-kpi-body">
 					<span class="cvtrk-kpi-value" data-cvtrk="<?php echo esc_attr( $kpi['key'] ); ?>">–</span>
 					<span class="cvtrk-kpi-label"><?php echo esc_html( $kpi['label'] ); ?></span>
+					<span class="cvtrk-kpi-delta" data-cvtrk-delta="<?php echo esc_attr( $kpi['key'] ); ?>"></span>
 				</span>
 			</div>
 		<?php endforeach; ?>
@@ -77,13 +84,24 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 	</div>
 
-	<div class="cvtrk-card">
-		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Live — who is on the site right now', 'convertrack' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Refreshes automatically', 'convertrack' ); ?></span>
+	<div class="cvtrk-grid">
+		<div class="cvtrk-card">
+			<div class="cvtrk-card-head">
+				<h2><?php esc_html_e( 'Traffic sources', 'convertrack' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Where visitors come from', 'convertrack' ); ?></span>
+			</div>
+			<div class="cvtrk-card-body">
+				<div data-cvtrk="top-sources"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+			</div>
 		</div>
-		<div class="cvtrk-card-body">
-			<div data-cvtrk="active-sessions"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+		<div class="cvtrk-card">
+			<div class="cvtrk-card-head">
+				<h2><?php esc_html_e( 'Live — who is on the site right now', 'convertrack' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Refreshes automatically', 'convertrack' ); ?></span>
+			</div>
+			<div class="cvtrk-card-body">
+				<div data-cvtrk="active-sessions"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+			</div>
 		</div>
 	</div>
 </div>

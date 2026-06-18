@@ -136,6 +136,11 @@
 		set( 'unique_visitors', num( totals.unique_visitors ) );
 		set( 'conversion_rate', ( Number( totals.conversion_rate ) || 0 ) + '%' );
 		set( 'click_through', ( Number( totals.click_through ) || 0 ) + '%' );
+
+		var cmp = totals.comparison || {};
+		[ 'pageviews', 'clicks', 'conversions', 'unique_visitors', 'conversion_rate', 'click_through' ].forEach( function ( k ) {
+			setDelta( k, cmp[ k ] );
+		} );
 	}
 
 	function set( key, value ) {
@@ -143,6 +148,23 @@
 		if ( node ) {
 			node.textContent = value;
 		}
+	}
+
+	function setDelta( key, change ) {
+		var node = document.querySelector( '[data-cvtrk-delta="' + key + '"]' );
+		if ( ! node ) {
+			return;
+		}
+		node.className = 'cvtrk-kpi-delta';
+		if ( change === null || change === undefined ) {
+			node.textContent = '';
+			return;
+		}
+		var v = Number( change );
+		var arrow = v > 0 ? '▲' : ( v < 0 ? '▼' : '▬' );
+		node.textContent = arrow + ' ' + Math.abs( v ) + '%';
+		node.classList.add( v > 0 ? 'is-up' : ( v < 0 ? 'is-down' : 'is-flat' ) );
+		node.title = I18N.vsPrev || 'vs. previous period';
 	}
 
 	function renderChart( series ) {
@@ -291,10 +313,58 @@
 		box.appendChild( t );
 	}
 
+	function renderSources( items ) {
+		var box = attr( 'top-sources' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.pageviews || 0 ); } );
+
+		var t = table( [
+			{ label: I18N.source || 'Source' },
+			{ label: I18N.pageviews || 'Pageviews', num: true },
+			{ label: I18N.clicks || 'Clicks', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( it.source, '' ) );
+			tr.appendChild( clicksCell( it.pageviews, max ) );
+			tr.appendChild( numCell( it.clicks ) );
+			tr.appendChild( convCell( it.conversions ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
 	function setLive( count ) {
 		var node = attr( 'active' );
 		if ( node ) {
 			node.textContent = num( count );
+		}
+	}
+
+	function updateExports( range, post ) {
+		if ( ! C.exportUrl ) {
+			return;
+		}
+		var links = document.querySelectorAll( '[data-cvtrk-export]' );
+		for ( var i = 0; i < links.length; i++ ) {
+			var url = C.exportUrl +
+				'&type=' + encodeURIComponent( links[ i ].getAttribute( 'data-type' ) ) +
+				'&range=' + encodeURIComponent( range ) +
+				'&_wpnonce=' + encodeURIComponent( C.exportNonce );
+			if ( post ) {
+				url += '&post=' + encodeURIComponent( post );
+			}
+			links[ i ].setAttribute( 'href', url );
 		}
 	}
 
@@ -322,12 +392,14 @@
 
 		function load() {
 			var range = rangeSel ? rangeSel.value : 7;
+			updateExports( range, 0 );
 			api( '/stats/summary?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
 					renderCards( data.totals );
 					renderChart( data.series );
 					renderButtons( data.top_buttons );
 					renderPages( data.top_pages, null );
+					renderSources( data.top_sources );
 					setLive( data.active );
 				} )
 				.catch( function () {} );
@@ -348,6 +420,7 @@
 		function load() {
 			var range = rangeSel ? rangeSel.value : 7;
 			var post = postSel ? postSel.value : 0;
+			updateExports( range, post );
 
 			api( '/stats/summary?range=' + encodeURIComponent( range ) + '&post=' + encodeURIComponent( post ) )
 				.then( function ( data ) {

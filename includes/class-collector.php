@@ -116,6 +116,16 @@ class Collector {
 
 		$tag = isset( $raw['tag'] ) ? strtolower( preg_replace( '/[^a-zA-Z0-9]/', '', (string) $raw['tag'] ) ) : '';
 
+		// Constrain the channel label to a known set so the sources rollup stays
+		// low-cardinality; granular utm_source/campaign are kept separately.
+		$known_sources = array( 'Direct', 'Organic search', 'Social', 'Referral', 'Paid search', 'Newsletter' );
+		$source        = sanitize_text_field( isset( $raw['src'] ) ? $raw['src'] : '' );
+		if ( '' === $source ) {
+			$source = 'Direct';
+		} elseif ( ! in_array( $source, $known_sources, true ) ) {
+			$source = 'Other';
+		}
+
 		return array(
 			'visitor_id'       => $visitor_id,
 			'session_id'       => $session_id,
@@ -131,6 +141,11 @@ class Collector {
 			'element_href'     => self::sanitize_relative_url( isset( $raw['href'] ) ? $raw['href'] : '' ),
 			'is_conversion'    => ( ! empty( $raw['conv'] ) ) ? 1 : 0,
 			'device_type'      => $device,
+			'source'           => self::truncate( $source, 100 ),
+			'referrer_host'    => self::truncate( sanitize_text_field( isset( $raw['rh'] ) ? $raw['rh'] : '' ), 191 ),
+			'utm_source'       => self::truncate( sanitize_text_field( isset( $raw['us'] ) ? $raw['us'] : '' ), 100 ),
+			'utm_medium'       => self::truncate( sanitize_text_field( isset( $raw['um'] ) ? $raw['um'] : '' ), 100 ),
+			'utm_campaign'     => self::truncate( sanitize_text_field( isset( $raw['uc'] ) ? $raw['uc'] : '' ), 150 ),
 			'created_at'       => $now,
 		);
 	}

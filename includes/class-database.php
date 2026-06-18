@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.0.0';
+	const DB_VERSION = '1.0.2';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -52,6 +52,16 @@ class Database {
 	}
 
 	/**
+	 * Daily traffic-source rollups (channel + campaign).
+	 *
+	 * @return string
+	 */
+	public static function sources_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'convertrack_sources';
+	}
+
+	/**
 	 * Create or update the database schema.
 	 */
 	public static function install() {
@@ -62,6 +72,7 @@ class Database {
 		$events          = self::events_table();
 		$sessions        = self::sessions_table();
 		$daily           = self::daily_table();
+		$sources         = self::sources_table();
 
 		$sql = array();
 
@@ -81,6 +92,11 @@ class Database {
 			element_href varchar(255) NOT NULL DEFAULT '',
 			is_conversion tinyint(1) NOT NULL DEFAULT 0,
 			device_type varchar(10) NOT NULL DEFAULT '',
+			source varchar(100) NOT NULL DEFAULT '',
+			referrer_host varchar(191) NOT NULL DEFAULT '',
+			utm_source varchar(100) NOT NULL DEFAULT '',
+			utm_medium varchar(100) NOT NULL DEFAULT '',
+			utm_campaign varchar(150) NOT NULL DEFAULT '',
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			KEY created_at (created_at),
@@ -121,6 +137,21 @@ class Database {
 			KEY post_date (post_id, stat_date)
 		) $charset_collate;";
 
+		$sql[] = "CREATE TABLE $sources (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			bucket_hash char(32) NOT NULL DEFAULT '',
+			stat_date date NOT NULL,
+			source varchar(100) NOT NULL DEFAULT '',
+			campaign varchar(150) NOT NULL DEFAULT '',
+			pageviews int(10) unsigned NOT NULL DEFAULT 0,
+			clicks int(10) unsigned NOT NULL DEFAULT 0,
+			conversions int(10) unsigned NOT NULL DEFAULT 0,
+			unique_visitors int(10) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			UNIQUE KEY bucket_hash (bucket_hash),
+			KEY stat_date (stat_date)
+		) $charset_collate;";
+
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
@@ -146,6 +177,7 @@ class Database {
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::events_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::daily_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sources_table() ); // phpcs:ignore WordPress.DB
 	}
 
 	/**
@@ -156,6 +188,7 @@ class Database {
 		$wpdb->query( 'TRUNCATE TABLE ' . self::events_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::daily_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'TRUNCATE TABLE ' . self::sources_table() ); // phpcs:ignore WordPress.DB
 		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
 	}
 
@@ -187,6 +220,14 @@ class Database {
 			array( 'txt' => 'Learn More',  'sel' => 'a.learn-more',       'tag' => 'a',      'cls' => 'learn-more',      'href' => '/about',   'conv' => 0 ),
 		);
 
+		$source_pool = array(
+			array( 'source' => 'Organic search', 'rh' => 'google.com',           'us' => '',           'um' => '',       'uc' => '' ),
+			array( 'source' => 'Direct',         'rh' => '',                      'us' => '',           'um' => '',       'uc' => '' ),
+			array( 'source' => 'Social',         'rh' => 'facebook.com',          'us' => 'facebook',   'um' => 'social', 'uc' => 'spring-launch' ),
+			array( 'source' => 'Referral',       'rh' => 'news.ycombinator.com',  'us' => '',           'um' => '',       'uc' => '' ),
+			array( 'source' => 'Newsletter',     'rh' => '',                      'us' => 'newsletter', 'um' => 'email',  'uc' => 'june-digest' ),
+		);
+
 		$now_ts = current_time( 'timestamp' );
 		$rows   = array();
 
@@ -195,6 +236,7 @@ class Database {
 				$vid  = self::uuid();
 				$sid  = self::uuid();
 				$page = $page_map[ array_rand( $page_map ) ];
+				$src  = $source_pool[ array_rand( $source_pool ) ];
 				$ts   = $now_ts - ( $d * DAY_IN_SECONDS ) - wp_rand( 60, 80000 );
 
 				$rows[] = array(
@@ -202,7 +244,9 @@ class Database {
 					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
 					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0,
-					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ), 'created_at' => gmdate( 'Y-m-d H:i:s', $ts ),
+					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ),
+					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+					'created_at' => gmdate( 'Y-m-d H:i:s', $ts ),
 				);
 
 				$clicks = wp_rand( 0, 3 );
@@ -214,6 +258,7 @@ class Database {
 						'element_tag' => $pick['tag'], 'element_id' => '', 'element_classes' => $pick['cls'],
 						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
 						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop',
+						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
 						'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 5, 600 ) ),
 					);
 				}
@@ -279,10 +324,15 @@ class Database {
 			'element_href',
 			'is_conversion',
 			'device_type',
+			'source',
+			'referrer_host',
+			'utm_source',
+			'utm_medium',
+			'utm_campaign',
 			'created_at',
 		);
 
-		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s)';
+		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s)';
 		$placeholders    = array();
 		$values          = array();
 
@@ -440,7 +490,7 @@ class Database {
 		$conversion_rate = $pageviews > 0 ? round( ( $conversions / $pageviews ) * 100, 2 ) : 0.0;
 		$ctr             = $pageviews > 0 ? round( ( $clicks / $pageviews ) * 100, 2 ) : 0.0;
 
-		return array(
+		$current = array(
 			'clicks'          => $clicks,
 			'conversions'     => $conversions,
 			'pageviews'       => $pageviews,
@@ -448,6 +498,72 @@ class Database {
 			'conversion_rate' => $conversion_rate,
 			'click_through'   => $ctr,
 		);
+
+		// Previous equal-length window (fully historical) for comparison.
+		$prev_start = self::date_days_ago( ( 2 * $days ) - 1 );
+		$prev       = self::historical_window_totals( $prev_start, $start_date );
+
+		$comparison = array();
+		foreach ( array_keys( $current ) as $metric ) {
+			$comparison[ $metric ] = self::pct_change( $prev[ $metric ], $current[ $metric ] );
+		}
+
+		return array_merge( $current, array( 'comparison' => $comparison ) );
+	}
+
+	/**
+	 * Sum finished-day rollups over an exclusive [start, end) date window.
+	 *
+	 * @param string $start_date    Y-m-d inclusive.
+	 * @param string $end_exclusive Y-m-d exclusive.
+	 * @return array Totals incl. derived rates.
+	 */
+	private static function historical_window_totals( $start_date, $end_exclusive ) {
+		global $wpdb;
+
+		$daily = self::daily_table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT COALESCE(SUM(clicks),0) clicks, COALESCE(SUM(conversions),0) conversions,
+				        COALESCE(SUM(pageviews),0) pageviews, COALESCE(SUM(unique_visitors),0) uniques
+				 FROM $daily WHERE stat_date >= %s AND stat_date < %s",
+				$start_date,
+				$end_exclusive
+			),
+			ARRAY_A
+		);
+
+		$row       = is_array( $row ) ? $row : array();
+		$clicks    = (int) ( isset( $row['clicks'] ) ? $row['clicks'] : 0 );
+		$convs     = (int) ( isset( $row['conversions'] ) ? $row['conversions'] : 0 );
+		$pageviews = (int) ( isset( $row['pageviews'] ) ? $row['pageviews'] : 0 );
+		$uniques   = (int) ( isset( $row['uniques'] ) ? $row['uniques'] : 0 );
+
+		return array(
+			'clicks'          => $clicks,
+			'conversions'     => $convs,
+			'pageviews'       => $pageviews,
+			'unique_visitors' => $uniques,
+			'conversion_rate' => $pageviews > 0 ? round( $convs / $pageviews * 100, 2 ) : 0.0,
+			'click_through'   => $pageviews > 0 ? round( $clicks / $pageviews * 100, 2 ) : 0.0,
+		);
+	}
+
+	/**
+	 * Percentage change from previous to current. Null when there is no baseline.
+	 *
+	 * @param float $prev Previous value.
+	 * @param float $cur  Current value.
+	 * @return float|null
+	 */
+	private static function pct_change( $prev, $cur ) {
+		$prev = (float) $prev;
+		$cur  = (float) $cur;
+		if ( $prev <= 0 ) {
+			return null;
+		}
+		return round( ( ( $cur - $prev ) / $prev ) * 100, 1 );
 	}
 
 	/**
@@ -503,6 +619,75 @@ class Database {
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		return $wpdb->get_results( $wpdb->prepare( $sql, $start, $limit ), ARRAY_A );
+	}
+
+	/**
+	 * Traffic by source/channel over a range (rollups + today live), merged.
+	 *
+	 * @param int $days  Days back.
+	 * @param int $limit Max sources.
+	 * @return array
+	 */
+	public static function top_sources( $days, $limit = 12 ) {
+		global $wpdb;
+
+		$days    = max( 1, (int) $days );
+		$today   = self::today();
+		$start   = self::date_days_ago( $days - 1 );
+		$sources = self::sources_table();
+		$events  = self::events_table();
+
+		// Finished days from the source rollup.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$hist = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT source, SUM(pageviews) pageviews, SUM(clicks) clicks,
+				        SUM(conversions) conversions, SUM(unique_visitors) visitors
+				 FROM $sources WHERE stat_date >= %s AND stat_date < %s GROUP BY source",
+				$start,
+				$today
+			),
+			ARRAY_A
+		);
+
+		// Today, live from raw events.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$today_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT source,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+				        SUM(CASE WHEN event_type='click' AND is_conversion=1 THEN 1 ELSE 0 END) conversions,
+				        COUNT(DISTINCT visitor_id) visitors
+				 FROM $events WHERE created_at >= %s GROUP BY source",
+				$today . ' 00:00:00'
+			),
+			ARRAY_A
+		);
+
+		$map = array();
+		foreach ( array( $hist, $today_rows ) as $set ) {
+			foreach ( $set as $r ) {
+				$s = '' === (string) $r['source'] ? 'Direct' : (string) $r['source'];
+				if ( ! isset( $map[ $s ] ) ) {
+					$map[ $s ] = array( 'source' => $s, 'pageviews' => 0, 'clicks' => 0, 'conversions' => 0, 'visitors' => 0 );
+				}
+				$map[ $s ]['pageviews']   += (int) $r['pageviews'];
+				$map[ $s ]['clicks']      += (int) $r['clicks'];
+				$map[ $s ]['conversions'] += (int) $r['conversions'];
+				$map[ $s ]['visitors']    += (int) $r['visitors'];
+			}
+		}
+
+		$list = array_values( $map );
+		usort(
+			$list,
+			function ( $a, $b ) {
+				return $b['pageviews'] - $a['pageviews'];
+			}
+		);
+
+		return array_slice( $list, 0, max( 1, (int) $limit ) );
 	}
 
 	/**
@@ -629,14 +814,17 @@ class Database {
 			return;
 		}
 
-		$events = self::events_table();
-		$daily  = self::daily_table();
-		$start  = $date . ' 00:00:00';
-		$end    = $date . ' 23:59:59';
+		$events  = self::events_table();
+		$daily   = self::daily_table();
+		$sources = self::sources_table();
+		$start   = $date . ' 00:00:00';
+		$end     = $date . ' 23:59:59';
 
 		// Clear existing buckets for the day so re-runs do not double count.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( $wpdb->prepare( "DELETE FROM $daily WHERE stat_date = %s", $date ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( $wpdb->prepare( "DELETE FROM $sources WHERE stat_date = %s", $date ) );
 
 		// Click buckets grouped by selector.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -696,6 +884,67 @@ class Database {
 				)
 			);
 		}
+
+		// Traffic-source buckets grouped by channel + campaign.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$src_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT source, utm_campaign AS campaign,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
+				        SUM(CASE WHEN event_type='click' AND is_conversion=1 THEN 1 ELSE 0 END) AS conversions,
+				        COUNT(DISTINCT visitor_id) AS uniques
+				 FROM $events
+				 WHERE created_at BETWEEN %s AND %s
+				 GROUP BY source, utm_campaign",
+				$start,
+				$end
+			),
+			ARRAY_A
+		);
+
+		foreach ( $src_rows as $row ) {
+			$source = '' === (string) $row['source'] ? 'Direct' : (string) $row['source'];
+			self::upsert_source_bucket(
+				$date,
+				$source,
+				(string) $row['campaign'],
+				array(
+					'pageviews'       => (int) $row['pageviews'],
+					'clicks'          => (int) $row['clicks'],
+					'conversions'     => (int) $row['conversions'],
+					'unique_visitors' => (int) $row['uniques'],
+				)
+			);
+		}
+	}
+
+	/**
+	 * Upsert a single traffic-source bucket for a day.
+	 *
+	 * @param string $date     Y-m-d.
+	 * @param string $source   Channel label.
+	 * @param string $campaign UTM campaign ('' if none).
+	 * @param array  $metrics  pageviews/clicks/conversions/unique_visitors.
+	 */
+	private static function upsert_source_bucket( $date, $source, $campaign, array $metrics ) {
+		global $wpdb;
+
+		$hash = md5( $date . '|' . $source . '|' . $campaign );
+		$wpdb->insert(
+			self::sources_table(),
+			array(
+				'bucket_hash'     => $hash,
+				'stat_date'       => $date,
+				'source'          => $source,
+				'campaign'        => $campaign,
+				'pageviews'       => (int) $metrics['pageviews'],
+				'clicks'          => (int) $metrics['clicks'],
+				'conversions'     => (int) $metrics['conversions'],
+				'unique_visitors' => (int) $metrics['unique_visitors'],
+			),
+			array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d' )
+		);
 	}
 
 	/**
