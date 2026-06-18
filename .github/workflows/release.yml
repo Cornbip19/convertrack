@@ -19,7 +19,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Build plugin zip
+      - name: Build self-hosted zip (with GitHub self-updater)
         run: |
           PLUGIN=convertrack
           mkdir -p build/$PLUGIN
@@ -29,11 +29,30 @@ jobs:
             --exclude 'build' \
             --exclude '*.zip' \
             --exclude '.gitignore' \
+            --exclude 'README.md' \
             ./ build/$PLUGIN/
           cd build && zip -r "../$PLUGIN.zip" "$PLUGIN"
+
+      - name: Build WordPress.org zip (no self-updater — directory handles updates)
+        run: |
+          PLUGIN=convertrack
+          mkdir -p wporg/$PLUGIN
+          rsync -a \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'build' \
+            --exclude 'wporg' \
+            --exclude '*.zip' \
+            --exclude '.gitignore' \
+            --exclude 'README.md' \
+            --exclude 'includes/class-updater.php' \
+            ./ wporg/$PLUGIN/
+          cd wporg && zip -r "../$PLUGIN-wordpress-org.zip" "$PLUGIN"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: convertrack.zip
+          files: |
+            convertrack.zip
+            convertrack-wordpress-org.zip
           generate_release_notes: true

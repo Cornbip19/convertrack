@@ -16,10 +16,14 @@ if ( empty( $roles ) ) {
 	$roles = get_editable_roles();
 }
 
-$release   = convertrack()->updater->get_release();
-$latest    = ( is_array( $release ) && ! empty( $release['version'] ) ) ? $release['version'] : __( 'unknown', 'convertrack' );
-$repo_url  = 'https://github.com/' . CONVERTRACK_GITHUB_OWNER . '/' . CONVERTRACK_GITHUB_REPO;
-$check_url = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'upgrade-core' );
+$cvtrk_updater = isset( convertrack()->updater ) ? convertrack()->updater : null;
+$repo_url      = 'https://github.com/' . CONVERTRACK_GITHUB_OWNER . '/' . CONVERTRACK_GITHUB_REPO;
+$check_url     = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'upgrade-core' );
+$latest        = __( 'unknown', 'convertrack' );
+if ( $cvtrk_updater ) {
+	$release = $cvtrk_updater->get_release();
+	$latest  = ( is_array( $release ) && ! empty( $release['version'] ) ) ? $release['version'] : __( 'unknown', 'convertrack' );
+}
 ?>
 <div class="wrap convertrack">
 	<?php Admin::render_header( 'settings' ); ?>
@@ -161,6 +165,7 @@ $check_url = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'u
 			</tr>
 		</table>
 
+		<?php if ( $cvtrk_updater ) : ?>
 		<h2 class="title"><?php esc_html_e( 'Updates (GitHub)', 'convertrack' ); ?></h2>
 		<table class="form-table" role="presentation">
 			<tr>
@@ -186,6 +191,7 @@ $check_url = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'u
 				</td>
 			</tr>
 		</table>
+		<?php endif; ?>
 
 		<?php submit_button(); ?>
 	</form>

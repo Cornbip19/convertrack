@@ -3,7 +3,7 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           1.0.3
+ * Version:           1.1.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Cornbip19
@@ -12,7 +12,6 @@
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       convertrack
  * Domain Path:       /languages
- * Update URI:        https://github.com/Cornbip19/convertrack
  *
  * @package Convertrack
  */
@@ -23,7 +22,7 @@ if ( defined( 'CONVERTRACK_VERSION' ) ) {
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '1.0.3' );
+define( 'CONVERTRACK_VERSION', '1.1.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );
@@ -44,7 +43,14 @@ require_once CONVERTRACK_DIR . 'includes/class-rest-controller.php';
 require_once CONVERTRACK_DIR . 'includes/class-frontend.php';
 require_once CONVERTRACK_DIR . 'includes/class-cron.php';
 require_once CONVERTRACK_DIR . 'includes/class-admin.php';
-require_once CONVERTRACK_DIR . 'includes/class-updater.php';
+
+// The GitHub self-updater ships only in the self-hosted build. The
+// WordPress.org build omits this file so the directory handles all updates
+// (per the plugin guidelines, directory plugins must not update from elsewhere).
+if ( file_exists( CONVERTRACK_DIR . 'includes/class-updater.php' ) ) {
+	require_once CONVERTRACK_DIR . 'includes/class-updater.php';
+}
+
 require_once CONVERTRACK_DIR . 'includes/class-convertrack.php';
 
 register_activation_hook( __FILE__, array( '\\Convertrack\\Activator', 'activate' ) );

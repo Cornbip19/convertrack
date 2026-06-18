@@ -69,12 +69,16 @@ final class Plugin {
 		$this->frontend = new Frontend();
 		$this->cron     = new Cron();
 		$this->admin    = new Admin();
-		$this->updater  = new Updater( CONVERTRACK_FILE, CONVERTRACK_GITHUB_OWNER, CONVERTRACK_GITHUB_REPO, CONVERTRACK_SLUG );
 
 		$this->rest->register();
 		$this->frontend->register();
 		$this->cron->register();
 		$this->admin->register();
-		$this->updater->register();
+
+		// Self-updater only exists in the self-hosted build (see main file).
+		if ( class_exists( __NAMESPACE__ . '\\Updater' ) ) {
+			$this->updater = new Updater( CONVERTRACK_FILE, CONVERTRACK_GITHUB_OWNER, CONVERTRACK_GITHUB_REPO, CONVERTRACK_SLUG );
+			$this->updater->register();
+		}
 	}
 }

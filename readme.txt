@@ -1,14 +1,14 @@
 === Convertrack — Click & Conversion Analytics ===
 Contributors: Cornbip19
-Tags: analytics, click tracking, conversion, heatmap, real-time
+Tags: analytics, click tracking, conversion, real-time
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Track clicks on every button and link, measure page conversion, and see how many visitors are on your site right now. Built to scale and to update itself from GitHub.
+Track clicks on every button and link, measure page conversion, and see how many visitors are on your site right now — privacy-friendly and built to scale.
 
 == Description ==
 
@@ -27,11 +27,17 @@ Convertrack answers three questions about your site:
 
 **Privacy-friendly**
 
-No IP addresses or personal data are stored. A random visitor identifier lives in the browser's local storage only. Do Not Track is supported, and you can exclude logged-in users, specific roles, or URLs.
+All analytics are stored in your site's own database — no data is ever sent to a third-party service. No IP addresses, names, or email addresses are collected; only a random identifier kept in the visitor's browser storage. "Do Not Track" is honored by default, you can exclude logged-in users, roles, or URLs, and consent-management plugins can gate tracking via the `convertrack_skip_tracking` filter.
 
-**Updates straight from GitHub**
+**Updating**
 
-Convertrack updates itself from its GitHub repository's Releases. Push a new release and connected sites are notified in the normal WordPress Updates screen. Private repositories are supported with a personal access token.
+Installed from WordPress.org, Convertrack updates through your dashboard like any other plugin. The separately distributed self-hosted build can additionally update itself from its GitHub Releases.
+
+== Privacy ==
+
+Convertrack is a first-party analytics tool: every event (pageview, click, traffic source, presence heartbeat) is stored only in this site's own database and is never transmitted to any external or third-party service. It does not collect IP addresses, names, or email addresses. A random, non-identifying visitor ID is stored in the browser's local storage to distinguish repeat visits.
+
+By default, visitors whose browser sends a "Do Not Track" signal are not tracked. To require explicit cookie/consent before any tracking, return `true` from the `convertrack_skip_tracking` filter until your consent banner is accepted. A suggested privacy-policy paragraph is added to **Settings → Privacy** for inclusion in your site's policy.
 
 == Installation ==
 
@@ -53,7 +59,20 @@ In three custom tables: raw events, live sessions, and daily aggregates. No thir
 = How do conversions work? =
 Add CSS selectors (e.g. `.cvtrk-convert`) or destination paths (e.g. `/thank-you`) in Settings. Matching clicks and pageviews are flagged as conversions.
 
+= Does the plugin collect personal data? =
+No. It stores no IP addresses, names, or email addresses — only a random visitor identifier in the browser's local storage, plus anonymous interaction counts. All of it stays in your own database. Do Not Track is honored by default.
+
+= Does it contact any external services? =
+No. The plugin does not send any data to external or third-party services. (The optional self-hosted build distributed via GitHub additionally queries the GitHub Releases API to check for plugin updates; the WordPress.org version does not.)
+
+= How do I require visitor consent before tracking? =
+Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
+
 == Changelog ==
+
+= 1.1.0 =
+* Privacy & directory compliance: "Do Not Track" is now honored by default, a suggested privacy-policy paragraph is registered, and a documented `convertrack_skip_tracking` filter lets consent plugins gate tracking.
+* The build now ships a WordPress.org-ready package that contains no self-update code (the directory handles updates); the GitHub self-updater remains in the self-hosted build only.
 
 = 1.0.3 =
 * Redesigned all admin views with a neutral, full-width, report-style interface: grayscale palette with a single charcoal accent, 1px hairline borders, square corners, and no shadows. Removed colored KPI tiles, the pulsing live dot, and rounded "pills" for a cleaner, professional look.

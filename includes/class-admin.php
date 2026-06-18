@@ -25,6 +25,18 @@ class Admin {
 		add_action( 'admin_post_convertrack_seed_demo', array( $this, 'handle_seed_demo' ) );
 		add_action( 'admin_post_convertrack_reset_data', array( $this, 'handle_reset_data' ) );
 		add_action( 'admin_post_convertrack_export', array( $this, 'handle_export' ) );
+		add_action( 'admin_init', array( $this, 'register_privacy' ) );
+	}
+
+	/**
+	 * Add a suggested privacy-policy paragraph for the site's Privacy Policy page.
+	 */
+	public function register_privacy() {
+		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
+			return;
+		}
+		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack' );
+		wp_add_privacy_policy_content( 'Convertrack', wp_kses_post( wpautop( $content ) ) );
 	}
 
 	/**

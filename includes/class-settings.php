@@ -39,7 +39,7 @@ class Settings {
 			'batch_max'            => 25,
 			'retention_days'       => 90,
 			'sample_rate'          => 100,
-			'respect_dnt'          => 0,
+			'respect_dnt'          => 1,
 			'track_logged_in'      => 0,
 			'exclude_roles'        => array( 'administrator' ),
 			'exclude_urls'         => "/wp-admin\n/wp-login.php",
