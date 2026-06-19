@@ -351,6 +351,186 @@
 		}
 	}
 
+	/* Heatmaps ------------------------------------------------------------ */
+
+	function renderScrollDepth( scroll, samples ) {
+		var box = attr( 'scroll-depth' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! scroll || ! scroll.length || ! samples ) {
+			empty( box, I18N.noHeatmap );
+			return;
+		}
+		var map = el( 'div', 'cvtrk-scrollmap' );
+		scroll.forEach( function ( b ) {
+			var pct = Number( b.pct ) || 0;
+			var row = el( 'div', 'cvtrk-scrollband' );
+			var alpha = Math.max( 0.04, ( pct / 100 ) * 0.82 );
+			row.style.background = 'rgba(45,45,45,' + alpha.toFixed( 3 ) + ')';
+			if ( alpha > 0.5 ) {
+				row.style.color = '#fff';
+			}
+			row.appendChild( el( 'span', null, b.depth + '%' ) );
+			row.appendChild( el( 'span', null, pct + '% ' + ( I18N.reached || 'reached this depth' ) ) );
+			map.appendChild( row );
+		} );
+		box.appendChild( map );
+		box.appendChild( el( 'p', 'cvtrk-note', num( samples ) + ' ' + ( I18N.visitors || 'Visitors' ).toLowerCase() + ' sampled' ) );
+	}
+
+	function drawHeatCanvas( canvas, stage, points, maxW, height ) {
+		var w = stage.clientWidth || 600;
+		var h = Math.max( 200, Math.min( height || Math.round( w * 1.4 ), 8000 ) );
+		canvas.width = w;
+		canvas.height = h;
+		canvas.style.width = w + 'px';
+		canvas.style.height = h + 'px';
+		var ctx = canvas.getContext( '2d' );
+		ctx.clearRect( 0, 0, w, h );
+		if ( ! points || ! points.length ) {
+			return;
+		}
+		var r = Math.max( 16, Math.round( Math.min( w, h ) * 0.035 ) );
+		ctx.globalCompositeOperation = 'lighter';
+		points.forEach( function ( p ) {
+			var x = ( p.x / 100 ) * w;
+			var y = ( p.y / 100 ) * h;
+			var a = Math.max( 0.12, Math.min( 0.9, ( p.w / ( maxW || 1 ) ) ) );
+			var g = ctx.createRadialGradient( x, y, 0, x, y, r );
+			g.addColorStop( 0, 'rgba(255,70,0,' + a.toFixed( 3 ) + ')' );
+			g.addColorStop( 0.55, 'rgba(255,170,0,' + ( a * 0.5 ).toFixed( 3 ) + ')' );
+			g.addColorStop( 1, 'rgba(255,255,0,0)' );
+			ctx.fillStyle = g;
+			ctx.beginPath();
+			ctx.arc( x, y, r, 0, 6.2832 );
+			ctx.fill();
+		} );
+		ctx.globalCompositeOperation = 'source-over';
+	}
+
+	function renderClickMap( data, showPage ) {
+		var stage = attr( 'heatmap-stage' );
+		var frame = attr( 'heatmap-frame' );
+		var canvas = attr( 'heatmap-canvas' );
+		var note = attr( 'heatmap-note' );
+		if ( ! stage || ! canvas ) {
+			return;
+		}
+		var points = ( data && data.points ) || [];
+		var maxW = ( data && data.max_weight ) || 1;
+
+		if ( note ) {
+			note.textContent = points.length ? '' : ( I18N.noHeatmap || '' );
+		}
+
+		if ( showPage && data && data.url && frame ) {
+			stage.classList.remove( 'cvtrk-no-frame' );
+			frame.style.display = 'block';
+			frame.onload = function () {
+				var docH = 0;
+				try {
+					var doc = frame.contentDocument || ( frame.contentWindow && frame.contentWindow.document );
+					if ( doc && doc.documentElement ) {
+						docH = doc.documentElement.scrollHeight || ( doc.body && doc.body.scrollHeight ) || 0;
+					}
+				} catch ( e ) {
+					docH = 0;
+				}
+				if ( docH > 0 ) {
+					frame.style.height = Math.min( docH, 8000 ) + 'px';
+					drawHeatCanvas( canvas, stage, points, maxW, docH );
+				} else {
+					// Cross-origin / blocked: fall back to a frameless heatmap.
+					frame.style.display = 'none';
+					stage.classList.add( 'cvtrk-no-frame' );
+					drawHeatCanvas( canvas, stage, points, maxW );
+				}
+			};
+			if ( frame.getAttribute( 'src' ) !== data.url ) {
+				frame.setAttribute( 'src', data.url );
+			} else {
+				frame.onload();
+			}
+		} else {
+			if ( frame ) {
+				frame.style.display = 'none';
+			}
+			stage.classList.add( 'cvtrk-no-frame' );
+			drawHeatCanvas( canvas, stage, points, maxW );
+		}
+	}
+
+	function initHeatmap() {
+		var rangeSel = attr( 'range' );
+		var postSel = attr( 'post' );
+		var showChk = attr( 'show-page' );
+		var data = null;
+
+		function load() {
+			var post = postSel ? postSel.value : 0;
+			var range = rangeSel ? rangeSel.value : 7;
+			if ( ! post || post === '0' ) {
+				return;
+			}
+			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&range=' + encodeURIComponent( range ) )
+				.then( function ( d ) {
+					data = d;
+					renderScrollDepth( d.scroll, d.scroll_samples );
+					renderClickMap( d, showChk ? showChk.checked : true );
+					var meta = attr( 'heatmap-meta' );
+					if ( meta ) {
+						meta.textContent = num( d.pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ).toLowerCase() +
+							' · ' + num( d.clicks ) + ' ' + ( I18N.clicksHere || 'clicks' );
+					}
+				} )
+				.catch( function () {} );
+		}
+
+		function loadPages() {
+			var range = rangeSel ? rangeSel.value : 7;
+			api( '/stats/summary?range=' + encodeURIComponent( range ) )
+				.then( function ( d ) {
+					if ( ! postSel || ! d.top_pages ) {
+						return;
+					}
+					var cur = postSel.value;
+					while ( postSel.options.length > 1 ) {
+						postSel.remove( 1 );
+					}
+					d.top_pages.forEach( function ( p ) {
+						if ( p.post_id > 0 ) {
+							var o = document.createElement( 'option' );
+							o.value = p.post_id;
+							o.textContent = p.title;
+							postSel.appendChild( o );
+						}
+					} );
+					if ( ( cur === '0' || ! cur ) && postSel.options.length > 1 ) {
+						postSel.selectedIndex = 1;
+					} else {
+						postSel.value = cur;
+					}
+					load();
+				} )
+				.catch( function () {} );
+		}
+
+		if ( rangeSel ) {
+			rangeSel.addEventListener( 'change', loadPages );
+		}
+		if ( postSel ) {
+			postSel.addEventListener( 'change', load );
+		}
+		if ( showChk ) {
+			showChk.addEventListener( 'change', function () {
+				renderClickMap( data, showChk.checked );
+			} );
+		}
+		loadPages();
+	}
+
 	function updateExports( range, post ) {
 		if ( ! C.exportUrl ) {
 			return;
@@ -479,5 +659,8 @@
 	}
 	if ( document.getElementById( 'convertrack-pages' ) ) {
 		initPages();
+	}
+	if ( document.getElementById( 'convertrack-heatmaps' ) ) {
+		initHeatmap();
 	}
 } )();

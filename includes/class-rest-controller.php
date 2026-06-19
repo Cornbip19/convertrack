@@ -80,6 +80,21 @@ class Rest_Controller {
 				),
 			)
 		);
+
+		// Admin: per-page heatmap (click density + scroll depth).
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/stats/heatmap',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'stats_heatmap' ),
+				'permission_callback' => array( $this, 'can_view_stats' ),
+				'args'                => array(
+					'range' => array( 'default' => 7, 'sanitize_callback' => 'absint' ),
+					'post'  => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
+				),
+			)
+		);
 	}
 
 	/**
@@ -174,6 +189,24 @@ class Rest_Controller {
 	}
 
 	/**
+	 * GET /stats/heatmap — click density + scroll depth for one page.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function stats_heatmap( $request ) {
+		$range   = max( 1, min( 365, (int) $request->get_param( 'range' ) ) );
+		$post_id = (int) $request->get_param( 'post' );
+
+		$data            = Database::heatmap_data( $post_id, $range );
+		$data['post_id'] = $post_id;
+		$data['title']   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
+		$data['url']     = $post_id > 0 ? get_permalink( $post_id ) : '';
+
+		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
+	}
+
+	/**
 	 * Add human-friendly labels to top-button rows.
 	 *
 	 * @param array $rows Raw rows.
@@ -206,7 +239,7 @@ class Rest_Controller {
 		$out = array();
 		foreach ( $rows as $row ) {
 			$post_id = (int) $row['post_id'];
-			$title   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack' );
+			$title   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
 			$url     = $post_id > 0 ? get_permalink( $post_id ) : '';
 
 			$out[] = array(

@@ -61,6 +61,9 @@
 	var source = detectSource();
 	var selector = buildSelector( cfg.selectors );
 	var batchMax = cfg.batchMax > 0 ? cfg.batchMax : 25;
+	var maxScroll = 0;
+	var scrollSent = false;
+	var scrollTick = false;
 
 	/* ----------------------------------------------------------------- *
 	 * Event capture
@@ -89,6 +92,7 @@
 		}
 
 		var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
+		var coords = pagePosition( e );
 		queue.push( {
 			t: 'click',
 			pid: cfg.postId || 0,
@@ -106,7 +110,9 @@
 			rh: source.rh,
 			us: source.us,
 			um: source.um,
-			uc: source.uc
+			uc: source.uc,
+			cx: coords.cx,
+			cy: coords.cy
 		} );
 
 		// Flush immediately if this click is likely to navigate away, so the
@@ -148,14 +154,21 @@
 	var flushTimer = window.setInterval( flush, Math.max( 1000, cfg.flush || 5000 ) );
 
 	// Flush reliably when the page is being hidden or unloaded.
+	updateScroll();
+	window.addEventListener( 'scroll', onScroll, { passive: true } );
+
 	document.addEventListener( 'visibilitychange', function () {
 		if ( document.visibilityState === 'hidden' ) {
+			recordScroll();
 			flush();
 		} else {
 			heartbeat();
 		}
 	} );
-	window.addEventListener( 'pagehide', flush );
+	window.addEventListener( 'pagehide', function () {
+		recordScroll();
+		flush();
+	} );
 
 	/* ----------------------------------------------------------------- *
 	 * Transport
@@ -434,6 +447,77 @@
 
 	function currentPath() {
 		return ( ( location.pathname || '/' ) + ( location.search || '' ) ).substring( 0, 800 );
+	}
+
+	/* ----------------------------------------------------------------- *
+	 * Heatmap capture: click position + scroll depth (% of the page)
+	 * ----------------------------------------------------------------- */
+
+	function clampInt( v, lo, hi ) {
+		v = v | 0;
+		return v < lo ? lo : ( v > hi ? hi : v );
+	}
+
+	function pageDims() {
+		var doc = document.documentElement || {};
+		var body = document.body || {};
+		return {
+			w: Math.max( doc.scrollWidth || 0, body.scrollWidth || 0, doc.clientWidth || 0 ) || 1,
+			h: Math.max( doc.scrollHeight || 0, body.scrollHeight || 0, doc.clientHeight || 0 ) || 1
+		};
+	}
+
+	// Click position as tenths of a percent (0-1000) of the full page.
+	function pagePosition( e ) {
+		var d = pageDims();
+		var px = ( typeof e.pageX === 'number' ) ? e.pageX : ( ( e.clientX || 0 ) + ( window.pageXOffset || 0 ) );
+		var py = ( typeof e.pageY === 'number' ) ? e.pageY : ( ( e.clientY || 0 ) + ( window.pageYOffset || 0 ) );
+		return {
+			cx: clampInt( Math.round( ( px / d.w ) * 1000 ), 0, 1000 ),
+			cy: clampInt( Math.round( ( py / d.h ) * 1000 ), 0, 1000 )
+		};
+	}
+
+	function updateScroll() {
+		var doc = document.documentElement || {};
+		var d = pageDims();
+		var seen = ( window.pageYOffset || doc.scrollTop || 0 ) + ( window.innerHeight || doc.clientHeight || 0 );
+		var pct = clampInt( Math.round( ( seen / d.h ) * 100 ), 0, 100 );
+		if ( pct > maxScroll ) {
+			maxScroll = pct;
+		}
+	}
+
+	function onScroll() {
+		if ( scrollTick ) {
+			return;
+		}
+		scrollTick = true;
+		window.setTimeout( function () {
+			updateScroll();
+			scrollTick = false;
+		}, 250 );
+	}
+
+	// Send the deepest scroll reached, once, as the visit ends.
+	function recordScroll() {
+		if ( scrollSent ) {
+			return;
+		}
+		updateScroll();
+		scrollSent = true;
+		if ( maxScroll > 0 ) {
+			queue.push( {
+				t: 'scroll',
+				pid: cfg.postId || 0,
+				url: currentPath(),
+				title: docTitle(),
+				tag: '', id: '', cls: '', txt: '', sel: '', href: '', conv: 0,
+				dev: device,
+				src: source.src, rh: source.rh, us: source.us, um: source.um, uc: source.uc,
+				sd: maxScroll
+			} );
+		}
 	}
 
 	function docTitle() {

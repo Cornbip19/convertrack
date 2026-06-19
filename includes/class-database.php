@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.0.2';
+	const DB_VERSION = '1.2.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -97,6 +97,9 @@ class Database {
 			utm_source varchar(100) NOT NULL DEFAULT '',
 			utm_medium varchar(100) NOT NULL DEFAULT '',
 			utm_campaign varchar(150) NOT NULL DEFAULT '',
+			pos_x smallint(5) unsigned NOT NULL DEFAULT 0,
+			pos_y smallint(5) unsigned NOT NULL DEFAULT 0,
+			scroll_depth tinyint(3) unsigned NOT NULL DEFAULT 0,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			KEY created_at (created_at),
@@ -259,9 +262,20 @@ class Database {
 						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
 						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop',
 						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+						'pos_x' => wp_rand( 120, 880 ), 'pos_y' => wp_rand( 60, 820 ),
 						'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 5, 600 ) ),
 					);
 				}
+
+				$rows[] = array(
+					'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'scroll',
+					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
+					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
+					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0, 'device_type' => 'desktop',
+					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+					'scroll_depth' => min( 100, wp_rand( 20, 100 ) ),
+					'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 60, 800 ) ),
+				);
 			}
 		}
 
@@ -329,10 +343,13 @@ class Database {
 			'utm_source',
 			'utm_medium',
 			'utm_campaign',
+			'pos_x',
+			'pos_y',
+			'scroll_depth',
 			'created_at',
 		);
 
-		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s)';
+		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s)';
 		$placeholders    = array();
 		$values          = array();
 
@@ -688,6 +705,99 @@ class Database {
 		);
 
 		return array_slice( $list, 0, max( 1, (int) $limit ) );
+	}
+
+	/**
+	 * Heatmap data for one page: click density grid + scroll-depth distribution.
+	 *
+	 * Click positions are stored as tenths of a percent of the page (0-1000) and
+	 * aggregated here into a 0-100 x 0-100 grid so the payload stays bounded.
+	 *
+	 * @param int $post_id Post ID.
+	 * @param int $days    Days back.
+	 * @return array
+	 */
+	public static function heatmap_data( $post_id, $days ) {
+		global $wpdb;
+
+		$post_id = (int) $post_id;
+		$days    = max( 1, (int) $days );
+		$start   = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events  = self::events_table();
+
+		// Click density, aggregated to a 0-100 grid (percent of page width/height).
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$clicks = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT ROUND(pos_x/10) gx, ROUND(pos_y/10) gy, COUNT(*) w
+				 FROM $events
+				 WHERE event_type='click' AND post_id=%d AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)
+				 GROUP BY gx, gy ORDER BY w DESC LIMIT 1500",
+				$post_id,
+				$start
+			),
+			ARRAY_A
+		);
+
+		$points = array();
+		$max_w  = 0;
+		foreach ( $clicks as $r ) {
+			$w        = (int) $r['w'];
+			$points[] = array( 'x' => (int) $r['gx'], 'y' => (int) $r['gy'], 'w' => $w );
+			if ( $w > $max_w ) {
+				$max_w = $w;
+			}
+		}
+
+		// Scroll-depth samples grouped by reached depth.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT scroll_depth d, COUNT(*) c
+				 FROM $events
+				 WHERE event_type='scroll' AND post_id=%d AND created_at >= %s
+				 GROUP BY scroll_depth",
+				$post_id,
+				$start
+			),
+			ARRAY_A
+		);
+
+		$total_scroll = 0;
+		$by_depth     = array();
+		foreach ( $rows as $r ) {
+			$by_depth[ (int) $r['d'] ] = (int) $r['c'];
+			$total_scroll             += (int) $r['c'];
+		}
+
+		// Cumulative: % of samples that reached at least each 10% band.
+		$scroll = array();
+		for ( $band = 10; $band <= 100; $band += 10 ) {
+			$reached = 0;
+			foreach ( $by_depth as $depth => $count ) {
+				if ( $depth >= $band ) {
+					$reached += $count;
+				}
+			}
+			$scroll[] = array(
+				'depth' => $band,
+				'pct'   => $total_scroll > 0 ? round( $reached / $total_scroll * 100, 1 ) : 0,
+			);
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$pageviews = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='pageview' AND post_id=%d AND created_at >= %s", $post_id, $start ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND post_id=%d AND created_at >= %s", $post_id, $start ) );
+
+		return array(
+			'points'         => $points,
+			'max_weight'     => $max_w,
+			'scroll'         => $scroll,
+			'pageviews'      => $pageviews,
+			'clicks'         => $click_total,
+			'scroll_samples' => $total_scroll,
+		);
 	}
 
 	/**

@@ -348,7 +348,7 @@ class Updater {
 	private function format_changelog( $release ) {
 		$notes = isset( $release['body'] ) ? trim( $release['body'] ) : '';
 		if ( '' === $notes ) {
-			$notes = __( 'See the GitHub release for details.', 'convertrack' );
+			$notes = __( 'See the GitHub release for details.', 'convertrack-click-conversion-analytics' );
 		}
 		$heading = '<h4>' . esc_html( isset( $release['name'] ) ? $release['name'] : $release['version'] ) . '</h4>';
 		// Render Markdown-ish notes safely: escape, then keep line breaks.

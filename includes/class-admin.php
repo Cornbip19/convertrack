@@ -35,7 +35,7 @@ class Admin {
 		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
 			return;
 		}
-		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack' );
+		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack-click-conversion-analytics' );
 		wp_add_privacy_policy_content( 'Convertrack', wp_kses_post( wpautop( $content ) ) );
 	}
 
@@ -44,11 +44,11 @@ class Admin {
 	 */
 	public function handle_export() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Permission denied.', 'convertrack' ) );
+			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
 		}
 		$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_GET['_wpnonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, 'convertrack_export' ) ) {
-			wp_die( esc_html__( 'Invalid request.', 'convertrack' ) );
+			wp_die( esc_html__( 'Invalid request.', 'convertrack-click-conversion-analytics' ) );
 		}
 
 		$type  = isset( $_GET['type'] ) ? sanitize_key( $_GET['type'] ) : 'buttons';
@@ -111,7 +111,7 @@ class Admin {
 	 */
 	public function handle_seed_demo() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Permission denied.', 'convertrack' ) );
+			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
 		}
 		check_admin_referer( 'convertrack_seed_demo' );
 		$rows = Database::seed_demo();
@@ -124,7 +124,7 @@ class Admin {
 	 */
 	public function handle_reset_data() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'Permission denied.', 'convertrack' ) );
+			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
 		}
 		check_admin_referer( 'convertrack_reset_data' );
 		Database::reset_all();
@@ -139,21 +139,22 @@ class Admin {
 	 */
 	public static function render_header( $current ) {
 		$tabs = array(
-			'overview' => array( 'label' => __( 'Overview', 'convertrack' ), 'icon' => 'chart-area', 'page' => 'convertrack' ),
-			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
-			'settings' => array( 'label' => __( 'Settings', 'convertrack' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
+			'overview' => array( 'label' => __( 'Overview', 'convertrack-click-conversion-analytics' ), 'icon' => 'chart-area', 'page' => 'convertrack' ),
+			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
+			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'visibility', 'page' => 'convertrack-heatmaps' ),
+			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
 		);
 		?>
 		<div class="cvtrk-header">
 			<h1 class="cvtrk-brand">
 				<span class="dashicons dashicons-chart-line"></span>
-				<?php esc_html_e( 'Convertrack', 'convertrack' ); ?>
+				<?php esc_html_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>
 				<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
 			</h1>
 			<div class="cvtrk-live">
 				<span class="cvtrk-dot"></span>
 				<b data-cvtrk="active">–</b>
-				<span><?php esc_html_e( 'on the site now', 'convertrack' ); ?></span>
+				<span><?php esc_html_e( 'on the site now', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<nav class="cvtrk-tabs">
@@ -172,8 +173,8 @@ class Admin {
 	 */
 	public function add_menu() {
 		add_menu_page(
-			__( 'Convertrack', 'convertrack' ),
-			__( 'Convertrack', 'convertrack' ),
+			__( 'Convertrack', 'convertrack-click-conversion-analytics' ),
+			__( 'Convertrack', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			self::MENU_SLUG,
 			array( $this, 'render_overview' ),
@@ -183,8 +184,8 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Overview', 'convertrack' ),
-			__( 'Overview', 'convertrack' ),
+			__( 'Overview', 'convertrack-click-conversion-analytics' ),
+			__( 'Overview', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			self::MENU_SLUG,
 			array( $this, 'render_overview' )
@@ -192,8 +193,8 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Pages & Buttons', 'convertrack' ),
-			__( 'Pages & Buttons', 'convertrack' ),
+			__( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ),
+			__( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-pages',
 			array( $this, 'render_pages' )
@@ -201,8 +202,17 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Settings', 'convertrack' ),
-			__( 'Settings', 'convertrack' ),
+			__( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
+			__( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
+			'manage_options',
+			'convertrack-heatmaps',
+			array( $this, 'render_heatmaps' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			__( 'Settings', 'convertrack-click-conversion-analytics' ),
+			__( 'Settings', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-settings',
 			array( $this, 'render_settings' )
@@ -232,7 +242,7 @@ class Admin {
 	 */
 	public function action_links( $links ) {
 		$url = admin_url( 'admin.php?page=convertrack-settings' );
-		array_unshift( $links, '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Settings', 'convertrack' ) . '</a>' );
+		array_unshift( $links, '<a href="' . esc_url( $url ) . '">' . esc_html__( 'Settings', 'convertrack-click-conversion-analytics' ) . '</a>' );
 		return $links;
 	}
 
@@ -271,25 +281,31 @@ class Admin {
 				'exportUrl'      => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_export' ) ),
 				'exportNonce'    => wp_create_nonce( 'convertrack_export' ),
 				'i18n'           => array(
-					'liveNow'      => __( 'visitors on the site now', 'convertrack' ),
-					'clicks'       => __( 'Clicks', 'convertrack' ),
-					'pageviews'    => __( 'Pageviews', 'convertrack' ),
-					'conversions'  => __( 'Conversions', 'convertrack' ),
-					'convRate'     => __( 'Conversion rate', 'convertrack' ),
-					'ctr'          => __( 'Click-through rate', 'convertrack' ),
-					'uniques'      => __( 'Unique visitors', 'convertrack' ),
-					'noData'       => __( 'No data yet for this range.', 'convertrack' ),
-					'loading'      => __( 'Loading…', 'convertrack' ),
-					'topButtons'   => __( 'Most clicked buttons', 'convertrack' ),
-					'topPages'     => __( 'Top pages', 'convertrack' ),
-					'page'         => __( 'Page', 'convertrack' ),
-					'button'       => __( 'Button', 'convertrack' ),
-					'count'        => __( 'Count', 'convertrack' ),
-					'allPages'     => __( 'All pages', 'convertrack' ),
-					'source'       => __( 'Source', 'convertrack' ),
-					'visitors'     => __( 'Visitors', 'convertrack' ),
-					'topSources'   => __( 'Traffic sources', 'convertrack' ),
-					'vsPrev'       => __( 'vs. previous period', 'convertrack' ),
+					'liveNow'      => __( 'visitors on the site now', 'convertrack-click-conversion-analytics' ),
+					'clicks'       => __( 'Clicks', 'convertrack-click-conversion-analytics' ),
+					'pageviews'    => __( 'Pageviews', 'convertrack-click-conversion-analytics' ),
+					'conversions'  => __( 'Conversions', 'convertrack-click-conversion-analytics' ),
+					'convRate'     => __( 'Conversion rate', 'convertrack-click-conversion-analytics' ),
+					'ctr'          => __( 'Click-through rate', 'convertrack-click-conversion-analytics' ),
+					'uniques'      => __( 'Unique visitors', 'convertrack-click-conversion-analytics' ),
+					'noData'       => __( 'No data yet for this range.', 'convertrack-click-conversion-analytics' ),
+					'loading'      => __( 'Loading…', 'convertrack-click-conversion-analytics' ),
+					'topButtons'   => __( 'Most clicked buttons', 'convertrack-click-conversion-analytics' ),
+					'topPages'     => __( 'Top pages', 'convertrack-click-conversion-analytics' ),
+					'page'         => __( 'Page', 'convertrack-click-conversion-analytics' ),
+					'button'       => __( 'Button', 'convertrack-click-conversion-analytics' ),
+					'count'        => __( 'Count', 'convertrack-click-conversion-analytics' ),
+					'allPages'     => __( 'All pages', 'convertrack-click-conversion-analytics' ),
+					'source'       => __( 'Source', 'convertrack-click-conversion-analytics' ),
+					'visitors'     => __( 'Visitors', 'convertrack-click-conversion-analytics' ),
+					'topSources'   => __( 'Traffic sources', 'convertrack-click-conversion-analytics' ),
+					'vsPrev'       => __( 'vs. previous period', 'convertrack-click-conversion-analytics' ),
+					'reached'      => __( 'reached this depth', 'convertrack-click-conversion-analytics' ),
+					'clicksHere'   => __( 'clicks', 'convertrack-click-conversion-analytics' ),
+					'showPage'     => __( 'Show page behind heatmap', 'convertrack-click-conversion-analytics' ),
+					'noHeatmap'    => __( 'No heatmap data for this page yet.', 'convertrack-click-conversion-analytics' ),
+					'pageTop'      => __( 'Top of page', 'convertrack-click-conversion-analytics' ),
+					'pageBottom'   => __( 'Bottom of page', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);
@@ -307,6 +323,10 @@ class Admin {
 		$this->render_view( 'pages' );
 	}
 
+	public function render_heatmaps() {
+		$this->render_view( 'heatmap' );
+	}
+
 	public function render_settings() {
 		$this->render_view( 'settings' );
 	}
@@ -318,7 +338,7 @@ class Admin {
 	 */
 	private function render_view( $view ) {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to access this page.', 'convertrack' ) );
+			wp_die( esc_html__( 'You do not have permission to access this page.', 'convertrack-click-conversion-analytics' ) );
 		}
 		$file = CONVERTRACK_DIR . 'admin/views/' . $view . '.php';
 		if ( file_exists( $file ) ) {

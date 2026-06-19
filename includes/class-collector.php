@@ -105,7 +105,7 @@ class Collector {
 		}
 
 		$type = isset( $raw['t'] ) ? sanitize_key( $raw['t'] ) : 'click';
-		if ( ! in_array( $type, array( 'click', 'pageview' ), true ) ) {
+		if ( ! in_array( $type, array( 'click', 'pageview', 'scroll' ), true ) ) {
 			return null;
 		}
 
@@ -146,6 +146,9 @@ class Collector {
 			'utm_source'       => self::truncate( sanitize_text_field( isset( $raw['us'] ) ? $raw['us'] : '' ), 100 ),
 			'utm_medium'       => self::truncate( sanitize_text_field( isset( $raw['um'] ) ? $raw['um'] : '' ), 100 ),
 			'utm_campaign'     => self::truncate( sanitize_text_field( isset( $raw['uc'] ) ? $raw['uc'] : '' ), 150 ),
+			'pos_x'            => min( 1000, isset( $raw['cx'] ) ? absint( $raw['cx'] ) : 0 ),
+			'pos_y'            => min( 1000, isset( $raw['cy'] ) ? absint( $raw['cy'] ) : 0 ),
+			'scroll_depth'     => min( 100, isset( $raw['sd'] ) ? absint( $raw['sd'] ) : 0 ),
 			'created_at'       => $now,
 		);
 	}

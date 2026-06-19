@@ -42,7 +42,7 @@ class Cron {
 		if ( ! isset( $schedules['convertrack_5min'] ) ) {
 			$schedules['convertrack_5min'] = array(
 				'interval' => 5 * MINUTE_IN_SECONDS,
-				'display'  => __( 'Every 5 minutes (Convertrack)', 'convertrack' ),
+				'display'  => __( 'Every 5 minutes (Convertrack)', 'convertrack-click-conversion-analytics' ),
 			);
 		}
 		return $schedules;

@@ -477,6 +477,61 @@
 	padding: 18px 4px;
 }
 
+/* Heatmaps ---------------------------------------------------------------- */
+.cvtrk-heatmap-stage {
+	position: relative;
+	width: 100%;
+	min-height: 220px;
+	border: 1px solid var(--cvtrk-border);
+	background: #fff;
+	overflow: hidden;
+}
+
+.cvtrk-heatmap-stage.cvtrk-no-frame {
+	background: #f1f1f1;
+	min-height: 480px;
+}
+
+.cvtrk-heatmap-frame {
+	display: block;
+	width: 100%;
+	border: 0;
+	background: #fff;
+}
+
+.cvtrk-heatmap-canvas {
+	position: absolute;
+	top: 0;
+	left: 0;
+	pointer-events: none;
+}
+
+.cvtrk-scrollmap {
+	border: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-scrollband {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 9px 12px;
+	border-bottom: 1px solid var(--cvtrk-border);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	color: var(--cvtrk-ink);
+}
+
+.cvtrk-scrollband:last-child {
+	border-bottom: 0;
+}
+
+.cvtrk-note {
+	font-size: 12px;
+	color: var(--cvtrk-muted);
+	margin: 10px 0 0;
+}
+
 /* Tools / settings ------------------------------------------------------- */
 .cvtrk-notice {
 	border: 1px solid var(--cvtrk-border);

@@ -63,7 +63,7 @@ final class Plugin {
 		// Keep schema current after plugin updates without needing reactivation.
 		Database::maybe_upgrade();
 
-		load_plugin_textdomain( 'convertrack', false, dirname( CONVERTRACK_BASENAME ) . '/languages' );
+		load_plugin_textdomain( 'convertrack-click-conversion-analytics', false, dirname( CONVERTRACK_BASENAME ) . '/languages' );
 
 		$this->rest     = new Rest_Controller();
 		$this->frontend = new Frontend();

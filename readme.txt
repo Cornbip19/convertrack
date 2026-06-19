@@ -1,10 +1,10 @@
 === Convertrack — Click & Conversion Analytics ===
 Contributors: Cornbip19
-Tags: analytics, click tracking, conversion, real-time
+Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
-Tested up to: 6.7
+Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -17,6 +17,7 @@ Convertrack answers three questions about your site:
 1. **Are visitors clicking?** Every click on a button, link, input or block button is recorded with its label, location and target.
 2. **Is the page converting?** Mark elements or destination URLs as conversions and watch the conversion rate per page.
 3. **Who's here now?** A live counter shows how many visitors are currently on the site, and what they're viewing.
+4. **Where do they look?** Per-page heatmaps show a click map and a scroll-depth breakdown — how far down each page visitors actually browse.
 
 **Built for large sites**
 
@@ -69,6 +70,9 @@ No. The plugin does not send any data to external or third-party services. (The 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 1.2.0 =
+* Page heatmaps: a new Heatmaps screen shows a per-page click map (where visitors click) and a scroll-depth breakdown (how far down the page they browse). The tracker now records click position and maximum scroll depth, stored anonymously as percentages of the page.
 
 = 1.1.0 =
 * Privacy & directory compliance: "Do Not Track" is now honored by default, a suggested privacy-policy paragraph is registered, and a documented `convertrack_skip_tracking` filter lets consent plugins gate tracking.

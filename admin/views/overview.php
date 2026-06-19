@@ -14,31 +14,31 @@ defined( 'ABSPATH' ) || exit;
 
 	<div class="cvtrk-toolbar">
 		<label class="cvtrk-field">
-			<?php esc_html_e( 'Date range', 'convertrack' ); ?>
+			<?php esc_html_e( 'Date range', 'convertrack-click-conversion-analytics' ); ?>
 			<select id="convertrack-range" data-cvtrk="range">
-				<option value="1"><?php esc_html_e( 'Today', 'convertrack' ); ?></option>
-				<option value="7" selected><?php esc_html_e( 'Last 7 days', 'convertrack' ); ?></option>
-				<option value="30"><?php esc_html_e( 'Last 30 days', 'convertrack' ); ?></option>
-				<option value="90"><?php esc_html_e( 'Last 90 days', 'convertrack' ); ?></option>
+				<option value="1"><?php esc_html_e( 'Today', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="7" selected><?php esc_html_e( 'Last 7 days', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="30"><?php esc_html_e( 'Last 30 days', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="90"><?php esc_html_e( 'Last 90 days', 'convertrack-click-conversion-analytics' ); ?></option>
 			</select>
 		</label>
 
-		<span class="cvtrk-field"><?php esc_html_e( 'Export CSV', 'convertrack' ); ?></span>
-		<a class="button" data-cvtrk-export data-type="buttons"><?php esc_html_e( 'Buttons', 'convertrack' ); ?></a>
-		<a class="button" data-cvtrk-export data-type="pages"><?php esc_html_e( 'Pages', 'convertrack' ); ?></a>
-		<a class="button" data-cvtrk-export data-type="sources"><?php esc_html_e( 'Sources', 'convertrack' ); ?></a>
-		<a class="button" data-cvtrk-export data-type="daily"><?php esc_html_e( 'Daily', 'convertrack' ); ?></a>
+		<span class="cvtrk-field"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></span>
+		<a class="button" data-cvtrk-export data-type="buttons"><?php esc_html_e( 'Buttons', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="pages"><?php esc_html_e( 'Pages', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="sources"><?php esc_html_e( 'Sources', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="daily"><?php esc_html_e( 'Daily', 'convertrack-click-conversion-analytics' ); ?></a>
 	</div>
 
 	<div class="cvtrk-kpis">
 		<?php
 		$kpis = array(
-			array( 'key' => 'pageviews', 'icon' => 'visibility', 'label' => __( 'Pageviews', 'convertrack' ), 'class' => '' ),
-			array( 'key' => 'clicks', 'icon' => 'admin-links', 'label' => __( 'Button clicks', 'convertrack' ), 'class' => '' ),
-			array( 'key' => 'conversions', 'icon' => 'yes-alt', 'label' => __( 'Conversions', 'convertrack' ), 'class' => 'is-accent' ),
-			array( 'key' => 'conversion_rate', 'icon' => 'chart-bar', 'label' => __( 'Conversion rate', 'convertrack' ), 'class' => 'is-accent' ),
-			array( 'key' => 'click_through', 'icon' => 'chart-line', 'label' => __( 'Click-through rate', 'convertrack' ), 'class' => 'is-amber' ),
-			array( 'key' => 'unique_visitors', 'icon' => 'groups', 'label' => __( 'Unique visitors', 'convertrack' ), 'class' => '' ),
+			array( 'key' => 'pageviews', 'icon' => 'visibility', 'label' => __( 'Pageviews', 'convertrack-click-conversion-analytics' ), 'class' => '' ),
+			array( 'key' => 'clicks', 'icon' => 'admin-links', 'label' => __( 'Button clicks', 'convertrack-click-conversion-analytics' ), 'class' => '' ),
+			array( 'key' => 'conversions', 'icon' => 'yes-alt', 'label' => __( 'Conversions', 'convertrack-click-conversion-analytics' ), 'class' => 'is-accent' ),
+			array( 'key' => 'conversion_rate', 'icon' => 'chart-bar', 'label' => __( 'Conversion rate', 'convertrack-click-conversion-analytics' ), 'class' => 'is-accent' ),
+			array( 'key' => 'click_through', 'icon' => 'chart-line', 'label' => __( 'Click-through rate', 'convertrack-click-conversion-analytics' ), 'class' => 'is-amber' ),
+			array( 'key' => 'unique_visitors', 'icon' => 'groups', 'label' => __( 'Unique visitors', 'convertrack-click-conversion-analytics' ), 'class' => '' ),
 		);
 		foreach ( $kpis as $kpi ) :
 			?>
@@ -55,31 +55,31 @@ defined( 'ABSPATH' ) || exit;
 
 	<div class="cvtrk-card">
 		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Activity', 'convertrack' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Pageviews vs. button clicks per day', 'convertrack' ); ?></span>
+			<h2><?php esc_html_e( 'Activity', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<span class="cvtrk-card-sub"><?php esc_html_e( 'Pageviews vs. button clicks per day', 'convertrack-click-conversion-analytics' ); ?></span>
 		</div>
 		<div class="cvtrk-card-body">
-			<div class="cvtrk-chart" data-cvtrk="chart"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+			<div class="cvtrk-chart" data-cvtrk="chart"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 
 	<div class="cvtrk-grid">
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Most clicked buttons', 'convertrack' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Across the whole site', 'convertrack' ); ?></span>
+				<h2><?php esc_html_e( 'Most clicked buttons', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Across the whole site', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div data-cvtrk="top-buttons"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+				<div data-cvtrk="top-buttons"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Top converting pages', 'convertrack' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Ranked by clicks', 'convertrack' ); ?></span>
+				<h2><?php esc_html_e( 'Top converting pages', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Ranked by clicks', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div data-cvtrk="top-pages"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+				<div data-cvtrk="top-pages"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 	</div>
@@ -87,20 +87,20 @@ defined( 'ABSPATH' ) || exit;
 	<div class="cvtrk-grid">
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Traffic sources', 'convertrack' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Where visitors come from', 'convertrack' ); ?></span>
+				<h2><?php esc_html_e( 'Traffic sources', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Where visitors come from', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div data-cvtrk="top-sources"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+				<div data-cvtrk="top-sources"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Live — who is on the site right now', 'convertrack' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Refreshes automatically', 'convertrack' ); ?></span>
+				<h2><?php esc_html_e( 'Live — who is on the site right now', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Refreshes automatically', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div data-cvtrk="active-sessions"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack' ); ?></p></div>
+				<div data-cvtrk="active-sessions"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 	</div>

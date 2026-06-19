@@ -36,7 +36,8 @@ jobs:
       - name: Build WordPress.org zip (no self-updater — directory handles updates)
         run: |
           PLUGIN=convertrack
-          mkdir -p wporg/$PLUGIN
+          WPORG_PLUGIN=convertrack-click-conversion-analytics
+          mkdir -p wporg/$WPORG_PLUGIN
           rsync -a \
             --exclude '.git' \
             --exclude '.github' \
@@ -46,8 +47,8 @@ jobs:
             --exclude '.gitignore' \
             --exclude 'README.md' \
             --exclude 'includes/class-updater.php' \
-            ./ wporg/$PLUGIN/
-          cd wporg && zip -r "../$PLUGIN-wordpress-org.zip" "$PLUGIN"
+            ./ wporg/$WPORG_PLUGIN/
+          cd wporg && zip -r "../$PLUGIN-wordpress-org.zip" "$WPORG_PLUGIN"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
