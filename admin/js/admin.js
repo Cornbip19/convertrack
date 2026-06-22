@@ -452,6 +452,60 @@
 		box.appendChild( t );
 	}
 
+	function keywordSourceLabel( source ) {
+		source = String( source || '' );
+		if ( source === 'utm_term' ) {
+			return I18N.utmTerm || 'UTM term';
+		}
+		if ( source === 'site_search' ) {
+			return I18N.siteSearch || 'Site search';
+		}
+		if ( source === 'referrer_query' ) {
+			return I18N.referrerQuery || 'Search referrer';
+		}
+		if ( source === 'organic_not_provided' ) {
+			return I18N.notProvided || 'Not provided';
+		}
+		return source || ( I18N.unknown || 'Unknown' );
+	}
+
+	function renderSearchTerms( targetKey, items, enabled ) {
+		var box = attr( targetKey );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! enabled ) {
+			empty( box, I18N.keywordsOff || 'Enable search keyword tracking in Settings to collect supported queries.' );
+			return;
+		}
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noSearchTerms || 'No search keywords for this range.' );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.pageviews || 0 ); } );
+
+		var t = table( [
+			{ label: I18N.keyword || 'Keyword' },
+			{ label: I18N.source || 'Source' },
+			{ label: I18N.pageviews || 'Pageviews', num: true },
+			{ label: I18N.clicks || 'Clicks', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( it.keyword || '', keywordSourceLabel( it.keyword_source ) ) );
+			tr.appendChild( labelCell( it.traffic_source || '', '' ) );
+			tr.appendChild( clicksCell( it.pageviews, max ) );
+			tr.appendChild( numCell( it.clicks ) );
+			tr.appendChild( convCell( it.conversions ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
 	function setLive( count ) {
 		var node = attr( 'active' );
 		if ( node ) {
@@ -486,6 +540,35 @@
 		} );
 		box.appendChild( map );
 		box.appendChild( el( 'p', 'cvtrk-note', num( samples ) + ' ' + ( I18N.visitors || 'Visitors' ).toLowerCase() + ' sampled' ) );
+	}
+
+	function renderHeatmapElements( items ) {
+		var box = attr( 'heatmap-elements' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noHeatmap || 'No heatmap data for this page yet.' );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
+		var t = table( [
+			{ label: I18N.button || 'Element' },
+			{ label: I18N.clicks || 'Clicks', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var tr = el( 'tr' );
+			var sub = it.selector || it.href || '';
+			tr.appendChild( labelCell( it.label || it.selector || '', sub ) );
+			tr.appendChild( clicksCell( it.clicks, max ) );
+			tr.appendChild( convCell( it.conversions ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
 	}
 
 	function frameDoc( frame ) {
@@ -547,14 +630,19 @@
 		);
 	}
 
-	function drawHeatCanvas( canvas, stage, points, maxW, height, frame, mode ) {
-		var w = stage.clientWidth || ( frame && frame.clientWidth ) || 600;
+	function drawHeatCanvas( canvas, page, markers, points, maxW, height, frame, mode ) {
+		var w = page.clientWidth || ( frame && frame.clientWidth ) || 600;
 		var h = Math.max( 240, Math.min( height || Math.round( w * 1.4 ), 8000 ) );
-		stage.style.height = h + 'px';
+		page.style.height = h + 'px';
 		canvas.width = w;
 		canvas.height = h;
 		canvas.style.width = w + 'px';
 		canvas.style.height = h + 'px';
+		if ( markers ) {
+			markers.style.width = w + 'px';
+			markers.style.height = h + 'px';
+			clear( markers );
+		}
 		var ctx = canvas.getContext( '2d' );
 		ctx.clearRect( 0, 0, w, h );
 		if ( ! points || ! points.length ) {
@@ -578,6 +666,16 @@
 			ctx.beginPath();
 			ctx.arc( x, y, r, 0, 6.2832 );
 			ctx.fill();
+			if ( markers ) {
+				var marker = el( 'span', 'cvtrk-heatmap-marker' );
+				var size = Math.max( 8, Math.min( 20, Math.round( 7 + ( p.w / ( maxW || 1 ) ) * 13 ) ) );
+				marker.style.left = x + 'px';
+				marker.style.top = y + 'px';
+				marker.style.width = size + 'px';
+				marker.style.height = size + 'px';
+				marker.title = num( p.w ) + ' ' + ( I18N.clicksHere || 'clicks' ) + ( p.selector ? ' - ' + p.selector : '' );
+				markers.appendChild( marker );
+			}
 		} );
 		ctx.globalCompositeOperation = 'source-over';
 	}
@@ -587,6 +685,7 @@
 		var page = attr( 'heatmap-page' );
 		var frame = attr( 'heatmap-frame' );
 		var canvas = attr( 'heatmap-canvas' );
+		var markers = attr( 'heatmap-markers' );
 		var note = attr( 'heatmap-note' );
 		if ( ! stage || ! page || ! canvas ) {
 			return;
@@ -608,13 +707,20 @@
 					var docH = docHeight( frame );
 					if ( docH > 0 ) {
 						frame.style.height = Math.min( docH, 8000 ) + 'px';
-						drawHeatCanvas( canvas, page, points, maxW, docH, frame, mode );
+						drawHeatCanvas( canvas, page, markers, points, maxW, docH, frame, mode );
 					} else {
 						frame.style.display = 'none';
 						stage.classList.add( 'cvtrk-no-frame' );
-						drawHeatCanvas( canvas, page, points, maxW, null, null, 'page' );
+						drawHeatCanvas( canvas, page, markers, points, maxW, null, null, 'page' );
 					}
 				}, 60 );
+				window.setTimeout( function () {
+					var docH = docHeight( frame );
+					if ( docH > 0 ) {
+						frame.style.height = Math.min( docH, 8000 ) + 'px';
+						drawHeatCanvas( canvas, page, markers, points, maxW, docH, frame, mode );
+					}
+				}, 500 );
 			};
 			if ( frame.getAttribute( 'data-snapshot-url' ) !== data.snapshot.url ) {
 				frame.setAttribute( 'data-snapshot-url', data.snapshot.url || '' );
@@ -630,7 +736,7 @@
 			}
 			stage.classList.add( 'cvtrk-no-frame' );
 			page.classList.add( 'cvtrk-no-frame' );
-			drawHeatCanvas( canvas, page, points, maxW, null, null, 'page' );
+			drawHeatCanvas( canvas, page, markers, points, maxW, null, null, 'page' );
 		}
 	}
 
@@ -642,6 +748,7 @@
 		var showChk = attr( 'show-page' );
 		var data = null;
 		var snapshots = {};
+		var resizeTimer = null;
 
 		function mode() {
 			return modeSel ? modeSel.value : 'element';
@@ -690,6 +797,8 @@
 				} )
 				.then( function ( d ) {
 					renderScrollDepth( d.scroll, d.scroll_samples );
+					renderHeatmapElements( d.elements );
+					renderSearchTerms( 'heatmap-keywords', d.search_terms, d.search_keywords_enabled );
 					renderClickMap( d, showChk ? showChk.checked : true, mode() );
 					var meta = attr( 'heatmap-meta' );
 					if ( meta ) {
@@ -753,6 +862,12 @@
 				}
 			} );
 		}
+		window.addEventListener( 'resize', function () {
+			if ( resizeTimer ) {
+				window.clearTimeout( resizeTimer );
+			}
+			resizeTimer = window.setTimeout( renderCurrent, 120 );
+		} );
 		loadPages();
 	}
 
@@ -926,6 +1041,7 @@
 					renderButtons( data.top_buttons );
 					renderPages( data.top_pages, null );
 					renderSources( data.top_sources );
+					renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled );
 					renderCountries( data.top_countries, data.geo_enabled );
 					setLive( data.active );
 					toggleConvHint( data.totals );

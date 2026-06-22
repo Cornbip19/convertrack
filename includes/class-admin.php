@@ -37,6 +37,10 @@ class Admin {
 		}
 		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and by default it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack-click-conversion-analytics' );
 
+		if ( Settings::get( 'track_search_keywords' ) ) {
+			$content .= ' ' . __( 'Search keyword tracking is enabled: Convertrack stores search terms from UTM term parameters, this site search query parameter, and search-engine referrer query strings when browsers provide them. Search engines often hide organic search queries, in which case no keyword is stored.', 'convertrack-click-conversion-analytics' );
+		}
+
 		// When visitor location is enabled, the IP is sent to a geolocation API to
 		// resolve the country only; disclose that here.
 		if ( Settings::get( 'enable_geo' ) ) {
@@ -85,6 +89,15 @@ class Admin {
 				fputcsv( $out, array( 'Source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
 				foreach ( Database::top_sources( $range, 1000 ) as $r ) {
 					fputcsv( $out, array( $r['source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
+				}
+				break;
+
+			case 'keywords':
+				fputcsv( $out, array( 'Keyword', 'Keyword source', 'Traffic source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
+				if ( Settings::get( 'track_search_keywords' ) ) {
+					foreach ( Database::top_search_terms( $range, 1000, $post ) as $r ) {
+						fputcsv( $out, array( $r['keyword'], $r['keyword_source'], $r['traffic_source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
+					}
 				}
 				break;
 
@@ -357,6 +370,14 @@ class Admin {
 					'dropoffs'           => __( 'Drop-off pages', 'convertrack-click-conversion-analytics' ),
 					'preConversionButtons' => __( 'Buttons clicked before conversion', 'convertrack-click-conversion-analytics' ),
 					'campaign'           => __( 'Campaign', 'convertrack-click-conversion-analytics' ),
+					'keyword'            => __( 'Keyword', 'convertrack-click-conversion-analytics' ),
+					'utmTerm'            => __( 'UTM term', 'convertrack-click-conversion-analytics' ),
+					'siteSearch'         => __( 'Site search', 'convertrack-click-conversion-analytics' ),
+					'referrerQuery'      => __( 'Search referrer', 'convertrack-click-conversion-analytics' ),
+					'notProvided'        => __( 'Not provided', 'convertrack-click-conversion-analytics' ),
+					'keywordsOff'        => __( 'Enable search keyword tracking in Settings to collect supported queries.', 'convertrack-click-conversion-analytics' ),
+					'noSearchTerms'      => __( 'No search keywords for this range.', 'convertrack-click-conversion-analytics' ),
+					'unknown'            => __( 'Unknown', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);

@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.4.0
+Stable tag: 1.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -18,6 +18,7 @@ Convertrack answers three questions about your site:
 2. **Is the page converting?** Mark elements or destination URLs as conversions and watch the conversion rate per page.
 3. **Who's here now?** A live counter shows how many visitors are currently on the site, and what they're viewing.
 4. **Where do they look?** Per-page heatmaps show a click map and a scroll-depth breakdown — how far down each page visitors actually browse.
+5. **Which searches bring them in?** Optional search keyword tracking shows supported UTM terms, site searches, and visible search-referrer queries.
 
 **Built for large sites**
 
@@ -32,6 +33,8 @@ All analytics are stored in your site's own database. No IP addresses, names, or
 
 The only optional exception is **Visitor location** (off by default): when you turn it on, a visitor's IP address is sent to a geolocation service to look up their country. The IP is never stored — only the 2-letter country code — and a CDN country header (e.g. Cloudflare) is used first when available to avoid the external call.
 
+**Search keyword tracking** is also optional and off by default. When enabled, Convertrack stores supported UTM term values, this site's search query parameter, and search-engine referrer query strings when browsers provide them. Modern search engines often hide organic queries, so those visits may appear as not provided.
+
 **Updating**
 
 Installed from WordPress.org, Convertrack updates through your dashboard like any other plugin. The separately distributed self-hosted build can additionally update itself from its GitHub Releases.
@@ -43,6 +46,8 @@ Convertrack is a first-party analytics tool: every event (pageview, click, traff
 By default no visitor data is transmitted to any external or third-party service. The optional **Visitor location** feature (disabled by default) is the single exception: when enabled, a visitor's IP address is sent to a geolocation service (ip-api.com) only to determine their country. The IP address is not stored — only the resulting two-letter country code. If you enable it, disclose this in your privacy policy and gate it behind consent where required.
 
 By default, visitors whose browser sends a "Do Not Track" signal are not tracked. To require explicit cookie/consent before any tracking, return `true` from the `convertrack_skip_tracking` filter until your consent banner is accepted. A suggested privacy-policy paragraph is added to **Settings → Privacy** for inclusion in your site's policy.
+
+The optional **Search keyword tracking** setting stores supported search terms locally in this site's database. It does not contact search providers or Google Search Console.
 
 == Installation ==
 
@@ -59,7 +64,7 @@ For high-traffic sites: (1) disable WP-Cron and trigger `wp-cron.php` from a rea
 Yes. The tracker loads as a static script and the ingestion endpoints are public and cache-exempt, so a full-page cache does not break tracking.
 
 = Where is data stored? =
-In three custom tables: raw events, live sessions, and daily aggregates. No third-party service is contacted for analytics.
+In this site's own database: raw events, live sessions, and daily aggregate tables for pages, sources, countries, and search keywords. No third-party service is contacted for analytics.
 
 = How do conversions work? =
 A conversion is only counted once you define a goal in **Settings → Tracking**. There are two kinds: a **page reached** (add a path such as `/thank-you` or `/order-received` under "Conversion goal: pages reached" — a visit landing there counts), and a **button clicked** (add a CSS selector, or simply put the attribute `data-cvtrk-convert` on the button). Until at least one goal is set, your conversion count stays at zero even with plenty of traffic.
@@ -74,6 +79,12 @@ Not by default. The one optional exception is the **Visitor location** setting (
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 1.5.0 =
+* Optional search keyword tracking: stores supported UTM terms, WordPress site-search terms, and visible search-engine referrer query strings when enabled.
+* Added Search keywords reporting to Overview, Heatmaps, and CSV exports.
+* Redesigned Heatmaps into a full-width viewer with clicked-element details and keyword details.
+* Fixed heatmap overlay alignment while scrolling by keeping the page snapshot, heat layer, and click markers in the same scrollable coordinate space.
 
 = 1.4.0 =
 * Heatmaps now use an anonymous, script-disabled page snapshot instead of loading the live page as the logged-in admin.

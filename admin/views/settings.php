@@ -63,6 +63,19 @@ if ( $cvtrk_updater ) {
 				</td>
 			</tr>
 			<tr>
+				<th scope="row"><?php esc_html_e( 'Track search keywords', 'convertrack-click-conversion-analytics' ); ?></th>
+				<td>
+					<label>
+						<input type="checkbox" name="convertrack_settings[track_search_keywords]" value="1" <?php checked( $s['track_search_keywords'], 1 ); ?> />
+						<?php esc_html_e( 'Store supported search terms from UTM term, this site search, and search-engine referrers when browsers expose them.', 'convertrack-click-conversion-analytics' ); ?>
+					</label>
+					<p class="description">
+						<strong><?php esc_html_e( 'Privacy note:', 'convertrack-click-conversion-analytics' ); ?></strong>
+						<?php esc_html_e( 'This is off by default because keywords can contain user-entered text. Modern search engines often hide organic keywords; those visits will be shown as not provided.', 'convertrack-click-conversion-analytics' ); ?>
+					</p>
+				</td>
+			</tr>
+			<tr>
 				<th scope="row"><label for="cvtrk-conv-url"><?php esc_html_e( 'Conversion goal: pages reached', 'convertrack-click-conversion-analytics' ); ?></label></th>
 				<td>
 					<textarea id="cvtrk-conv-url" class="large-text code" rows="3" name="convertrack_settings[conversion_urls]" placeholder="/thank-you&#10;/order-received&#10;/checkout/success"><?php echo esc_textarea( $s['conversion_urls'] ); ?></textarea>

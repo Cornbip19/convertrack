@@ -207,6 +207,8 @@ class Rest_Controller {
 				'top_buttons'          => $this->decorate_buttons( Database::top_buttons( $range, 25, $post_id ) ),
 				'top_pages'            => $this->decorate_pages( Database::top_pages( $range, 25 ) ),
 				'top_sources'          => Database::top_sources( $range, 8 ),
+				'top_search_terms'     => Settings::get( 'track_search_keywords' ) ? Database::top_search_terms( $range, 12, $post_id ) : array(),
+				'search_keywords_enabled' => (bool) Settings::get( 'track_search_keywords' ),
 				'top_countries'        => Database::top_countries( $range, 10 ),
 				'geo_enabled'          => (bool) Settings::get( 'enable_geo' ),
 				'avg_session_seconds'  => Database::avg_session_seconds( $range ),
@@ -232,6 +234,10 @@ class Rest_Controller {
 		$device  = sanitize_key( (string) $request->get_param( 'device' ) );
 
 		$data            = Database::heatmap_data( $post_id, $range, $device );
+		if ( ! Settings::get( 'track_search_keywords' ) ) {
+			$data['search_terms'] = array();
+		}
+		$data['search_keywords_enabled'] = (bool) Settings::get( 'track_search_keywords' );
 		$data['post_id'] = $post_id;
 		$data['title']   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
 		$data['url']     = $post_id > 0 ? get_permalink( $post_id ) : '';

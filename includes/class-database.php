@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.4.0';
+	const DB_VERSION = '1.5.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -72,6 +72,16 @@ class Database {
 	}
 
 	/**
+	 * Daily search-keyword rollups.
+	 *
+	 * @return string
+	 */
+	public static function search_terms_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'convertrack_search_terms';
+	}
+
+	/**
 	 * Create or update the database schema.
 	 */
 	public static function install() {
@@ -84,6 +94,7 @@ class Database {
 		$daily           = self::daily_table();
 		$sources         = self::sources_table();
 		$geo             = self::geo_table();
+		$search_terms    = self::search_terms_table();
 
 		$sql = array();
 
@@ -109,6 +120,10 @@ class Database {
 			utm_source varchar(100) NOT NULL DEFAULT '',
 			utm_medium varchar(100) NOT NULL DEFAULT '',
 			utm_campaign varchar(150) NOT NULL DEFAULT '',
+			utm_term varchar(150) NOT NULL DEFAULT '',
+			search_keyword varchar(191) NOT NULL DEFAULT '',
+			search_source varchar(50) NOT NULL DEFAULT '',
+			heatmap_selector varchar(255) NOT NULL DEFAULT '',
 			pos_x smallint(5) unsigned NOT NULL DEFAULT 0,
 			pos_y smallint(5) unsigned NOT NULL DEFAULT 0,
 			rel_x smallint(5) unsigned NOT NULL DEFAULT 0,
@@ -125,6 +140,7 @@ class Database {
 			KEY created_at (created_at),
 			KEY post_created (post_id, created_at),
 			KEY type_created (event_type, created_at),
+			KEY search_keyword (search_keyword),
 			KEY visitor_id (visitor_id),
 			KEY session_id (session_id)
 		) $charset_collate;";
@@ -190,6 +206,25 @@ class Database {
 			KEY stat_date (stat_date)
 		) $charset_collate;";
 
+		$sql[] = "CREATE TABLE $search_terms (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			bucket_hash char(32) NOT NULL DEFAULT '',
+			stat_date date NOT NULL,
+			post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			search_keyword varchar(191) NOT NULL DEFAULT '',
+			search_source varchar(50) NOT NULL DEFAULT '',
+			traffic_source varchar(100) NOT NULL DEFAULT '',
+			pageviews int(10) unsigned NOT NULL DEFAULT 0,
+			clicks int(10) unsigned NOT NULL DEFAULT 0,
+			conversions int(10) unsigned NOT NULL DEFAULT 0,
+			unique_visitors int(10) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			UNIQUE KEY bucket_hash (bucket_hash),
+			KEY stat_date (stat_date),
+			KEY keyword_date (search_keyword, stat_date),
+			KEY post_date (post_id, stat_date)
+		) $charset_collate;";
+
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
@@ -217,6 +252,7 @@ class Database {
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::daily_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sources_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::geo_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::search_terms_table() ); // phpcs:ignore WordPress.DB
 	}
 
 	/**
@@ -229,6 +265,7 @@ class Database {
 		$wpdb->query( 'TRUNCATE TABLE ' . self::daily_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::sources_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::geo_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'TRUNCATE TABLE ' . self::search_terms_table() ); // phpcs:ignore WordPress.DB
 		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
 	}
 
@@ -261,11 +298,14 @@ class Database {
 		);
 
 		$source_pool = array(
-			array( 'source' => 'Organic search', 'rh' => 'google.com',           'us' => '',           'um' => '',       'uc' => '' ),
-			array( 'source' => 'Direct',         'rh' => '',                      'us' => '',           'um' => '',       'uc' => '' ),
-			array( 'source' => 'Social',         'rh' => 'facebook.com',          'us' => 'facebook',   'um' => 'social', 'uc' => 'spring-launch' ),
-			array( 'source' => 'Referral',       'rh' => 'news.ycombinator.com',  'us' => '',           'um' => '',       'uc' => '' ),
-			array( 'source' => 'Newsletter',     'rh' => '',                      'us' => 'newsletter', 'um' => 'email',  'uc' => 'june-digest' ),
+			array( 'source' => 'Organic search', 'rh' => 'google.com',           'us' => '',           'um' => '',       'uc' => '',              'ut' => '',              'kw' => 'analytics plugin',   'ks' => 'referrer_query' ),
+			array( 'source' => 'Organic search', 'rh' => 'bing.com',             'us' => '',           'um' => '',       'uc' => '',              'ut' => '',              'kw' => '',                   'ks' => '' ),
+			array( 'source' => 'Direct',         'rh' => '',                      'us' => '',           'um' => '',       'uc' => '',              'ut' => '',              'kw' => '',                   'ks' => '' ),
+			array( 'source' => 'Social',         'rh' => 'facebook.com',          'us' => 'facebook',   'um' => 'social', 'uc' => 'spring-launch', 'ut' => '',              'kw' => '',                   'ks' => '' ),
+			array( 'source' => 'Referral',       'rh' => 'news.ycombinator.com',  'us' => '',           'um' => '',       'uc' => '',              'ut' => '',              'kw' => '',                   'ks' => '' ),
+			array( 'source' => 'Newsletter',     'rh' => '',                      'us' => 'newsletter', 'um' => 'email',  'uc' => 'june-digest',    'ut' => 'conversion tips', 'kw' => 'conversion tips',    'ks' => 'utm_term' ),
+			array( 'source' => 'Paid search',    'rh' => '',                      'us' => 'google',     'um' => 'cpc',    'uc' => 'brand-search',   'ut' => 'click heatmaps',  'kw' => 'click heatmaps',     'ks' => 'utm_term' ),
+			array( 'source' => 'Direct',         'rh' => '',                      'us' => '',           'um' => '',       'uc' => '',              'ut' => '',              'kw' => 'pricing',            'ks' => 'site_search' ),
 		);
 
 		$country_pool = array( 'US', 'GB', 'CA', 'DE', 'IN', 'AU', 'FR', 'BR', 'NL', 'ES' );
@@ -288,7 +328,7 @@ class Database {
 					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
 					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0,
 					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ), 'country' => $country,
-					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'], 'utm_term' => $src['ut'], 'search_keyword' => $src['kw'], 'search_source' => $src['ks'],
 					'created_at' => gmdate( 'Y-m-d H:i:s', $ts ),
 				);
 
@@ -301,7 +341,7 @@ class Database {
 						'element_tag' => $pick['tag'], 'element_id' => '', 'element_classes' => $pick['cls'],
 						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
 						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop', 'country' => $country,
-						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'], 'utm_term' => $src['ut'], 'search_keyword' => $src['kw'], 'search_source' => $src['ks'], 'heatmap_selector' => $pick['sel'],
 						'pos_x' => wp_rand( 120, 880 ), 'pos_y' => wp_rand( 60, 820 ),
 						'rel_x' => wp_rand( 80, 920 ), 'rel_y' => wp_rand( 80, 920 ),
 						'viewport_w' => 1440, 'viewport_h' => 900, 'document_w' => 1440, 'document_h' => 2200,
@@ -315,7 +355,7 @@ class Database {
 					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
 					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0, 'device_type' => 'desktop', 'country' => $country,
-					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
+					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'], 'utm_term' => $src['ut'], 'search_keyword' => $src['kw'], 'search_source' => $src['ks'],
 					'scroll_depth' => min( 100, wp_rand( 20, 100 ) ),
 					'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 60, 800 ) ),
 				);
@@ -387,6 +427,10 @@ class Database {
 			'utm_source',
 			'utm_medium',
 			'utm_campaign',
+			'utm_term',
+			'search_keyword',
+			'search_source',
+			'heatmap_selector',
 			'pos_x',
 			'pos_y',
 			'rel_x',
@@ -401,7 +445,7 @@ class Database {
 			'created_at',
 		);
 
-		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s)';
+		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s)';
 		$placeholders    = array();
 		$values          = array();
 
@@ -764,6 +808,171 @@ class Database {
 	}
 
 	/**
+	 * Top search keywords over a range. Uses daily rollups for finished days
+	 * and raw events for today so the report stays both fast and current.
+	 *
+	 * @param int    $days    Days back.
+	 * @param int    $limit   Max terms.
+	 * @param int    $post_id Optional post filter (0 = all).
+	 * @param string $device  Device filter: all|desktop|tablet|mobile.
+	 * @return array
+	 */
+	public static function top_search_terms( $days, $limit = 12, $post_id = 0, $device = 'all' ) {
+		global $wpdb;
+
+		$days    = max( 1, (int) $days );
+		$limit   = max( 1, min( 200, (int) $limit ) );
+		$post_id = max( 0, (int) $post_id );
+		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
+		$today   = self::today();
+		$start   = self::date_days_ago( $days - 1 );
+
+		if ( 'all' !== $device ) {
+			return self::merge_search_term_rows( array( self::search_terms_from_raw( $start . ' 00:00:00', $limit, $post_id, $device ) ), $limit );
+		}
+
+		$search_terms = self::search_terms_table();
+		$where        = 'stat_date >= %s AND stat_date < %s';
+		$params       = array( $start, $today );
+
+		if ( $post_id > 0 ) {
+			$where   .= ' AND post_id = %d';
+			$params[] = $post_id;
+		}
+
+		$params[] = $limit * 4;
+
+		// Finished days from the keyword rollup.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$hist = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT search_keyword keyword, search_source keyword_source, traffic_source,
+				        SUM(pageviews) pageviews, SUM(clicks) clicks,
+				        SUM(conversions) conversions, SUM(unique_visitors) visitors
+				 FROM $search_terms
+				 WHERE $where
+				 GROUP BY search_keyword, search_source, traffic_source
+				 ORDER BY pageviews DESC, clicks DESC LIMIT %d",
+				$params
+			),
+			ARRAY_A
+		);
+
+		$today_rows = self::search_terms_from_raw( $today . ' 00:00:00', $limit * 4, $post_id, 'all' );
+
+		return self::merge_search_term_rows( array( $hist, $today_rows ), $limit );
+	}
+
+	/**
+	 * Read keyword rows directly from raw events.
+	 *
+	 * @param string $start   Start datetime.
+	 * @param int    $limit   Max rows.
+	 * @param int    $post_id Optional post filter.
+	 * @param string $device  Device filter.
+	 * @return array
+	 */
+	private static function search_terms_from_raw( $start, $limit, $post_id = 0, $device = 'all' ) {
+		global $wpdb;
+
+		$events  = self::events_table();
+		$where   = 'created_at >= %s';
+		$params  = array( $start );
+		$post_id = max( 0, (int) $post_id );
+		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
+
+		if ( $post_id > 0 ) {
+			$where   .= ' AND post_id = %d';
+			$params[] = $post_id;
+		}
+		if ( 'all' !== $device ) {
+			$where   .= ' AND device_type = %s';
+			$params[] = $device;
+		}
+
+		$params[] = max( 1, min( 800, (int) $limit ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT
+				        CASE
+							WHEN search_keyword <> '' THEN search_keyword
+							WHEN source='Organic search' THEN '(not provided)'
+							ELSE ''
+						END AS keyword,
+				        CASE
+							WHEN search_keyword <> '' THEN search_source
+							WHEN source='Organic search' THEN 'organic_not_provided'
+							ELSE ''
+						END AS keyword_source,
+				        source AS traffic_source,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions,
+				        COUNT(DISTINCT visitor_id) visitors
+				 FROM $events
+				 WHERE $where
+				 GROUP BY keyword, keyword_source, traffic_source
+				 HAVING keyword <> ''
+				 ORDER BY pageviews DESC, clicks DESC LIMIT %d",
+				$params
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Merge keyword rows from rollups and raw events.
+	 *
+	 * @param array $sets  Sets of rows.
+	 * @param int   $limit Max rows.
+	 * @return array
+	 */
+	private static function merge_search_term_rows( array $sets, $limit ) {
+		$map = array();
+		foreach ( $sets as $rows ) {
+			foreach ( (array) $rows as $r ) {
+				$keyword = trim( (string) $r['keyword'] );
+				if ( '' === $keyword ) {
+					continue;
+				}
+				$keyword_source = '' === (string) $r['keyword_source'] ? 'unknown' : (string) $r['keyword_source'];
+				$traffic_source = '' === (string) $r['traffic_source'] ? 'Direct' : (string) $r['traffic_source'];
+				$key            = $keyword_source . '|' . $keyword . '|' . $traffic_source;
+				if ( ! isset( $map[ $key ] ) ) {
+					$map[ $key ] = array(
+						'keyword'        => $keyword,
+						'keyword_source' => $keyword_source,
+						'traffic_source' => $traffic_source,
+						'pageviews'      => 0,
+						'clicks'         => 0,
+						'conversions'    => 0,
+						'visitors'       => 0,
+					);
+				}
+				$map[ $key ]['pageviews']   += (int) $r['pageviews'];
+				$map[ $key ]['clicks']      += (int) $r['clicks'];
+				$map[ $key ]['conversions'] += (int) $r['conversions'];
+				$map[ $key ]['visitors']    += (int) $r['visitors'];
+			}
+		}
+
+		$list = array_values( $map );
+		usort(
+			$list,
+			function ( $a, $b ) {
+				if ( (int) $a['pageviews'] === (int) $b['pageviews'] ) {
+					return (int) $b['clicks'] - (int) $a['clicks'];
+				}
+				return (int) $b['pageviews'] - (int) $a['pageviews'];
+			}
+		);
+
+		return array_slice( $list, 0, max( 1, (int) $limit ) );
+	}
+
+	/**
 	 * Visitors by country over a range (rollups + today live), merged.
 	 *
 	 * @param int $days  Days back.
@@ -905,7 +1114,7 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$clicks = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT element_selector sel,
+				"SELECT COALESCE(NULLIF(heatmap_selector,''), element_selector) sel,
 				        ROUND(pos_x/10) gx,
 				        ROUND(pos_y/10) gy,
 				        ROUND(rel_x/10) erx,
@@ -994,10 +1203,52 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND $metric_where", $click_total_params ) );
 
+		$element_params = array( $post_id, $start );
+		$element_where  = "event_type='click' AND post_id=%d AND created_at >= %s";
+		if ( 'all' !== $device ) {
+			$element_where   .= ' AND device_type=%s';
+			$element_params[] = $device;
+		}
+		$element_params[] = 20;
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$elements = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT element_selector,
+				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1) element_text,
+				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_href)),'|||',-1) element_href,
+				        COUNT(*) clicks,
+				        SUM(is_conversion) conversions
+				 FROM $events
+				 WHERE $element_where
+				 GROUP BY element_selector
+				 ORDER BY clicks DESC LIMIT %d",
+				$element_params
+			),
+			ARRAY_A
+		);
+
+		$element_rows = array();
+		foreach ( $elements as $row ) {
+			$label = trim( (string) $row['element_text'] );
+			if ( '' === $label ) {
+				$label = (string) $row['element_selector'];
+			}
+			$element_rows[] = array(
+				'label'       => $label,
+				'selector'    => (string) $row['element_selector'],
+				'href'        => (string) $row['element_href'],
+				'clicks'      => (int) $row['clicks'],
+				'conversions' => (int) $row['conversions'],
+			);
+		}
+
 		return array(
 			'points'         => $points,
 			'max_weight'     => $max_w,
 			'scroll'         => $scroll,
+			'elements'       => $element_rows,
+			'search_terms'   => self::top_search_terms( $days, 10, $post_id, $device ),
 			'pageviews'      => $pageviews,
 			'clicks'         => $click_total,
 			'scroll_samples' => $total_scroll,
@@ -1371,6 +1622,7 @@ class Database {
 		$daily   = self::daily_table();
 		$sources = self::sources_table();
 		$geo     = self::geo_table();
+		$search_terms = self::search_terms_table();
 		$start   = $date . ' 00:00:00';
 		$end     = $date . ' 23:59:59';
 
@@ -1381,6 +1633,8 @@ class Database {
 		$wpdb->query( $wpdb->prepare( "DELETE FROM $sources WHERE stat_date = %s", $date ) );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( $wpdb->prepare( "DELETE FROM $geo WHERE stat_date = %s", $date ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( $wpdb->prepare( "DELETE FROM $search_terms WHERE stat_date = %s", $date ) );
 
 		// Click buckets grouped by selector.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -1508,6 +1762,53 @@ class Database {
 				)
 			);
 		}
+
+		// Search-keyword buckets grouped by page, keyword and traffic source.
+		// Organic visits with no visible query are reported as not provided.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$term_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT post_id,
+				        CASE
+							WHEN search_keyword <> '' THEN search_keyword
+							WHEN source='Organic search' THEN '(not provided)'
+							ELSE ''
+						END AS keyword,
+				        CASE
+							WHEN search_keyword <> '' THEN search_source
+							WHEN source='Organic search' THEN 'organic_not_provided'
+							ELSE ''
+						END AS keyword_source,
+				        source AS traffic_source,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) AS conversions,
+				        COUNT(DISTINCT visitor_id) AS uniques
+				 FROM $events
+				 WHERE created_at BETWEEN %s AND %s
+				 GROUP BY post_id, keyword, keyword_source, traffic_source
+				 HAVING keyword <> ''",
+				$start,
+				$end
+			),
+			ARRAY_A
+		);
+
+		foreach ( $term_rows as $row ) {
+			self::upsert_search_term_bucket(
+				$date,
+				(int) $row['post_id'],
+				(string) $row['keyword'],
+				(string) $row['keyword_source'],
+				'' === (string) $row['traffic_source'] ? 'Direct' : (string) $row['traffic_source'],
+				array(
+					'pageviews'       => (int) $row['pageviews'],
+					'clicks'          => (int) $row['clicks'],
+					'conversions'     => (int) $row['conversions'],
+					'unique_visitors' => (int) $row['uniques'],
+				)
+			);
+		}
 	}
 
 	/**
@@ -1539,6 +1840,49 @@ class Database {
 				$hash,
 				$date,
 				$country,
+				(int) $metrics['pageviews'],
+				(int) $metrics['clicks'],
+				(int) $metrics['conversions'],
+				(int) $metrics['unique_visitors']
+			)
+		);
+	}
+
+	/**
+	 * Upsert a single search-keyword bucket for a day.
+	 *
+	 * @param string $date           Y-m-d.
+	 * @param int    $post_id        Post ID.
+	 * @param string $keyword        Search keyword, or "(not provided)".
+	 * @param string $keyword_source Keyword source label.
+	 * @param string $traffic_source Traffic channel label.
+	 * @param array  $metrics        pageviews/clicks/conversions/unique_visitors.
+	 */
+	private static function upsert_search_term_bucket( $date, $post_id, $keyword, $keyword_source, $traffic_source, array $metrics ) {
+		global $wpdb;
+
+		$hash         = md5( $date . '|search|' . (int) $post_id . '|' . $keyword_source . '|' . $keyword . '|' . $traffic_source );
+		$search_terms = self::search_terms_table();
+
+		$sql = "INSERT INTO $search_terms
+			(bucket_hash, stat_date, post_id, search_keyword, search_source, traffic_source, pageviews, clicks, conversions, unique_visitors)
+			VALUES (%s, %s, %d, %s, %s, %s, %d, %d, %d, %d)
+			ON DUPLICATE KEY UPDATE
+				pageviews = pageviews + VALUES(pageviews),
+				clicks = clicks + VALUES(clicks),
+				conversions = conversions + VALUES(conversions),
+				unique_visitors = unique_visitors + VALUES(unique_visitors)";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query(
+			$wpdb->prepare(
+				$sql,
+				$hash,
+				$date,
+				(int) $post_id,
+				self::truncate( $keyword, 191 ),
+				self::truncate( $keyword_source, 50 ),
+				self::truncate( $traffic_source, 100 ),
 				(int) $metrics['pageviews'],
 				(int) $metrics['clicks'],
 				(int) $metrics['conversions'],

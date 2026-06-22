@@ -27,6 +27,7 @@ defined( 'ABSPATH' ) || exit;
 		<a class="button" data-cvtrk-export data-type="buttons"><?php esc_html_e( 'Buttons', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="button" data-cvtrk-export data-type="pages"><?php esc_html_e( 'Pages', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="button" data-cvtrk-export data-type="sources"><?php esc_html_e( 'Sources', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="button" data-cvtrk-export data-type="keywords"><?php esc_html_e( 'Keywords', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="button" data-cvtrk-export data-type="countries"><?php esc_html_e( 'Countries', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="button" data-cvtrk-export data-type="daily"><?php esc_html_e( 'Daily', 'convertrack-click-conversion-analytics' ); ?></a>
 	</div>
@@ -102,6 +103,15 @@ defined( 'ABSPATH' ) || exit;
 			</div>
 			<div class="cvtrk-card-body">
 				<div data-cvtrk="top-sources"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			</div>
+		</div>
+		<div class="cvtrk-card">
+			<div class="cvtrk-card-head">
+				<h2><?php esc_html_e( 'Search keywords', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Queries and terms visitors used', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+			<div class="cvtrk-card-body">
+				<div data-cvtrk="top-search-terms"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 		<div class="cvtrk-card">

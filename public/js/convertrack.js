@@ -58,7 +58,8 @@
 
 	var queue = [];
 	var device = detectDevice();
-	var source = detectSource();
+	var detectedSource = detectSource();
+	var source = resolveAcquisitionSource( detectedSource );
 	var selector = buildSelector( cfg.selectors );
 	var batchMax = cfg.batchMax > 0 ? cfg.batchMax : 25;
 	var maxScroll = 0;
@@ -93,6 +94,7 @@
 
 		var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
 		var coords = clickPosition( e, el );
+		var attr = eventAttribution();
 		queue.push( {
 			t: 'click',
 			pid: cfg.postId || 0,
@@ -103,14 +105,18 @@
 			cls: elementClasses( el ),
 			txt: elementText( el ),
 			sel: cssPath( el ),
+			hsel: heatmapPath( el ),
 			href: href,
 			conv: isConversion( el, href ) ? 1 : 0,
 			dev: device,
-			src: source.src,
-			rh: source.rh,
-			us: source.us,
-			um: source.um,
-			uc: source.uc,
+			src: attr.src,
+			rh: attr.rh,
+			us: attr.us,
+			um: attr.um,
+			uc: attr.uc,
+			ut: attr.ut,
+			kw: attr.kw,
+			ks: attr.ks,
 			cx: coords.cx,
 			cy: coords.cy,
 			rx: coords.rx,
@@ -137,6 +143,7 @@
 	 * Pageview + heartbeat
 	 * ----------------------------------------------------------------- */
 
+	var pageAttr = eventAttribution();
 	queue.push( {
 		t: 'pageview',
 		pid: cfg.postId || 0,
@@ -150,11 +157,14 @@
 		href: '',
 		conv: isConversionUrl( currentPath() ) ? 1 : 0,
 		dev: device,
-		src: source.src,
-		rh: source.rh,
-		us: source.us,
-		um: source.um,
-		uc: source.uc
+		src: pageAttr.src,
+		rh: pageAttr.rh,
+		us: pageAttr.us,
+		um: pageAttr.um,
+		uc: pageAttr.uc,
+		ut: pageAttr.ut,
+		kw: pageAttr.kw,
+		ks: pageAttr.ks
 	} );
 
 	heartbeat();
@@ -251,6 +261,45 @@
 
 	function touchSession() {
 		store.set( 'cvtrk_sid', sessionId + '|' + nowMs() );
+	}
+
+	function normalizeSource( src ) {
+		src = src || {};
+		return {
+			src: String( src.src || 'Direct' ).substring( 0, 100 ),
+			rh: String( src.rh || '' ).substring( 0, 191 ),
+			us: String( src.us || '' ).substring( 0, 100 ),
+			um: String( src.um || '' ).substring( 0, 100 ),
+			uc: String( src.uc || '' ).substring( 0, 150 ),
+			ut: String( src.ut || '' ).substring( 0, 150 ),
+			kw: String( src.kw || '' ).substring( 0, 191 ),
+			ks: String( src.ks || '' ).substring( 0, 50 )
+		};
+	}
+
+	function resolveAcquisitionSource( current ) {
+		var key = 'cvtrk_acq_' + sessionId;
+		var raw = store.get( key );
+		if ( raw ) {
+			try {
+				return normalizeSource( JSON.parse( raw ) );
+			} catch ( e ) {} // eslint-disable-line no-empty
+		}
+		current = normalizeSource( current );
+		store.set( key, JSON.stringify( current ) );
+		return current;
+	}
+
+	function eventAttribution() {
+		var out = normalizeSource( source );
+		// On-site search is page-specific, so preserve the first-touch traffic
+		// source while attaching the current search term to this page's events.
+		if ( cfg.trackSearchKeywords && detectedSource && detectedSource.ks === 'site_search' && detectedSource.kw ) {
+			out.kw = detectedSource.kw;
+			out.ks = detectedSource.ks;
+			out.ut = detectedSource.ut || out.ut;
+		}
+		return out;
 	}
 
 	/* ----------------------------------------------------------------- *
@@ -351,6 +400,43 @@
 		return parts.join( '>' ).substring( 0, 255 );
 	}
 
+	function heatmapPath( el ) {
+		var parts = [];
+		var node = el;
+		var depth = 0;
+		while ( node && node.nodeType === 1 && depth < 9 ) {
+			var sel = tagOf( node );
+			var nodeId = stableId( node );
+			if ( nodeId ) {
+				parts.unshift( sel + '#' + nodeId );
+				break;
+			}
+			var parent = node.parentNode;
+			if ( parent && parent.children ) {
+				var pos = 1;
+				var same = 0;
+				for ( var i = 0; i < parent.children.length; i++ ) {
+					if ( parent.children[ i ].tagName === node.tagName ) {
+						same++;
+						if ( parent.children[ i ] === node ) {
+							pos = same;
+						}
+					}
+				}
+				if ( same > 1 ) {
+					sel += ':nth-of-type(' + pos + ')';
+				}
+			}
+			parts.unshift( sel );
+			if ( sel === 'html' ) {
+				break;
+			}
+			node = parent;
+			depth++;
+		}
+		return parts.join( '>' ).substring( 0, 255 );
+	}
+
 	function isConversion( el, href ) {
 		// An internal link to a goal URL is counted on its destination pageview,
 		// so never flag the click for it — even when the element also matches a
@@ -440,6 +526,24 @@
 		}
 	}
 
+	function referrerParam( names ) {
+		try {
+			if ( ! document.referrer ) {
+				return '';
+			}
+			var a = document.createElement( 'a' );
+			a.href = document.referrer;
+			var query = a.search || '';
+			for ( var i = 0; i < names.length; i++ ) {
+				var m = new RegExp( '[?&]' + names[ i ] + '=([^&#]*)' ).exec( query );
+				if ( m ) {
+					return decodeURIComponent( m[ 1 ].replace( /\+/g, ' ' ) );
+				}
+			}
+		} catch ( e ) {} // eslint-disable-line no-empty
+		return '';
+	}
+
 	function cap( s ) {
 		s = String( s || '' );
 		return s ? s.charAt( 0 ).toUpperCase() + s.slice( 1 ) : s;
@@ -450,9 +554,12 @@
 		var us = param( 'utm_source' ).substring( 0, 100 );
 		var um = param( 'utm_medium' ).substring( 0, 100 );
 		var uc = param( 'utm_campaign' ).substring( 0, 150 );
+		var ut = cfg.trackSearchKeywords ? param( 'utm_term' ).substring( 0, 150 ) : '';
 		var rh = referrerHost().substring( 0, 191 );
 		var self = ( location.hostname || '' ).toLowerCase().replace( /^www\./, '' );
 		var src;
+		var kw = '';
+		var ks = '';
 
 		if ( um ) {
 			if ( /cpc|ppc|paid/i.test( um ) ) {
@@ -476,7 +583,22 @@
 			src = 'Referral';
 		}
 
-		return { src: src.substring( 0, 100 ), rh: rh, us: us, um: um, uc: uc };
+		if ( cfg.trackSearchKeywords ) {
+			if ( ut ) {
+				kw = ut;
+				ks = 'utm_term';
+			} else if ( param( 's' ) ) {
+				kw = param( 's' ).substring( 0, 191 );
+				ks = 'site_search';
+			} else if ( src === 'Organic search' ) {
+				kw = referrerParam( [ 'q', 'p', 'query', 'text', 'wd' ] ).substring( 0, 191 );
+				if ( kw ) {
+					ks = 'referrer_query';
+				}
+			}
+		}
+
+		return { src: src.substring( 0, 100 ), rh: rh, us: us, um: um, uc: uc, ut: ut, kw: kw, ks: ks };
 	}
 
 	function currentPath() {
@@ -569,6 +691,7 @@
 		updateScroll();
 		scrollSent = true;
 		if ( maxScroll > 0 ) {
+			var attr = eventAttribution();
 			queue.push( {
 				t: 'scroll',
 				pid: cfg.postId || 0,
@@ -576,7 +699,7 @@
 				title: docTitle(),
 				tag: '', id: '', cls: '', txt: '', sel: '', href: '', conv: 0,
 				dev: device,
-				src: source.src, rh: source.rh, us: source.us, um: source.um, uc: source.uc,
+				src: attr.src, rh: attr.rh, us: attr.us, um: attr.um, uc: attr.uc, ut: attr.ut, kw: attr.kw, ks: attr.ks,
 				sd: maxScroll
 			} );
 		}

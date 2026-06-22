@@ -7,6 +7,7 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 - **Click tracking** — every click on a link, button, input, block button, or any element you configure is recorded with its label, CSS path, page, and target.
 - **Conversion measurement** — mark elements (e.g. `.cvtrk-convert`) or destination URLs (e.g. `/thank-you`) as conversions and watch conversion rate per page.
 - **Live visitor count** — a real-time counter of how many distinct visitors are currently on the site, and what they're viewing.
+- **Search keywords** — optional reporting for supported UTM terms, WordPress site searches, and visible search-referrer queries.
 - **Scales** — events are batched in the browser via `navigator.sendBeacon`, written in bulk, and rolled up into a compact daily-aggregates table by a background job so dashboards stay fast at any size.
 - **Privacy-friendly** — no IP addresses or personal data stored; Do Not Track supported; logged-in users / roles / URLs can be excluded.
 
@@ -25,7 +26,7 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 | Admin dashboard | `includes/class-admin.php`, `admin/` |
 | GitHub self-updater | `includes/class-updater.php` |
 
-Three custom tables: raw `events`, live `sessions`, and pre-aggregated `daily` rollups.
+Custom tables store raw `events`, live `sessions`, and pre-aggregated rollups for pages, sources, countries, and search keywords.
 
 ## Self-updating from GitHub
 

@@ -134,6 +134,22 @@ class Collector {
 			$source = 'Other';
 		}
 
+		$track_keywords = (bool) Settings::get( 'track_search_keywords' );
+		$utm_term       = '';
+		$search_keyword = '';
+		$search_source  = '';
+		if ( $track_keywords ) {
+			$utm_term       = self::truncate( sanitize_text_field( isset( $raw['ut'] ) ? $raw['ut'] : '' ), 150 );
+			$search_keyword = self::truncate( sanitize_text_field( isset( $raw['kw'] ) ? $raw['kw'] : '' ), 191 );
+			$search_source  = sanitize_key( isset( $raw['ks'] ) ? $raw['ks'] : '' );
+			if ( ! in_array( $search_source, array( 'utm_term', 'site_search', 'referrer_query' ), true ) ) {
+				$search_source = '';
+			}
+			if ( '' === $search_keyword ) {
+				$search_source = '';
+			}
+		}
+
 		return array(
 			'visitor_id'       => $visitor_id,
 			'session_id'       => $session_id,
@@ -154,6 +170,10 @@ class Collector {
 			'utm_source'       => self::truncate( sanitize_text_field( isset( $raw['us'] ) ? $raw['us'] : '' ), 100 ),
 			'utm_medium'       => self::truncate( sanitize_text_field( isset( $raw['um'] ) ? $raw['um'] : '' ), 100 ),
 			'utm_campaign'     => self::truncate( sanitize_text_field( isset( $raw['uc'] ) ? $raw['uc'] : '' ), 150 ),
+			'utm_term'         => $utm_term,
+			'search_keyword'   => $search_keyword,
+			'search_source'    => $search_source,
+			'heatmap_selector' => self::truncate( sanitize_text_field( isset( $raw['hsel'] ) ? $raw['hsel'] : '' ), 255 ),
 			'pos_x'            => min( 1000, isset( $raw['cx'] ) ? absint( $raw['cx'] ) : 0 ),
 			'pos_y'            => min( 1000, isset( $raw['cy'] ) ? absint( $raw['cy'] ) : 0 ),
 			'rel_x'            => min( 1000, isset( $raw['rx'] ) ? absint( $raw['rx'] ) : 0 ),

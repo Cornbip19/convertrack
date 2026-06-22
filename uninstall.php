@@ -22,6 +22,7 @@ $tables = array(
 	$wpdb->prefix . 'convertrack_daily',
 	$wpdb->prefix . 'convertrack_sources',
 	$wpdb->prefix . 'convertrack_geo',
+	$wpdb->prefix . 'convertrack_search_terms',
 );
 foreach ( $tables as $table ) {
 	$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB
@@ -50,6 +51,7 @@ if ( is_multisite() ) {
 			$wpdb->prefix . 'convertrack_daily',
 			$wpdb->prefix . 'convertrack_sources',
 			$wpdb->prefix . 'convertrack_geo',
+			$wpdb->prefix . 'convertrack_search_terms',
 		);
 		foreach ( $mt as $table ) {
 			$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB

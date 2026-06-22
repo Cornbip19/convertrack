@@ -53,6 +53,7 @@ class Frontend {
 			'selectors'    => Settings::lines_to_array( Settings::get( 'track_selectors' ) ),
 			'conversionSelectors' => Settings::lines_to_array( Settings::get( 'conversion_selectors' ) ),
 			'conversionUrls'      => Settings::lines_to_array( Settings::get( 'conversion_urls' ) ),
+			'trackSearchKeywords' => (bool) Settings::get( 'track_search_keywords' ),
 			'heartbeat'    => (int) Settings::get( 'heartbeat_interval' ) * 1000,
 			'flush'        => (int) Settings::get( 'flush_interval' ) * 1000,
 			'batchMax'     => (int) Settings::get( 'batch_max' ),

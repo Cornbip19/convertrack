@@ -33,6 +33,7 @@ class Settings {
 			'track_selectors'      => "a\nbutton\ninput[type=submit]\ninput[type=button]\ninput[type=image]\n[role=button]\n.btn\n.button\n.wp-block-button__link\n[data-cvtrk]",
 			'conversion_selectors' => ".cvtrk-convert\n[data-cvtrk-convert]",
 			'conversion_urls'      => '',
+			'track_search_keywords' => 0,
 			'enable_geo'           => 0,
 			'active_window'        => 300,
 			'heartbeat_interval'   => 15,
@@ -102,6 +103,7 @@ class Settings {
 		$clean['respect_dnt']     = empty( $input['respect_dnt'] ) ? 0 : 1;
 		$clean['track_logged_in'] = empty( $input['track_logged_in'] ) ? 0 : 1;
 		$clean['enable_geo']      = empty( $input['enable_geo'] ) ? 0 : 1;
+		$clean['track_search_keywords'] = empty( $input['track_search_keywords'] ) ? 0 : 1;
 
 		$clean['track_selectors']      = self::sanitize_selector_list( isset( $input['track_selectors'] ) ? $input['track_selectors'] : $d['track_selectors'] );
 		$clean['conversion_selectors'] = self::sanitize_selector_list( isset( $input['conversion_selectors'] ) ? $input['conversion_selectors'] : $d['conversion_selectors'] );

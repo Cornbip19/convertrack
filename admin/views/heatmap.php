@@ -53,20 +53,41 @@ defined( 'ABSPATH' ) || exit;
 		</label>
 	</div>
 
-	<div class="cvtrk-grid cvtrk-grid-2-1">
+	<div class="cvtrk-card cvtrk-heatmap-card">
+		<div class="cvtrk-card-head">
+			<h2><?php esc_html_e( 'Click map', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<span class="cvtrk-card-sub" data-cvtrk="heatmap-meta"></span>
+		</div>
+		<div class="cvtrk-card-body">
+			<div class="cvtrk-heatmap-stage" data-cvtrk="heatmap-stage">
+				<div class="cvtrk-heatmap-page" data-cvtrk="heatmap-page">
+					<iframe class="cvtrk-heatmap-frame" data-cvtrk="heatmap-frame" title="<?php esc_attr_e( 'Page preview', 'convertrack-click-conversion-analytics' ); ?>" referrerpolicy="no-referrer" sandbox="allow-same-origin"></iframe>
+					<canvas class="cvtrk-heatmap-canvas" data-cvtrk="heatmap-canvas"></canvas>
+					<div class="cvtrk-heatmap-markers" data-cvtrk="heatmap-markers" aria-hidden="true"></div>
+				</div>
+			</div>
+			<p class="cvtrk-note" data-cvtrk="heatmap-note"></p>
+		</div>
+	</div>
+
+	<div class="cvtrk-grid cvtrk-heatmap-details">
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Click map', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub" data-cvtrk="heatmap-meta"></span>
+				<h2><?php esc_html_e( 'Clicked elements', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'What visitors clicked on this page', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div class="cvtrk-heatmap-stage" data-cvtrk="heatmap-stage">
-					<div class="cvtrk-heatmap-page" data-cvtrk="heatmap-page">
-						<iframe class="cvtrk-heatmap-frame" data-cvtrk="heatmap-frame" title="<?php esc_attr_e( 'Page preview', 'convertrack-click-conversion-analytics' ); ?>" referrerpolicy="no-referrer" sandbox="allow-same-origin"></iframe>
-						<canvas class="cvtrk-heatmap-canvas" data-cvtrk="heatmap-canvas"></canvas>
-					</div>
-				</div>
-				<p class="cvtrk-note" data-cvtrk="heatmap-note"></p>
+				<div data-cvtrk="heatmap-elements"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			</div>
+		</div>
+
+		<div class="cvtrk-card">
+			<div class="cvtrk-card-head">
+				<h2><?php esc_html_e( 'Search keywords', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Terms tied to this page', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+			<div class="cvtrk-card-body">
+				<div data-cvtrk="heatmap-keywords"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 
