@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.3.0';
+	const DB_VERSION = '1.4.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -111,6 +111,14 @@ class Database {
 			utm_campaign varchar(150) NOT NULL DEFAULT '',
 			pos_x smallint(5) unsigned NOT NULL DEFAULT 0,
 			pos_y smallint(5) unsigned NOT NULL DEFAULT 0,
+			rel_x smallint(5) unsigned NOT NULL DEFAULT 0,
+			rel_y smallint(5) unsigned NOT NULL DEFAULT 0,
+			viewport_w int(10) unsigned NOT NULL DEFAULT 0,
+			viewport_h int(10) unsigned NOT NULL DEFAULT 0,
+			document_w int(10) unsigned NOT NULL DEFAULT 0,
+			document_h int(10) unsigned NOT NULL DEFAULT 0,
+			scroll_x int(10) unsigned NOT NULL DEFAULT 0,
+			scroll_y int(10) unsigned NOT NULL DEFAULT 0,
 			scroll_depth tinyint(3) unsigned NOT NULL DEFAULT 0,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
@@ -295,6 +303,9 @@ class Database {
 						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop', 'country' => $country,
 						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
 						'pos_x' => wp_rand( 120, 880 ), 'pos_y' => wp_rand( 60, 820 ),
+						'rel_x' => wp_rand( 80, 920 ), 'rel_y' => wp_rand( 80, 920 ),
+						'viewport_w' => 1440, 'viewport_h' => 900, 'document_w' => 1440, 'document_h' => 2200,
+						'scroll_x' => 0, 'scroll_y' => wp_rand( 0, 1400 ),
 						'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 5, 600 ) ),
 					);
 				}
@@ -378,11 +389,19 @@ class Database {
 			'utm_campaign',
 			'pos_x',
 			'pos_y',
+			'rel_x',
+			'rel_y',
+			'viewport_w',
+			'viewport_h',
+			'document_w',
+			'document_h',
+			'scroll_x',
+			'scroll_y',
 			'scroll_depth',
 			'created_at',
 		);
 
-		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s)';
+		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s)';
 		$placeholders    = array();
 		$values          = array();
 
@@ -858,28 +877,45 @@ class Database {
 	 * Click positions are stored as tenths of a percent of the page (0-1000) and
 	 * aggregated here into a 0-100 x 0-100 grid so the payload stays bounded.
 	 *
-	 * @param int $post_id Post ID.
-	 * @param int $days    Days back.
+	 * @param int    $post_id Post ID.
+	 * @param int    $days    Days back.
+	 * @param string $device  Device filter: all|desktop|tablet|mobile.
 	 * @return array
 	 */
-	public static function heatmap_data( $post_id, $days ) {
+	public static function heatmap_data( $post_id, $days, $device = 'all' ) {
 		global $wpdb;
 
 		$post_id = (int) $post_id;
 		$days    = max( 1, (int) $days );
 		$start   = self::date_days_ago( $days - 1 ) . ' 00:00:00';
 		$events  = self::events_table();
+		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
 
-		// Click density, aggregated to a 0-100 grid (percent of page width/height).
+		$click_where  = "event_type='click' AND post_id=%d AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)";
+		$click_params = array( $post_id, $start );
+		if ( 'all' !== $device ) {
+			$click_where   .= ' AND device_type=%s';
+			$click_params[] = $device;
+		}
+		$click_params[] = 1500;
+
+		// Click density, aggregated to a 0-100 grid. New rows also include
+		// selector-relative coordinates so the admin view can anchor dots to the
+		// matching element in the anonymous snapshot. Old rows still draw via gx/gy.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$clicks = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT ROUND(pos_x/10) gx, ROUND(pos_y/10) gy, COUNT(*) w
+				"SELECT element_selector sel,
+				        ROUND(pos_x/10) gx,
+				        ROUND(pos_y/10) gy,
+				        ROUND(rel_x/10) erx,
+				        ROUND(rel_y/10) ery,
+				        MAX(CASE WHEN viewport_w > 0 THEN 1 ELSE 0 END) has_rel,
+				        COUNT(*) w
 				 FROM $events
-				 WHERE event_type='click' AND post_id=%d AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)
-				 GROUP BY gx, gy ORDER BY w DESC LIMIT 1500",
-				$post_id,
-				$start
+				 WHERE $click_where
+				 GROUP BY sel, gx, gy, erx, ery ORDER BY w DESC LIMIT %d",
+				$click_params
 			),
 			ARRAY_A
 		);
@@ -888,10 +924,25 @@ class Database {
 		$max_w  = 0;
 		foreach ( $clicks as $r ) {
 			$w        = (int) $r['w'];
-			$points[] = array( 'x' => (int) $r['gx'], 'y' => (int) $r['gy'], 'w' => $w );
+			$points[] = array(
+				'selector' => (string) $r['sel'],
+				'x'        => (int) $r['gx'],
+				'y'        => (int) $r['gy'],
+				'rx'       => (int) $r['erx'],
+				'ry'       => (int) $r['ery'],
+				'has_rel'  => ! empty( $r['has_rel'] ) ? 1 : 0,
+				'w'        => $w,
+			);
 			if ( $w > $max_w ) {
 				$max_w = $w;
 			}
+		}
+
+		$scroll_where  = "event_type='scroll' AND post_id=%d AND created_at >= %s";
+		$scroll_params = array( $post_id, $start );
+		if ( 'all' !== $device ) {
+			$scroll_where   .= ' AND device_type=%s';
+			$scroll_params[] = $device;
 		}
 
 		// Scroll-depth samples grouped by reached depth.
@@ -900,10 +951,9 @@ class Database {
 			$wpdb->prepare(
 				"SELECT scroll_depth d, COUNT(*) c
 				 FROM $events
-				 WHERE event_type='scroll' AND post_id=%d AND created_at >= %s
+				 WHERE $scroll_where
 				 GROUP BY scroll_depth",
-				$post_id,
-				$start
+				$scroll_params
 			),
 			ARRAY_A
 		);
@@ -930,10 +980,19 @@ class Database {
 			);
 		}
 
+		$metric_where  = 'post_id=%d AND created_at >= %s';
+		$metric_params = array( $post_id, $start );
+		if ( 'all' !== $device ) {
+			$metric_where   .= ' AND device_type=%s';
+			$metric_params[] = $device;
+		}
+
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$pageviews = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='pageview' AND post_id=%d AND created_at >= %s", $post_id, $start ) );
+		$pageviews = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='pageview' AND $metric_where", $metric_params ) );
+
+		$click_total_params = $metric_params;
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND post_id=%d AND created_at >= %s", $post_id, $start ) );
+		$click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND $metric_where", $click_total_params ) );
 
 		return array(
 			'points'         => $points,
@@ -942,6 +1001,245 @@ class Database {
 			'pageviews'      => $pageviews,
 			'clicks'         => $click_total,
 			'scroll_samples' => $total_scroll,
+			'device'         => $device,
+		);
+	}
+
+	/**
+	 * Funnel / journey data derived from raw session events.
+	 *
+	 * @param int $days  Days back.
+	 * @param int $limit Max rows per breakdown.
+	 * @return array
+	 */
+	public static function funnel_data( $days, $limit = 10 ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$limit  = max( 1, min( 50, (int) $limit ) );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$total_sessions = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT session_id) FROM $events WHERE created_at >= %s", $start ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$converting_sessions = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT session_id) FROM $events WHERE created_at >= %s AND is_conversion=1", $start ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$total_conversions = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE created_at >= %s AND is_conversion=1", $start ) );
+
+		return array(
+			'total_sessions'      => $total_sessions,
+			'converting_sessions' => $converting_sessions,
+			'total_conversions'   => $total_conversions,
+			'conversion_rate'     => $total_sessions > 0 ? round( ( $converting_sessions / $total_sessions ) * 100, 2 ) : 0,
+			'paths'               => self::funnel_paths( $start, 1000, $limit ),
+			'dropoffs'            => self::funnel_dropoffs( $start, $limit ),
+			'sources'             => self::funnel_sources( $start, $limit ),
+			'buttons'             => self::funnel_buttons_before_conversion( $start, $limit ),
+		);
+	}
+
+	/**
+	 * Common pageview paths before the first conversion in a session.
+	 *
+	 * @param string $start         Start datetime.
+	 * @param int    $session_limit Max converting sessions to inspect.
+	 * @param int    $limit         Max path rows.
+	 * @return array
+	 */
+	private static function funnel_paths( $start, $session_limit, $limit ) {
+		global $wpdb;
+
+		$events        = self::events_table();
+		$session_limit = max( 1, min( 5000, (int) $session_limit ) );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$sessions = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT session_id, MIN(created_at) converted_at
+				 FROM $events
+				 WHERE created_at >= %s AND is_conversion=1
+				 GROUP BY session_id ORDER BY converted_at DESC LIMIT %d",
+				$start,
+				$session_limit
+			),
+			ARRAY_A
+		);
+
+		if ( empty( $sessions ) ) {
+			return array();
+		}
+
+		$cutoffs = array();
+		$ids     = array();
+		foreach ( $sessions as $row ) {
+			$sid = (string) $row['session_id'];
+			if ( '' === $sid ) {
+				continue;
+			}
+			$ids[]           = $sid;
+			$cutoffs[ $sid ] = (string) $row['converted_at'];
+		}
+
+		if ( empty( $ids ) ) {
+			return array();
+		}
+
+		$in     = implode( ',', array_fill( 0, count( $ids ), '%s' ) );
+		$params = array_merge( array( $start ), $ids );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$events_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT session_id, page_url, page_title, created_at
+				 FROM $events
+				 WHERE created_at >= %s AND event_type='pageview' AND session_id IN ($in)
+				 ORDER BY session_id ASC, created_at ASC",
+				$params
+			),
+			ARRAY_A
+		);
+
+		$paths = array();
+		foreach ( $events_rows as $row ) {
+			$sid = (string) $row['session_id'];
+			if ( ! isset( $cutoffs[ $sid ] ) || (string) $row['created_at'] > $cutoffs[ $sid ] ) {
+				continue;
+			}
+			$url = '' !== (string) $row['page_url'] ? (string) $row['page_url'] : '/';
+			if ( ! isset( $paths[ $sid ] ) ) {
+				$paths[ $sid ] = array();
+			}
+			if ( end( $paths[ $sid ] ) !== $url ) {
+				$paths[ $sid ][] = $url;
+			}
+		}
+
+		$counted = array();
+		foreach ( $paths as $path ) {
+			if ( empty( $path ) ) {
+				continue;
+			}
+			$path = array_slice( $path, -6 );
+			$key  = implode( ' > ', $path );
+			if ( ! isset( $counted[ $key ] ) ) {
+				$counted[ $key ] = array( 'path' => $key, 'sessions' => 0 );
+			}
+			$counted[ $key ]['sessions']++;
+		}
+
+		$out = array_values( $counted );
+		usort(
+			$out,
+			function ( $a, $b ) {
+				return $b['sessions'] - $a['sessions'];
+			}
+		);
+
+		return array_slice( $out, 0, max( 1, (int) $limit ) );
+	}
+
+	/**
+	 * Top final pages among sessions that did not convert.
+	 *
+	 * @param string $start Start datetime.
+	 * @param int    $limit Max rows.
+	 * @return array
+	 */
+	private static function funnel_dropoffs( $start, $limit ) {
+		global $wpdb;
+
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT last.page_url url, MAX(last.page_title) title, COUNT(DISTINCT last.session_id) sessions
+				 FROM (
+					SELECT e.session_id, e.page_url, e.page_title
+					FROM $events e
+					INNER JOIN (
+						SELECT session_id, MAX(created_at) last_seen
+						FROM $events
+						WHERE created_at >= %s AND page_url <> ''
+						GROUP BY session_id
+					) m ON e.session_id=m.session_id AND e.created_at=m.last_seen
+					LEFT JOIN (
+						SELECT DISTINCT session_id
+						FROM $events
+						WHERE created_at >= %s AND is_conversion=1
+					) c ON c.session_id=e.session_id
+					WHERE c.session_id IS NULL AND e.page_url <> ''
+				 ) last
+				 GROUP BY last.page_url ORDER BY sessions DESC LIMIT %d",
+				$start,
+				$start,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Converting sessions grouped by source/campaign.
+	 *
+	 * @param string $start Start datetime.
+	 * @param int    $limit Max rows.
+	 * @return array
+	 */
+	private static function funnel_sources( $start, $limit ) {
+		global $wpdb;
+
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT source, utm_campaign campaign, COUNT(DISTINCT session_id) sessions, COUNT(*) conversions
+				 FROM $events
+				 WHERE created_at >= %s AND is_conversion=1
+				 GROUP BY source, utm_campaign
+				 ORDER BY sessions DESC, conversions DESC LIMIT %d",
+				$start,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Buttons clicked before the first conversion in converting sessions.
+	 *
+	 * @param string $start Start datetime.
+	 * @param int    $limit Max rows.
+	 * @return array
+	 */
+	private static function funnel_buttons_before_conversion( $start, $limit ) {
+		global $wpdb;
+
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT e.element_selector,
+				        SUBSTRING_INDEX(MAX(CONCAT(e.created_at,'|||',e.element_text)),'|||',-1) element_text,
+				        COUNT(*) clicks,
+				        COUNT(DISTINCT e.session_id) sessions
+				 FROM $events e
+				 INNER JOIN (
+					SELECT session_id, MIN(created_at) converted_at
+					FROM $events
+					WHERE created_at >= %s AND is_conversion=1
+					GROUP BY session_id
+				 ) c ON e.session_id=c.session_id AND e.created_at <= c.converted_at
+				 WHERE e.created_at >= %s AND e.event_type='click' AND e.element_selector <> ''
+				 GROUP BY e.element_selector ORDER BY clicks DESC LIMIT %d",
+				$start,
+				$start,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
 		);
 	}
 

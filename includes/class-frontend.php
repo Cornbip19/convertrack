@@ -74,6 +74,10 @@ class Frontend {
 			return true;
 		}
 
+		if ( isset( $_GET['convertrack_no_track'] ) && '1' === sanitize_text_field( wp_unslash( $_GET['convertrack_no_track'] ) ) ) {
+			return true;
+		}
+
 		// Logged-in handling.
 		if ( is_user_logged_in() ) {
 			if ( ! Settings::get( 'track_logged_in' ) ) {

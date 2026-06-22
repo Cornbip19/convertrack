@@ -112,6 +112,11 @@ class Collector {
 			return null;
 		}
 
+		$page_url = self::sanitize_relative_url( isset( $raw['url'] ) ? $raw['url'] : '' );
+		if ( self::is_no_track_url( $page_url ) ) {
+			return null;
+		}
+
 		$device = isset( $raw['dev'] ) ? sanitize_key( $raw['dev'] ) : '';
 		if ( ! in_array( $device, array( 'desktop', 'mobile', 'tablet' ), true ) ) {
 			$device = '';
@@ -134,7 +139,7 @@ class Collector {
 			'session_id'       => $session_id,
 			'event_type'       => $type,
 			'post_id'          => isset( $raw['pid'] ) ? absint( $raw['pid'] ) : 0,
-			'page_url'         => self::sanitize_relative_url( isset( $raw['url'] ) ? $raw['url'] : '' ),
+			'page_url'         => $page_url,
 			'page_title'       => self::truncate( sanitize_text_field( isset( $raw['title'] ) ? $raw['title'] : '' ), 255 ),
 			'element_tag'      => self::truncate( $tag, 20 ),
 			'element_id'       => self::truncate( sanitize_text_field( isset( $raw['id'] ) ? $raw['id'] : '' ), 191 ),
@@ -151,9 +156,27 @@ class Collector {
 			'utm_campaign'     => self::truncate( sanitize_text_field( isset( $raw['uc'] ) ? $raw['uc'] : '' ), 150 ),
 			'pos_x'            => min( 1000, isset( $raw['cx'] ) ? absint( $raw['cx'] ) : 0 ),
 			'pos_y'            => min( 1000, isset( $raw['cy'] ) ? absint( $raw['cy'] ) : 0 ),
+			'rel_x'            => min( 1000, isset( $raw['rx'] ) ? absint( $raw['rx'] ) : 0 ),
+			'rel_y'            => min( 1000, isset( $raw['ry'] ) ? absint( $raw['ry'] ) : 0 ),
+			'viewport_w'       => min( 1000000, isset( $raw['vw'] ) ? absint( $raw['vw'] ) : 0 ),
+			'viewport_h'       => min( 1000000, isset( $raw['vh'] ) ? absint( $raw['vh'] ) : 0 ),
+			'document_w'       => min( 1000000, isset( $raw['dw'] ) ? absint( $raw['dw'] ) : 0 ),
+			'document_h'       => min( 1000000, isset( $raw['dh'] ) ? absint( $raw['dh'] ) : 0 ),
+			'scroll_x'         => min( 1000000, isset( $raw['sx'] ) ? absint( $raw['sx'] ) : 0 ),
+			'scroll_y'         => min( 1000000, isset( $raw['sy'] ) ? absint( $raw['sy'] ) : 0 ),
 			'scroll_depth'     => min( 100, isset( $raw['sd'] ) ? absint( $raw['sd'] ) : 0 ),
 			'created_at'       => $now,
 		);
+	}
+
+	/**
+	 * Whether a URL is explicitly marked as a non-tracking preview.
+	 *
+	 * @param string $url Relative URL.
+	 * @return bool
+	 */
+	public static function is_no_track_url( $url ) {
+		return false !== strpos( (string) $url, 'convertrack_no_track=1' );
 	}
 
 	/**

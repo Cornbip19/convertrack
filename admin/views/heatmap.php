@@ -25,7 +25,25 @@ defined( 'ABSPATH' ) || exit;
 		<label class="cvtrk-field">
 			<?php esc_html_e( 'Page', 'convertrack-click-conversion-analytics' ); ?>
 			<select id="convertrack-post" data-cvtrk="post">
-				<option value="0"><?php esc_html_e( 'Select a page…', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="0"><?php esc_html_e( 'Select a page...', 'convertrack-click-conversion-analytics' ); ?></option>
+			</select>
+		</label>
+
+		<label class="cvtrk-field">
+			<?php esc_html_e( 'Device', 'convertrack-click-conversion-analytics' ); ?>
+			<select data-cvtrk="device">
+				<option value="all" selected><?php esc_html_e( 'All devices', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="desktop"><?php esc_html_e( 'Desktop', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="tablet"><?php esc_html_e( 'Tablet', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="mobile"><?php esc_html_e( 'Mobile', 'convertrack-click-conversion-analytics' ); ?></option>
+			</select>
+		</label>
+
+		<label class="cvtrk-field">
+			<?php esc_html_e( 'Coordinates', 'convertrack-click-conversion-analytics' ); ?>
+			<select data-cvtrk="heatmap-mode">
+				<option value="element" selected><?php esc_html_e( 'Element anchored', 'convertrack-click-conversion-analytics' ); ?></option>
+				<option value="page"><?php esc_html_e( 'Page position', 'convertrack-click-conversion-analytics' ); ?></option>
 			</select>
 		</label>
 
@@ -43,8 +61,10 @@ defined( 'ABSPATH' ) || exit;
 			</div>
 			<div class="cvtrk-card-body">
 				<div class="cvtrk-heatmap-stage" data-cvtrk="heatmap-stage">
-					<iframe class="cvtrk-heatmap-frame" data-cvtrk="heatmap-frame" title="<?php esc_attr_e( 'Page preview', 'convertrack-click-conversion-analytics' ); ?>" referrerpolicy="no-referrer" sandbox="allow-same-origin"></iframe>
-					<canvas class="cvtrk-heatmap-canvas" data-cvtrk="heatmap-canvas"></canvas>
+					<div class="cvtrk-heatmap-page" data-cvtrk="heatmap-page">
+						<iframe class="cvtrk-heatmap-frame" data-cvtrk="heatmap-frame" title="<?php esc_attr_e( 'Page preview', 'convertrack-click-conversion-analytics' ); ?>" referrerpolicy="no-referrer" sandbox="allow-same-origin"></iframe>
+						<canvas class="cvtrk-heatmap-canvas" data-cvtrk="heatmap-canvas"></canvas>
+					</div>
 				</div>
 				<p class="cvtrk-note" data-cvtrk="heatmap-note"></p>
 			</div>
@@ -56,7 +76,7 @@ defined( 'ABSPATH' ) || exit;
 				<span class="cvtrk-card-sub"><?php esc_html_e( 'How far down visitors browse', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
-				<div data-cvtrk="scroll-depth"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading…', 'convertrack-click-conversion-analytics' ); ?></p></div>
+				<div data-cvtrk="scroll-depth"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			</div>
 		</div>
 	</div>

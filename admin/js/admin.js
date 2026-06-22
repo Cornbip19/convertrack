@@ -488,9 +488,69 @@
 		box.appendChild( el( 'p', 'cvtrk-note', num( samples ) + ' ' + ( I18N.visitors || 'Visitors' ).toLowerCase() + ' sampled' ) );
 	}
 
-	function drawHeatCanvas( canvas, stage, points, maxW, height ) {
-		var w = stage.clientWidth || 600;
-		var h = Math.max( 200, Math.min( height || Math.round( w * 1.4 ), 8000 ) );
+	function frameDoc( frame ) {
+		try {
+			return frame && ( frame.contentDocument || ( frame.contentWindow && frame.contentWindow.document ) );
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function frameScroll( frame, doc ) {
+		var win = frame && frame.contentWindow;
+		var root = doc && doc.documentElement;
+		var body = doc && doc.body;
+		return {
+			x: ( win && win.pageXOffset ) || ( root && root.scrollLeft ) || ( body && body.scrollLeft ) || 0,
+			y: ( win && win.pageYOffset ) || ( root && root.scrollTop ) || ( body && body.scrollTop ) || 0
+		};
+	}
+
+	function pointPosition( p, w, h, frame, mode ) {
+		if ( mode === 'element' && p && p.has_rel && p.selector && frame ) {
+			var doc = frameDoc( frame );
+			if ( doc && doc.querySelector ) {
+				try {
+					var target = doc.querySelector( p.selector );
+					if ( target && target.getBoundingClientRect ) {
+						var rect = target.getBoundingClientRect();
+						if ( rect.width > 0 && rect.height > 0 ) {
+							var scroll = frameScroll( frame, doc );
+							return {
+								x: scroll.x + rect.left + ( rect.width * ( ( Number( p.rx ) || 0 ) / 100 ) ),
+								y: scroll.y + rect.top + ( rect.height * ( ( Number( p.ry ) || 0 ) / 100 ) )
+							};
+						}
+					}
+				} catch ( e ) {} // eslint-disable-line no-empty
+			}
+		}
+		return {
+			x: ( ( Number( p.x ) || 0 ) / 100 ) * w,
+			y: ( ( Number( p.y ) || 0 ) / 100 ) * h
+		};
+	}
+
+	function docHeight( frame ) {
+		var doc = frameDoc( frame );
+		if ( ! doc ) {
+			return 0;
+		}
+		var root = doc.documentElement || {};
+		var body = doc.body || {};
+		return Math.max(
+			root.scrollHeight || 0,
+			body.scrollHeight || 0,
+			root.offsetHeight || 0,
+			body.offsetHeight || 0,
+			root.clientHeight || 0
+		);
+	}
+
+	function drawHeatCanvas( canvas, stage, points, maxW, height, frame, mode ) {
+		var w = stage.clientWidth || ( frame && frame.clientWidth ) || 600;
+		var h = Math.max( 240, Math.min( height || Math.round( w * 1.4 ), 8000 ) );
+		stage.style.height = h + 'px';
 		canvas.width = w;
 		canvas.height = h;
 		canvas.style.width = w + 'px';
@@ -503,8 +563,12 @@
 		var r = Math.max( 16, Math.round( Math.min( w, h ) * 0.035 ) );
 		ctx.globalCompositeOperation = 'lighter';
 		points.forEach( function ( p ) {
-			var x = ( p.x / 100 ) * w;
-			var y = ( p.y / 100 ) * h;
+			var pos = pointPosition( p, w, h, frame, mode );
+			var x = pos.x;
+			var y = pos.y;
+			if ( x < 0 || y < 0 || x > w || y > h ) {
+				return;
+			}
 			var a = Math.max( 0.12, Math.min( 0.9, ( p.w / ( maxW || 1 ) ) ) );
 			var g = ctx.createRadialGradient( x, y, 0, x, y, r );
 			g.addColorStop( 0, 'rgba(255,70,0,' + a.toFixed( 3 ) + ')' );
@@ -518,75 +582,115 @@
 		ctx.globalCompositeOperation = 'source-over';
 	}
 
-	function renderClickMap( data, showPage ) {
+	function renderClickMap( data, showPage, mode ) {
 		var stage = attr( 'heatmap-stage' );
+		var page = attr( 'heatmap-page' );
 		var frame = attr( 'heatmap-frame' );
 		var canvas = attr( 'heatmap-canvas' );
 		var note = attr( 'heatmap-note' );
-		if ( ! stage || ! canvas ) {
+		if ( ! stage || ! page || ! canvas ) {
 			return;
 		}
 		var points = ( data && data.points ) || [];
 		var maxW = ( data && data.max_weight ) || 1;
+		mode = mode === 'page' ? 'page' : 'element';
 
 		if ( note ) {
 			note.textContent = points.length ? '' : ( I18N.noHeatmap || '' );
 		}
 
-		if ( showPage && data && data.url && frame ) {
+		if ( showPage && data && data.snapshot && data.snapshot.html && frame ) {
 			stage.classList.remove( 'cvtrk-no-frame' );
+			page.classList.remove( 'cvtrk-no-frame' );
 			frame.style.display = 'block';
 			frame.onload = function () {
-				var docH = 0;
-				try {
-					var doc = frame.contentDocument || ( frame.contentWindow && frame.contentWindow.document );
-					if ( doc && doc.documentElement ) {
-						docH = doc.documentElement.scrollHeight || ( doc.body && doc.body.scrollHeight ) || 0;
+				window.setTimeout( function () {
+					var docH = docHeight( frame );
+					if ( docH > 0 ) {
+						frame.style.height = Math.min( docH, 8000 ) + 'px';
+						drawHeatCanvas( canvas, page, points, maxW, docH, frame, mode );
+					} else {
+						frame.style.display = 'none';
+						stage.classList.add( 'cvtrk-no-frame' );
+						drawHeatCanvas( canvas, page, points, maxW, null, null, 'page' );
 					}
-				} catch ( e ) {
-					docH = 0;
-				}
-				if ( docH > 0 ) {
-					frame.style.height = Math.min( docH, 8000 ) + 'px';
-					drawHeatCanvas( canvas, stage, points, maxW, docH );
-				} else {
-					// Cross-origin / blocked: fall back to a frameless heatmap.
-					frame.style.display = 'none';
-					stage.classList.add( 'cvtrk-no-frame' );
-					drawHeatCanvas( canvas, stage, points, maxW );
-				}
+				}, 60 );
 			};
-			if ( frame.getAttribute( 'src' ) !== data.url ) {
-				frame.setAttribute( 'src', data.url );
+			if ( frame.getAttribute( 'data-snapshot-url' ) !== data.snapshot.url ) {
+				frame.setAttribute( 'data-snapshot-url', data.snapshot.url || '' );
+				frame.removeAttribute( 'src' );
+				frame.srcdoc = data.snapshot.html;
 			} else {
 				frame.onload();
 			}
 		} else {
 			if ( frame ) {
 				frame.style.display = 'none';
+				frame.removeAttribute( 'data-snapshot-url' );
 			}
 			stage.classList.add( 'cvtrk-no-frame' );
-			drawHeatCanvas( canvas, stage, points, maxW );
+			page.classList.add( 'cvtrk-no-frame' );
+			drawHeatCanvas( canvas, page, points, maxW, null, null, 'page' );
 		}
 	}
 
 	function initHeatmap() {
 		var rangeSel = attr( 'range' );
 		var postSel = attr( 'post' );
+		var deviceSel = attr( 'device' );
+		var modeSel = attr( 'heatmap-mode' );
 		var showChk = attr( 'show-page' );
 		var data = null;
+		var snapshots = {};
+
+		function mode() {
+			return modeSel ? modeSel.value : 'element';
+		}
+
+		function loadSnapshot( post ) {
+			post = String( post || '' );
+			if ( ! post || post === '0' ) {
+				return Promise.resolve( null );
+			}
+			if ( snapshots[ post ] ) {
+				return Promise.resolve( snapshots[ post ] );
+			}
+			return api( '/stats/heatmap-snapshot?post=' + encodeURIComponent( post ) )
+				.then( function ( snapshot ) {
+					snapshots[ post ] = snapshot;
+					return snapshot;
+				} );
+		}
+
+		function renderCurrent() {
+			if ( data ) {
+				renderClickMap( data, showChk ? showChk.checked : true, mode() );
+			}
+		}
 
 		function load() {
 			var post = postSel ? postSel.value : 0;
 			var range = rangeSel ? rangeSel.value : 7;
+			var device = deviceSel ? deviceSel.value : 'all';
 			if ( ! post || post === '0' ) {
 				return;
 			}
-			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&range=' + encodeURIComponent( range ) )
+			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
 				.then( function ( d ) {
 					data = d;
+					if ( showChk && showChk.checked ) {
+						return loadSnapshot( post ).then( function ( snapshot ) {
+							data.snapshot = snapshot;
+							return data;
+						}, function () {
+							return data;
+						} );
+					}
+					return data;
+				} )
+				.then( function ( d ) {
 					renderScrollDepth( d.scroll, d.scroll_samples );
-					renderClickMap( d, showChk ? showChk.checked : true );
+					renderClickMap( d, showChk ? showChk.checked : true, mode() );
 					var meta = attr( 'heatmap-meta' );
 					if ( meta ) {
 						meta.textContent = num( d.pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ).toLowerCase() +
@@ -631,9 +735,22 @@
 		if ( postSel ) {
 			postSel.addEventListener( 'change', load );
 		}
+		if ( deviceSel ) {
+			deviceSel.addEventListener( 'change', load );
+		}
+		if ( modeSel ) {
+			modeSel.addEventListener( 'change', renderCurrent );
+		}
 		if ( showChk ) {
 			showChk.addEventListener( 'change', function () {
-				renderClickMap( data, showChk.checked );
+				if ( showChk.checked && data && ! data.snapshot ) {
+					loadSnapshot( postSel ? postSel.value : 0 ).then( function ( snapshot ) {
+						data.snapshot = snapshot;
+						renderCurrent();
+					}, renderCurrent );
+				} else {
+					renderCurrent();
+				}
 			} );
 		}
 		loadPages();
@@ -654,6 +771,126 @@
 			}
 			links[ i ].setAttribute( 'href', url );
 		}
+	}
+
+	/* Funnels ------------------------------------------------------------- */
+
+	function renderFunnelCards( data ) {
+		set( 'funnel-sessions', num( data.total_sessions ) );
+		set( 'funnel-converting', num( data.converting_sessions ) );
+		set( 'funnel-conversions', num( data.total_conversions ) );
+		set( 'funnel-rate', ( Number( data.conversion_rate ) || 0 ) + '%' );
+	}
+
+	function renderFunnelPaths( items ) {
+		var box = attr( 'funnel-paths' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
+		var t = table( [
+			{ label: I18N.page || 'Path' },
+			{ label: I18N.sessions || 'Sessions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( it.path || '', '' ) );
+			tr.appendChild( clicksCell( it.sessions, max ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
+	function renderFunnelDropoffs( items ) {
+		var box = attr( 'funnel-dropoffs' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
+		var t = table( [
+			{ label: I18N.page || 'Page' },
+			{ label: I18N.sessions || 'Sessions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var label = it.title || it.url || '';
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( label, it.url || '' ) );
+			tr.appendChild( clicksCell( it.sessions, max ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
+	function renderFunnelSources( items ) {
+		var box = attr( 'funnel-sources' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
+		var t = table( [
+			{ label: I18N.source || 'Source' },
+			{ label: I18N.sessions || 'Sessions', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var source = it.source || 'Direct';
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( source, it.campaign || '' ) );
+			tr.appendChild( clicksCell( it.sessions, max ) );
+			tr.appendChild( convCell( it.conversions ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
+	function renderFunnelButtons( items ) {
+		var box = attr( 'funnel-buttons' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
+		var t = table( [
+			{ label: I18N.button || 'Button' },
+			{ label: I18N.clicks || 'Clicks', num: true },
+			{ label: I18N.sessions || 'Sessions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var label = it.element_text || it.element_selector || '';
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( label, label !== it.element_selector ? it.element_selector : '' ) );
+			tr.appendChild( clicksCell( it.clicks, max ) );
+			tr.appendChild( numCell( it.sessions ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
 	}
 
 	/* Data loaders -------------------------------------------------------- */
@@ -762,6 +999,28 @@
 		load();
 	}
 
+	function initFunnels() {
+		var rangeSel = attr( 'range' );
+
+		function load() {
+			var range = rangeSel ? rangeSel.value : 7;
+			api( '/stats/funnels?range=' + encodeURIComponent( range ) )
+				.then( function ( data ) {
+					renderFunnelCards( data );
+					renderFunnelPaths( data.paths );
+					renderFunnelDropoffs( data.dropoffs );
+					renderFunnelSources( data.sources );
+					renderFunnelButtons( data.buttons );
+				} )
+				.catch( function () {} );
+		}
+
+		if ( rangeSel ) {
+			rangeSel.addEventListener( 'change', load );
+		}
+		load();
+	}
+
 	/* Boot ---------------------------------------------------------------- */
 
 	initLive();
@@ -773,5 +1032,8 @@
 	}
 	if ( document.getElementById( 'convertrack-heatmaps' ) ) {
 		initHeatmap();
+	}
+	if ( document.getElementById( 'convertrack-funnels' ) ) {
+		initFunnels();
 	}
 } )();

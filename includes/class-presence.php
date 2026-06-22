@@ -38,6 +38,10 @@ class Presence {
 		}
 
 		$url     = Collector::sanitize_relative_url( isset( $payload['url'] ) ? $payload['url'] : '' );
+		if ( Collector::is_no_track_url( $url ) ) {
+			return array( 'ok' => false, 'ignored' => 'preview' );
+		}
+
 		$post_id = isset( $payload['pid'] ) ? absint( $payload['pid'] ) : 0;
 		$country = Geo::current_country();
 

@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -74,6 +74,12 @@ Not by default. The one optional exception is the **Visitor location** setting (
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 1.4.0 =
+* Heatmaps now use an anonymous, script-disabled page snapshot instead of loading the live page as the logged-in admin.
+* Click heatmaps now record element-relative coordinates and can render in element-anchored mode, with page-position fallback for older data.
+* Heatmaps can be filtered by device type.
+* Added a Funnels screen showing converting sessions, common paths before conversion, drop-off pages, converting sources, and pre-conversion button clicks.
 
 = 1.3.0 =
 * Conversions now work end to end: a fix ensures "page reached" goals (e.g. landing on /thank-you) are counted in the dashboard totals — previously only button-click goals were counted. The Settings screen now separates the two goal types ("pages reached" and "buttons clicked") with clear examples, and the Overview shows a hint when traffic exists but no conversion goal is set up.

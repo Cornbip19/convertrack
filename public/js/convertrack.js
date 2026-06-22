@@ -92,7 +92,7 @@
 		}
 
 		var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
-		var coords = pagePosition( e );
+		var coords = clickPosition( e, el );
 		queue.push( {
 			t: 'click',
 			pid: cfg.postId || 0,
@@ -112,7 +112,15 @@
 			um: source.um,
 			uc: source.uc,
 			cx: coords.cx,
-			cy: coords.cy
+			cy: coords.cy,
+			rx: coords.rx,
+			ry: coords.ry,
+			vw: coords.vw,
+			vh: coords.vh,
+			dw: coords.dw,
+			dh: coords.dh,
+			sx: coords.sx,
+			sy: coords.sy
 		} );
 
 		// Flush immediately if this click is likely to navigate away, so the
@@ -493,14 +501,42 @@
 		};
 	}
 
-	// Click position as tenths of a percent (0-1000) of the full page.
-	function pagePosition( e ) {
+	// Click position as tenths of a percent (0-1000) of the full page and
+	// clicked element. The element-relative values let heatmaps stay attached
+	// to sticky/fixed controls instead of smearing by viewport scroll offset.
+	function clickPosition( e, el ) {
 		var d = pageDims();
 		var px = ( typeof e.pageX === 'number' ) ? e.pageX : ( ( e.clientX || 0 ) + ( window.pageXOffset || 0 ) );
 		var py = ( typeof e.pageY === 'number' ) ? e.pageY : ( ( e.clientY || 0 ) + ( window.pageYOffset || 0 ) );
+		var doc = document.documentElement || {};
+		var sx = Math.max( 0, window.pageXOffset || doc.scrollLeft || 0 );
+		var sy = Math.max( 0, window.pageYOffset || doc.scrollTop || 0 );
+		var vw = Math.max( 1, window.innerWidth || doc.clientWidth || 1 );
+		var vh = Math.max( 1, window.innerHeight || doc.clientHeight || 1 );
+		var rx = 0;
+		var ry = 0;
+
+		if ( el && el.getBoundingClientRect ) {
+			var rect = el.getBoundingClientRect();
+			if ( rect.width > 0 ) {
+				rx = clampInt( Math.round( ( ( ( e.clientX || 0 ) - rect.left ) / rect.width ) * 1000 ), 0, 1000 );
+			}
+			if ( rect.height > 0 ) {
+				ry = clampInt( Math.round( ( ( ( e.clientY || 0 ) - rect.top ) / rect.height ) * 1000 ), 0, 1000 );
+			}
+		}
+
 		return {
 			cx: clampInt( Math.round( ( px / d.w ) * 1000 ), 0, 1000 ),
-			cy: clampInt( Math.round( ( py / d.h ) * 1000 ), 0, 1000 )
+			cy: clampInt( Math.round( ( py / d.h ) * 1000 ), 0, 1000 ),
+			rx: rx,
+			ry: ry,
+			vw: clampInt( vw, 1, 1000000 ),
+			vh: clampInt( vh, 1, 1000000 ),
+			dw: clampInt( d.w, 1, 1000000 ),
+			dh: clampInt( d.h, 1, 1000000 ),
+			sx: clampInt( sx, 0, 1000000 ),
+			sy: clampInt( sy, 0, 1000000 )
 		};
 	}
 

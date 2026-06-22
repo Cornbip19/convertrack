@@ -157,13 +157,14 @@ class Admin {
 	/**
 	 * Render the shared header (brand + live pill) and tab navigation.
 	 *
-	 * @param string $current Active tab key: overview|pages|settings.
+	 * @param string $current Active tab key: overview|pages|heatmaps|funnels|settings.
 	 */
 	public static function render_header( $current ) {
 		$tabs = array(
 			'overview' => array( 'label' => __( 'Overview', 'convertrack-click-conversion-analytics' ), 'icon' => 'chart-area', 'page' => 'convertrack' ),
 			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
 			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'visibility', 'page' => 'convertrack-heatmaps' ),
+			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'networking', 'page' => 'convertrack-funnels' ),
 			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
 		);
 		?>
@@ -229,6 +230,15 @@ class Admin {
 			'manage_options',
 			'convertrack-heatmaps',
 			array( $this, 'render_heatmaps' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			__( 'Funnels', 'convertrack-click-conversion-analytics' ),
+			__( 'Funnels', 'convertrack-click-conversion-analytics' ),
+			'manage_options',
+			'convertrack-funnels',
+			array( $this, 'render_funnels' )
 		);
 
 		add_submenu_page(
@@ -333,6 +343,20 @@ class Admin {
 					'noHeatmap'    => __( 'No heatmap data for this page yet.', 'convertrack-click-conversion-analytics' ),
 					'pageTop'      => __( 'Top of page', 'convertrack-click-conversion-analytics' ),
 					'pageBottom'   => __( 'Bottom of page', 'convertrack-click-conversion-analytics' ),
+					'allDevices'   => __( 'All devices', 'convertrack-click-conversion-analytics' ),
+					'desktop'      => __( 'Desktop', 'convertrack-click-conversion-analytics' ),
+					'tablet'       => __( 'Tablet', 'convertrack-click-conversion-analytics' ),
+					'mobile'       => __( 'Mobile', 'convertrack-click-conversion-analytics' ),
+					'anchored'     => __( 'Element anchored', 'convertrack-click-conversion-analytics' ),
+					'pagePosition' => __( 'Page position', 'convertrack-click-conversion-analytics' ),
+					'funnels'      => __( 'Funnels', 'convertrack-click-conversion-analytics' ),
+					'sessions'     => __( 'Sessions', 'convertrack-click-conversion-analytics' ),
+					'convertingSessions' => __( 'Converting sessions', 'convertrack-click-conversion-analytics' ),
+					'totalConversions'   => __( 'Total conversions', 'convertrack-click-conversion-analytics' ),
+					'commonPaths'        => __( 'Common paths before conversion', 'convertrack-click-conversion-analytics' ),
+					'dropoffs'           => __( 'Drop-off pages', 'convertrack-click-conversion-analytics' ),
+					'preConversionButtons' => __( 'Buttons clicked before conversion', 'convertrack-click-conversion-analytics' ),
+					'campaign'           => __( 'Campaign', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);
@@ -352,6 +376,10 @@ class Admin {
 
 	public function render_heatmaps() {
 		$this->render_view( 'heatmap' );
+	}
+
+	public function render_funnels() {
+		$this->render_view( 'funnels' );
 	}
 
 	public function render_settings() {
