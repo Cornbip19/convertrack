@@ -35,7 +35,14 @@ class Admin {
 		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
 			return;
 		}
-		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack-click-conversion-analytics' );
+		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and by default it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack-click-conversion-analytics' );
+
+		// When visitor location is enabled, the IP is sent to a geolocation API to
+		// resolve the country only; disclose that here.
+		if ( Settings::get( 'enable_geo' ) ) {
+			$content .= ' ' . __( 'Visitor location is enabled: each visitor\'s IP address is sent to a third-party geolocation service (ip-api.com) solely to determine their country. The IP address is not stored — only the resulting two-letter country code is kept.', 'convertrack-click-conversion-analytics' );
+		}
+
 		wp_add_privacy_policy_content( 'Convertrack', wp_kses_post( wpautop( $content ) ) );
 	}
 
@@ -67,7 +74,7 @@ class Admin {
 				foreach ( Database::top_pages( $range, 1000 ) as $r ) {
 					$pid = (int) $r['post_id'];
 					fputcsv( $out, array(
-						$pid > 0 ? get_the_title( $pid ) : '(global)',
+						$pid > 0 ? get_the_title( $pid ) : '(unknown / global)',
 						$pid > 0 ? get_permalink( $pid ) : '',
 						(int) $r['clicks'], (int) $r['pageviews'], (int) $r['conversions'],
 					) );
@@ -78,6 +85,21 @@ class Admin {
 				fputcsv( $out, array( 'Source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
 				foreach ( Database::top_sources( $range, 1000 ) as $r ) {
 					fputcsv( $out, array( $r['source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
+				}
+				break;
+
+			case 'countries':
+				fputcsv( $out, array( 'Country code', 'Country', 'Visitors', 'Pageviews', 'Clicks', 'Conversions' ) );
+				foreach ( Database::top_countries( $range, 1000 ) as $r ) {
+					$code = (string) $r['country'];
+					$name = $code;
+					if ( '' !== $code && class_exists( '\\Locale' ) ) {
+						$display = \Locale::getDisplayRegion( '-' . $code, 'en' );
+						if ( $display && $display !== $code ) {
+							$name = $display;
+						}
+					}
+					fputcsv( $out, array( $code, $name, (int) $r['visitors'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
 				}
 				break;
 
@@ -299,6 +321,11 @@ class Admin {
 					'source'       => __( 'Source', 'convertrack-click-conversion-analytics' ),
 					'visitors'     => __( 'Visitors', 'convertrack-click-conversion-analytics' ),
 					'topSources'   => __( 'Traffic sources', 'convertrack-click-conversion-analytics' ),
+					'country'        => __( 'Country', 'convertrack-click-conversion-analytics' ),
+					'location'       => __( 'Location', 'convertrack-click-conversion-analytics' ),
+					'timeOnSite'     => __( 'Time on site', 'convertrack-click-conversion-analytics' ),
+					'unknownCountry' => __( 'Unknown', 'convertrack-click-conversion-analytics' ),
+					'geoOff'         => __( 'Turn on "Visitor location" in Settings to see where visitors are from.', 'convertrack-click-conversion-analytics' ),
 					'vsPrev'       => __( 'vs. previous period', 'convertrack-click-conversion-analytics' ),
 					'reached'      => __( 'reached this depth', 'convertrack-click-conversion-analytics' ),
 					'clicksHere'   => __( 'clicks', 'convertrack-click-conversion-analytics' ),

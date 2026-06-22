@@ -117,11 +117,55 @@
 		return el( 'td', 'cvtrk-num', num( value ) );
 	}
 
+	// Numeric-styled cell for an already-formatted string (e.g. "3m 20s").
+	// Must NOT go through num(), which would coerce it to 0.
+	function textNumCell( str ) {
+		return el( 'td', 'cvtrk-num', str );
+	}
+
 	function convCell( value ) {
 		var td = el( 'td', 'cvtrk-num' );
 		var v = Number( value ) || 0;
 		td.appendChild( el( 'span', 'cvtrk-badge ' + ( v > 0 ? 'cvtrk-badge-green' : 'cvtrk-badge-gray' ), num( v ) ) );
 		return td;
+	}
+
+	// Seconds -> compact "1h 4m" / "3m 20s" / "45s".
+	function formatDuration( seconds ) {
+		var s = Math.max( 0, Math.round( Number( seconds ) || 0 ) );
+		var h = Math.floor( s / 3600 );
+		var m = Math.floor( ( s % 3600 ) / 60 );
+		var sec = s % 60;
+		if ( h > 0 ) {
+			return h + 'h ' + m + 'm';
+		}
+		if ( m > 0 ) {
+			return m + 'm ' + sec + 's';
+		}
+		return sec + 's';
+	}
+
+	// Two-letter code -> readable country name, falling back to the code.
+	function countryName( code ) {
+		if ( ! code ) {
+			return I18N.unknownCountry || 'Unknown';
+		}
+		try {
+			if ( window.Intl && Intl.DisplayNames ) {
+				var dn = new Intl.DisplayNames( undefined, { type: 'region' } );
+				return dn.of( String( code ).toUpperCase() ) || code;
+			}
+		} catch ( e ) {} // eslint-disable-line no-empty
+		return code;
+	}
+
+	// Two-letter code -> flag emoji (regional indicator symbols).
+	function flagEmoji( code ) {
+		code = String( code || '' ).toUpperCase();
+		if ( ! /^[A-Z]{2}$/.test( code ) || ! String.fromCodePoint ) {
+			return '';
+		}
+		return String.fromCodePoint( 0x1F1E6 + ( code.charCodeAt( 0 ) - 65 ), 0x1F1E6 + ( code.charCodeAt( 1 ) - 65 ) );
 	}
 
 	/* Rendering ----------------------------------------------------------- */
@@ -148,6 +192,18 @@
 		if ( node ) {
 			node.textContent = value;
 		}
+	}
+
+	// Surface the "set up a conversion goal" hint only when there is traffic but
+	// no conversions — i.e. goals are probably not configured.
+	function toggleConvHint( totals ) {
+		var hint = attr( 'conv-hint' );
+		if ( ! hint || ! totals ) {
+			return;
+		}
+		var hasTraffic = ( Number( totals.pageviews ) || 0 ) > 0 || ( Number( totals.clicks ) || 0 ) > 0;
+		var noConv = ( Number( totals.conversions ) || 0 ) === 0;
+		hint.hidden = ! ( hasTraffic && noConv );
 	}
 
 	function setDelta( key, change ) {
@@ -299,6 +355,8 @@
 		}
 		var t = table( [
 			{ label: I18N.page || 'Page' },
+			{ label: I18N.location || 'Location' },
+			{ label: I18N.timeOnSite || 'Time on site', num: true },
 			{ label: I18N.pageviews || 'Pageviews', num: true },
 			{ label: I18N.clicks || 'Clicks', num: true }
 		] );
@@ -306,8 +364,58 @@
 		items.forEach( function ( it ) {
 			var tr = el( 'tr' );
 			tr.appendChild( labelCell( it.title || it.url, it.url ) );
+			tr.appendChild( countryCell( it.country ) );
+			tr.appendChild( textNumCell( formatDuration( it.duration ) ) );
 			tr.appendChild( numCell( it.page_views ) );
 			tr.appendChild( numCell( it.clicks ) );
+			body.appendChild( tr );
+		} );
+		box.appendChild( t );
+	}
+
+	// A country cell with flag + readable name (em dash when unknown).
+	function countryCell( code ) {
+		var td = el( 'td' );
+		if ( ! code ) {
+			td.appendChild( el( 'span', 'cvtrk-sub', '—' ) );
+			return td;
+		}
+		var flag = flagEmoji( code );
+		td.appendChild( el( 'span', 'cvtrk-label', ( flag ? flag + ' ' : '' ) + countryName( code ) ) );
+		return td;
+	}
+
+	function renderCountries( items, enabled ) {
+		var box = attr( 'top-countries' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! enabled ) {
+			empty( box, I18N.geoOff );
+			return;
+		}
+		if ( ! items || ! items.length ) {
+			empty( box, I18N.noData );
+			return;
+		}
+		var max = 1;
+		items.forEach( function ( it ) { max = Math.max( max, it.visitors || 0 ); } );
+
+		var t = table( [
+			{ label: I18N.country || 'Country' },
+			{ label: I18N.visitors || 'Visitors', num: true },
+			{ label: I18N.pageviews || 'Pageviews', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true }
+		] );
+		var body = t.querySelector( 'tbody' );
+		items.forEach( function ( it ) {
+			var tr = el( 'tr' );
+			var flag = flagEmoji( it.country );
+			tr.appendChild( labelCell( ( flag ? flag + ' ' : '' ) + countryName( it.country ), '' ) );
+			tr.appendChild( clicksCell( it.visitors, max ) );
+			tr.appendChild( numCell( it.pageviews ) );
+			tr.appendChild( convCell( it.conversions ) );
 			body.appendChild( tr );
 		} );
 		box.appendChild( t );
@@ -576,11 +684,14 @@
 			api( '/stats/summary?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
 					renderCards( data.totals );
+					set( 'avg_duration', formatDuration( data.avg_session_seconds ) );
 					renderChart( data.series );
 					renderButtons( data.top_buttons );
 					renderPages( data.top_pages, null );
 					renderSources( data.top_sources );
+					renderCountries( data.top_countries, data.geo_enabled );
 					setLive( data.active );
+					toggleConvHint( data.totals );
 				} )
 				.catch( function () {} );
 		}

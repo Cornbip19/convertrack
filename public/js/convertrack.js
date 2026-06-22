@@ -344,13 +344,39 @@
 	}
 
 	function isConversion( el, href ) {
+		// An internal link to a goal URL is counted on its destination pageview,
+		// so never flag the click for it — even when the element also matches a
+		// conversion selector. This keeps one goal completion = one conversion.
+		var internalGoal = !! href && ! isExternalHref( href ) && isConversionUrl( href );
+
 		var list = cfg.conversionSelectors || [];
 		for ( var i = 0; i < list.length; i++ ) {
 			if ( matchesSafe( el, list[ i ] ) ) {
-				return true;
+				return ! internalGoal;
 			}
 		}
-		return isConversionUrl( href );
+		// URL goals are otherwise only counted on the click when the link leaves
+		// the site, since no pageview will fire here to count it.
+		return isExternalHref( href ) && isConversionUrl( href );
+	}
+
+	// True when href points to a different host (so it will not produce a
+	// tracked pageview on this site).
+	function isExternalHref( href ) {
+		if ( ! href ) {
+			return false;
+		}
+		var h = href.toLowerCase();
+		if ( h.charAt( 0 ) === '#' || h.indexOf( 'javascript:' ) === 0 || h.indexOf( 'mailto:' ) === 0 || h.indexOf( 'tel:' ) === 0 ) {
+			return false;
+		}
+		try {
+			var a = document.createElement( 'a' );
+			a.href = href;
+			return !! a.hostname && a.hostname.toLowerCase() !== ( location.hostname || '' ).toLowerCase();
+		} catch ( e ) {
+			return false;
+		}
 	}
 
 	function isConversionUrl( url ) {

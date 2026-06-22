@@ -3,7 +3,7 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Cornbip19
@@ -22,7 +22,7 @@ if ( defined( 'CONVERTRACK_VERSION' ) ) {
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '1.2.0' );
+define( 'CONVERTRACK_VERSION', '1.3.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );
@@ -37,6 +37,7 @@ require_once CONVERTRACK_DIR . 'includes/class-database.php';
 require_once CONVERTRACK_DIR . 'includes/class-settings.php';
 require_once CONVERTRACK_DIR . 'includes/class-activator.php';
 require_once CONVERTRACK_DIR . 'includes/class-deactivator.php';
+require_once CONVERTRACK_DIR . 'includes/class-geo.php';
 require_once CONVERTRACK_DIR . 'includes/class-collector.php';
 require_once CONVERTRACK_DIR . 'includes/class-presence.php';
 require_once CONVERTRACK_DIR . 'includes/class-rest-controller.php';

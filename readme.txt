@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -28,7 +28,9 @@ Convertrack answers three questions about your site:
 
 **Privacy-friendly**
 
-All analytics are stored in your site's own database — no data is ever sent to a third-party service. No IP addresses, names, or email addresses are collected; only a random identifier kept in the visitor's browser storage. "Do Not Track" is honored by default, you can exclude logged-in users, roles, or URLs, and consent-management plugins can gate tracking via the `convertrack_skip_tracking` filter.
+All analytics are stored in your site's own database. No IP addresses, names, or email addresses are collected; only a random identifier kept in the visitor's browser storage. By default no data is sent to any third-party service. "Do Not Track" is honored by default, you can exclude logged-in users, roles, or URLs, and consent-management plugins can gate tracking via the `convertrack_skip_tracking` filter.
+
+The only optional exception is **Visitor location** (off by default): when you turn it on, a visitor's IP address is sent to a geolocation service to look up their country. The IP is never stored — only the 2-letter country code — and a CDN country header (e.g. Cloudflare) is used first when available to avoid the external call.
 
 **Updating**
 
@@ -36,7 +38,9 @@ Installed from WordPress.org, Convertrack updates through your dashboard like an
 
 == Privacy ==
 
-Convertrack is a first-party analytics tool: every event (pageview, click, traffic source, presence heartbeat) is stored only in this site's own database and is never transmitted to any external or third-party service. It does not collect IP addresses, names, or email addresses. A random, non-identifying visitor ID is stored in the browser's local storage to distinguish repeat visits.
+Convertrack is a first-party analytics tool: every event (pageview, click, traffic source, presence heartbeat) is stored only in this site's own database. It does not collect or store IP addresses, names, or email addresses. A random, non-identifying visitor ID is stored in the browser's local storage to distinguish repeat visits.
+
+By default no visitor data is transmitted to any external or third-party service. The optional **Visitor location** feature (disabled by default) is the single exception: when enabled, a visitor's IP address is sent to a geolocation service (ip-api.com) only to determine their country. The IP address is not stored — only the resulting two-letter country code. If you enable it, disclose this in your privacy policy and gate it behind consent where required.
 
 By default, visitors whose browser sends a "Do Not Track" signal are not tracked. To require explicit cookie/consent before any tracking, return `true` from the `convertrack_skip_tracking` filter until your consent banner is accepted. A suggested privacy-policy paragraph is added to **Settings → Privacy** for inclusion in your site's policy.
 
@@ -58,18 +62,24 @@ Yes. The tracker loads as a static script and the ingestion endpoints are public
 In three custom tables: raw events, live sessions, and daily aggregates. No third-party service is contacted for analytics.
 
 = How do conversions work? =
-Add CSS selectors (e.g. `.cvtrk-convert`) or destination paths (e.g. `/thank-you`) in Settings. Matching clicks and pageviews are flagged as conversions.
+A conversion is only counted once you define a goal in **Settings → Tracking**. There are two kinds: a **page reached** (add a path such as `/thank-you` or `/order-received` under "Conversion goal: pages reached" — a visit landing there counts), and a **button clicked** (add a CSS selector, or simply put the attribute `data-cvtrk-convert` on the button). Until at least one goal is set, your conversion count stays at zero even with plenty of traffic.
 
 = Does the plugin collect personal data? =
 No. It stores no IP addresses, names, or email addresses — only a random visitor identifier in the browser's local storage, plus anonymous interaction counts. All of it stays in your own database. Do Not Track is honored by default.
 
 = Does it contact any external services? =
-No. The plugin does not send any data to external or third-party services. (The optional self-hosted build distributed via GitHub additionally queries the GitHub Releases API to check for plugin updates; the WordPress.org version does not.)
+Not by default. The one optional exception is the **Visitor location** setting (off by default): when enabled, it sends each visitor's IP address to a geolocation service (ip-api.com) to resolve the country only — the IP is not stored. Leave it off and no analytics data leaves your site. (Separately, the optional self-hosted build distributed via GitHub queries the GitHub Releases API to check for plugin updates; the WordPress.org version does not.)
 
 = How do I require visitor consent before tracking? =
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 1.3.0 =
+* Conversions now work end to end: a fix ensures "page reached" goals (e.g. landing on /thank-you) are counted in the dashboard totals — previously only button-click goals were counted. The Settings screen now separates the two goal types ("pages reached" and "buttons clicked") with clear examples, and the Overview shows a hint when traffic exists but no conversion goal is set up.
+* Visitor location (optional, off by default): records each visitor's country and adds a "Top countries" card and CSV export. When enabled, the IP is sent to a geolocation service (ip-api.com) to look up the country only and is never stored; a CDN country header is used first when present. Disclose in your privacy policy before enabling.
+* Time on site: the live "who's on the site now" view now shows each visitor's location and how long they've been browsing, and the Overview has a new "Avg. time on site" stat.
+* URL-based conversion clicks to internal pages are no longer double-counted (the destination pageview counts them); external conversion links still count on click.
 
 = 1.2.0 =
 * Page heatmaps: a new Heatmaps screen shows a per-page click map (where visitors click) and a scroll-depth breakdown (how far down the page they browse). The tracker now records click position and maximum scroll depth, stored anonymously as percentages of the page.

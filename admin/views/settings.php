@@ -63,17 +63,23 @@ if ( $cvtrk_updater ) {
 				</td>
 			</tr>
 			<tr>
-				<th scope="row"><label for="cvtrk-conv-sel"><?php esc_html_e( 'Conversion elements', 'convertrack-click-conversion-analytics' ); ?></label></th>
+				<th scope="row"><label for="cvtrk-conv-url"><?php esc_html_e( 'Conversion goal: pages reached', 'convertrack-click-conversion-analytics' ); ?></label></th>
 				<td>
-					<textarea id="cvtrk-conv-sel" class="large-text code" rows="3" name="convertrack_settings[conversion_selectors]"><?php echo esc_textarea( $s['conversion_selectors'] ); ?></textarea>
-					<p class="description"><?php esc_html_e( 'Clicks on elements matching these count as conversions (e.g. .cvtrk-convert, [data-cvtrk-convert]).', 'convertrack-click-conversion-analytics' ); ?></p>
+					<textarea id="cvtrk-conv-url" class="large-text code" rows="3" name="convertrack_settings[conversion_urls]" placeholder="/thank-you&#10;/order-received&#10;/checkout/success"><?php echo esc_textarea( $s['conversion_urls'] ); ?></textarea>
+					<p class="description">
+						<?php esc_html_e( 'One path per line. A visitor reaching any of these pages is counted as a conversion — the easiest, most reliable goal. Common examples: /thank-you, /order-received/ (WooCommerce), a form\'s confirmation page.', 'convertrack-click-conversion-analytics' ); ?>
+						<br><?php esc_html_e( 'Match is a substring of the path, so /order-received also matches /order-received/12345/.', 'convertrack-click-conversion-analytics' ); ?>
+					</p>
 				</td>
 			</tr>
 			<tr>
-				<th scope="row"><label for="cvtrk-conv-url"><?php esc_html_e( 'Conversion URLs', 'convertrack-click-conversion-analytics' ); ?></label></th>
+				<th scope="row"><label for="cvtrk-conv-sel"><?php esc_html_e( 'Conversion goal: buttons clicked', 'convertrack-click-conversion-analytics' ); ?></label></th>
 				<td>
-					<textarea id="cvtrk-conv-url" class="large-text code" rows="3" name="convertrack_settings[conversion_urls]"><?php echo esc_textarea( $s['conversion_urls'] ); ?></textarea>
-					<p class="description"><?php esc_html_e( 'One path per line (e.g. /thank-you). A pageview or a click whose link points to one of these counts as a conversion.', 'convertrack-click-conversion-analytics' ); ?></p>
+					<textarea id="cvtrk-conv-sel" class="large-text code" rows="3" name="convertrack_settings[conversion_selectors]"><?php echo esc_textarea( $s['conversion_selectors'] ); ?></textarea>
+					<p class="description">
+						<?php esc_html_e( 'One CSS selector per line. Clicking a matching button counts as a conversion — use this for goals that have no destination page (AJAX forms, "Add to cart", external checkout links).', 'convertrack-click-conversion-analytics' ); ?>
+						<br><?php esc_html_e( 'Easiest option: add the attribute data-cvtrk-convert to any button you consider a conversion (it already matches by default). Or target existing buttons, e.g. .add-to-cart, .wpforms-submit, button[type=submit].', 'convertrack-click-conversion-analytics' ); ?>
+					</p>
 				</td>
 			</tr>
 		</table>
@@ -115,6 +121,19 @@ if ( $cvtrk_updater ) {
 						<input type="checkbox" name="convertrack_settings[respect_dnt]" value="1" <?php checked( $s['respect_dnt'], 1 ); ?> />
 						<?php esc_html_e( 'Do not track visitors whose browser sends a Do-Not-Track signal.', 'convertrack-click-conversion-analytics' ); ?>
 					</label>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><?php esc_html_e( 'Visitor location', 'convertrack-click-conversion-analytics' ); ?></th>
+				<td>
+					<label>
+						<input type="checkbox" name="convertrack_settings[enable_geo]" value="1" <?php checked( $s['enable_geo'], 1 ); ?> />
+						<?php esc_html_e( 'Record each visitor\'s country and show a "Top countries" breakdown.', 'convertrack-click-conversion-analytics' ); ?>
+					</label>
+					<p class="description">
+						<strong><?php esc_html_e( 'Privacy note:', 'convertrack-click-conversion-analytics' ); ?></strong>
+						<?php esc_html_e( 'When on, the visitor\'s IP address is sent to a third-party geolocation service (ip-api.com) to look up the country only. The IP address itself is never stored, and only the 2-letter country code is kept. This is off by default; enabling it means Convertrack contacts an external service, which you should disclose in your privacy policy. A CDN country header (e.g. Cloudflare) is used first when available, avoiding the external call.', 'convertrack-click-conversion-analytics' ); ?>
+					</p>
 				</td>
 			</tr>
 			<tr>

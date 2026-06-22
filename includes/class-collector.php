@@ -49,6 +49,7 @@ class Collector {
 
 		$rows         = array();
 		$now          = current_time( 'mysql' );
+		$country      = Geo::current_country();
 		$pageview_inc = 0;
 		$click_inc    = 0;
 		$last_url     = '';
@@ -59,6 +60,8 @@ class Collector {
 			if ( null === $row ) {
 				continue;
 			}
+			// Country is resolved server-side; never trust a client-supplied value.
+			$row['country'] = $country;
 			$rows[]   = $row;
 			$last_url = $row['page_url'];
 			$last_post = (int) $row['post_id'];
@@ -77,7 +80,7 @@ class Collector {
 		$stored = Database::insert_events( $rows );
 
 		// Keep the live session fresh and counts accurate.
-		Database::touch_session( $session_id, $visitor_id, $last_url, $last_post, $pageview_inc, $click_inc );
+		Database::touch_session( $session_id, $visitor_id, $last_url, $last_post, $pageview_inc, $click_inc, $country );
 
 		/**
 		 * Fires after a batch of events has been stored.

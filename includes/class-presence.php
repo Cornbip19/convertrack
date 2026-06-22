@@ -39,8 +39,9 @@ class Presence {
 
 		$url     = Collector::sanitize_relative_url( isset( $payload['url'] ) ? $payload['url'] : '' );
 		$post_id = isset( $payload['pid'] ) ? absint( $payload['pid'] ) : 0;
+		$country = Geo::current_country();
 
-		Database::touch_session( $session_id, $visitor_id, $url, $post_id, 0, 0 );
+		Database::touch_session( $session_id, $visitor_id, $url, $post_id, 0, 0, $country );
 
 		return array( 'ok' => true );
 	}
@@ -70,11 +71,18 @@ class Presence {
 			$post_id = (int) $row['current_post_id'];
 			$title   = $post_id > 0 ? get_the_title( $post_id ) : '';
 
+			// Time on site so far: last activity minus session start.
+			$started  = isset( $row['started_at'] ) ? strtotime( (string) $row['started_at'] ) : 0;
+			$seen     = isset( $row['last_seen'] ) ? strtotime( (string) $row['last_seen'] ) : 0;
+			$duration = ( $started && $seen && $seen >= $started ) ? ( $seen - $started ) : 0;
+
 			$out[] = array(
 				'url'        => $row['current_url'],
 				'post_id'    => $post_id,
 				'title'      => $title ? $title : $row['current_url'],
 				'last_seen'  => $row['last_seen'],
+				'country'    => isset( $row['country'] ) ? (string) $row['country'] : '',
+				'duration'   => (int) $duration,
 				'page_views' => (int) $row['page_views'],
 				'clicks'     => (int) $row['click_count'],
 			);

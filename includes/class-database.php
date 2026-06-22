@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.2.0';
+	const DB_VERSION = '1.3.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -62,6 +62,16 @@ class Database {
 	}
 
 	/**
+	 * Daily visitor-country rollups (geolocation).
+	 *
+	 * @return string
+	 */
+	public static function geo_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'convertrack_geo';
+	}
+
+	/**
 	 * Create or update the database schema.
 	 */
 	public static function install() {
@@ -73,6 +83,7 @@ class Database {
 		$sessions        = self::sessions_table();
 		$daily           = self::daily_table();
 		$sources         = self::sources_table();
+		$geo             = self::geo_table();
 
 		$sql = array();
 
@@ -92,6 +103,7 @@ class Database {
 			element_href varchar(255) NOT NULL DEFAULT '',
 			is_conversion tinyint(1) NOT NULL DEFAULT 0,
 			device_type varchar(10) NOT NULL DEFAULT '',
+			country char(2) NOT NULL DEFAULT '',
 			source varchar(100) NOT NULL DEFAULT '',
 			referrer_host varchar(191) NOT NULL DEFAULT '',
 			utm_source varchar(100) NOT NULL DEFAULT '',
@@ -116,6 +128,7 @@ class Database {
 			started_at datetime NOT NULL,
 			current_url varchar(255) NOT NULL DEFAULT '',
 			current_post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			country char(2) NOT NULL DEFAULT '',
 			page_views int(10) unsigned NOT NULL DEFAULT 0,
 			click_count int(10) unsigned NOT NULL DEFAULT 0,
 			PRIMARY KEY  (session_id),
@@ -155,6 +168,20 @@ class Database {
 			KEY stat_date (stat_date)
 		) $charset_collate;";
 
+		$sql[] = "CREATE TABLE $geo (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			bucket_hash char(32) NOT NULL DEFAULT '',
+			stat_date date NOT NULL,
+			country char(2) NOT NULL DEFAULT '',
+			pageviews int(10) unsigned NOT NULL DEFAULT 0,
+			clicks int(10) unsigned NOT NULL DEFAULT 0,
+			conversions int(10) unsigned NOT NULL DEFAULT 0,
+			unique_visitors int(10) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			UNIQUE KEY bucket_hash (bucket_hash),
+			KEY stat_date (stat_date)
+		) $charset_collate;";
+
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
 		}
@@ -181,6 +208,7 @@ class Database {
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::daily_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sources_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::geo_table() ); // phpcs:ignore WordPress.DB
 	}
 
 	/**
@@ -192,6 +220,7 @@ class Database {
 		$wpdb->query( 'TRUNCATE TABLE ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::daily_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'TRUNCATE TABLE ' . self::sources_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'TRUNCATE TABLE ' . self::geo_table() ); // phpcs:ignore WordPress.DB
 		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
 	}
 
@@ -231,23 +260,26 @@ class Database {
 			array( 'source' => 'Newsletter',     'rh' => '',                      'us' => 'newsletter', 'um' => 'email',  'uc' => 'june-digest' ),
 		);
 
+		$country_pool = array( 'US', 'GB', 'CA', 'DE', 'IN', 'AU', 'FR', 'BR', 'NL', 'ES' );
+
 		$now_ts = current_time( 'timestamp' );
 		$rows   = array();
 
 		for ( $d = 6; $d >= 0; $d-- ) {
 			for ( $v = 0; $v < 18; $v++ ) {
-				$vid  = self::uuid();
-				$sid  = self::uuid();
-				$page = $page_map[ array_rand( $page_map ) ];
-				$src  = $source_pool[ array_rand( $source_pool ) ];
-				$ts   = $now_ts - ( $d * DAY_IN_SECONDS ) - wp_rand( 60, 80000 );
+				$vid     = self::uuid();
+				$sid     = self::uuid();
+				$page    = $page_map[ array_rand( $page_map ) ];
+				$src     = $source_pool[ array_rand( $source_pool ) ];
+				$country = $country_pool[ array_rand( $country_pool ) ];
+				$ts      = $now_ts - ( $d * DAY_IN_SECONDS ) - wp_rand( 60, 80000 );
 
 				$rows[] = array(
 					'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'pageview',
 					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
 					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0,
-					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ),
+					'device_type' => ( wp_rand( 0, 2 ) ? 'desktop' : 'mobile' ), 'country' => $country,
 					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
 					'created_at' => gmdate( 'Y-m-d H:i:s', $ts ),
 				);
@@ -260,7 +292,7 @@ class Database {
 						'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 						'element_tag' => $pick['tag'], 'element_id' => '', 'element_classes' => $pick['cls'],
 						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
-						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop',
+						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop', 'country' => $country,
 						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
 						'pos_x' => wp_rand( 120, 880 ), 'pos_y' => wp_rand( 60, 820 ),
 						'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 5, 600 ) ),
@@ -271,7 +303,7 @@ class Database {
 					'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'scroll',
 					'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 					'element_tag' => '', 'element_id' => '', 'element_classes' => '', 'element_text' => '',
-					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0, 'device_type' => 'desktop',
+					'element_selector' => '', 'element_href' => '', 'is_conversion' => 0, 'device_type' => 'desktop', 'country' => $country,
 					'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'],
 					'scroll_depth' => min( 100, wp_rand( 20, 100 ) ),
 					'created_at' => gmdate( 'Y-m-d H:i:s', $ts + wp_rand( 60, 800 ) ),
@@ -291,7 +323,7 @@ class Database {
 		// A few visitors "on the site now".
 		for ( $i = 0; $i < 4; $i++ ) {
 			$pg = $page_map[ array_rand( $page_map ) ];
-			self::touch_session( self::uuid(), self::uuid(), $pg['url'], $pg['id'], 1, wp_rand( 0, 3 ) );
+			self::touch_session( self::uuid(), self::uuid(), $pg['url'], $pg['id'], 1, wp_rand( 0, 3 ), $country_pool[ array_rand( $country_pool ) ] );
 		}
 
 		wp_cache_delete( 'convertrack_today_agg', 'convertrack' );
@@ -338,6 +370,7 @@ class Database {
 			'element_href',
 			'is_conversion',
 			'device_type',
+			'country',
 			'source',
 			'referrer_host',
 			'utm_source',
@@ -349,7 +382,7 @@ class Database {
 			'created_at',
 		);
 
-		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s)';
+		$row_placeholder = '(%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%s,%s,%s,%s,%d,%d,%d,%s)';
 		$placeholders    = array();
 		$values          = array();
 
@@ -378,20 +411,23 @@ class Database {
 	 * @param int    $post_id        Current post ID.
 	 * @param int    $pageview_inc   Page views to add (0 or 1).
 	 * @param int    $click_inc      Clicks to add.
+	 * @param string $country        Two-letter country code ('' if unknown).
 	 */
-	public static function touch_session( $session_id, $visitor_id, $url, $post_id, $pageview_inc, $click_inc ) {
+	public static function touch_session( $session_id, $visitor_id, $url, $post_id, $pageview_inc, $click_inc, $country = '' ) {
 		global $wpdb;
 
 		$now   = current_time( 'mysql' );
 		$table = self::sessions_table();
 
+		// Keep an already-known country if a later ping cannot resolve one.
 		$sql = "INSERT INTO $table
-			(session_id, visitor_id, last_seen, started_at, current_url, current_post_id, page_views, click_count)
-			VALUES (%s, %s, %s, %s, %s, %d, %d, %d)
+			(session_id, visitor_id, last_seen, started_at, current_url, current_post_id, country, page_views, click_count)
+			VALUES (%s, %s, %s, %s, %s, %d, %s, %d, %d)
 			ON DUPLICATE KEY UPDATE
 				last_seen = VALUES(last_seen),
 				current_url = VALUES(current_url),
 				current_post_id = VALUES(current_post_id),
+				country = IF(VALUES(country) <> '', VALUES(country), country),
 				page_views = page_views + VALUES(page_views),
 				click_count = click_count + VALUES(click_count)";
 
@@ -405,6 +441,7 @@ class Database {
 				$now,
 				$url,
 				$post_id,
+				$country,
 				$pageview_inc,
 				$click_inc
 			)
@@ -457,7 +494,7 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT current_url, current_post_id, last_seen, page_views, click_count
+				"SELECT current_url, current_post_id, last_seen, started_at, country, page_views, click_count
 				 FROM $table WHERE last_seen >= %s ORDER BY last_seen DESC LIMIT %d",
 				$threshold,
 				$limit
@@ -674,7 +711,7 @@ class Database {
 				"SELECT source,
 				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
 				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
-				        SUM(CASE WHEN event_type='click' AND is_conversion=1 THEN 1 ELSE 0 END) conversions,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions,
 				        COUNT(DISTINCT visitor_id) visitors
 				 FROM $events WHERE created_at >= %s GROUP BY source",
 				$today . ' 00:00:00'
@@ -705,6 +742,114 @@ class Database {
 		);
 
 		return array_slice( $list, 0, max( 1, (int) $limit ) );
+	}
+
+	/**
+	 * Visitors by country over a range (rollups + today live), merged.
+	 *
+	 * @param int $days  Days back.
+	 * @param int $limit Max countries.
+	 * @return array
+	 */
+	public static function top_countries( $days, $limit = 12 ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$today  = self::today();
+		$start  = self::date_days_ago( $days - 1 );
+		$geo    = self::geo_table();
+		$events = self::events_table();
+
+		// Finished days from the country rollup.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$hist = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT country, SUM(pageviews) pageviews, SUM(clicks) clicks,
+				        SUM(conversions) conversions, SUM(unique_visitors) visitors
+				 FROM $geo WHERE stat_date >= %s AND stat_date < %s GROUP BY country",
+				$start,
+				$today
+			),
+			ARRAY_A
+		);
+
+		// Today, live from raw events.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$today_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT country,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions,
+				        COUNT(DISTINCT visitor_id) visitors
+				 FROM $events WHERE country <> '' AND created_at >= %s GROUP BY country",
+				$today . ' 00:00:00'
+			),
+			ARRAY_A
+		);
+
+		$map = array();
+		foreach ( array( $hist, $today_rows ) as $set ) {
+			foreach ( $set as $r ) {
+				$c = strtoupper( (string) $r['country'] );
+				if ( '' === $c ) {
+					continue;
+				}
+				if ( ! isset( $map[ $c ] ) ) {
+					$map[ $c ] = array( 'country' => $c, 'pageviews' => 0, 'clicks' => 0, 'conversions' => 0, 'visitors' => 0 );
+				}
+				$map[ $c ]['pageviews']   += (int) $r['pageviews'];
+				$map[ $c ]['clicks']      += (int) $r['clicks'];
+				$map[ $c ]['conversions'] += (int) $r['conversions'];
+				$map[ $c ]['visitors']    += (int) $r['visitors'];
+			}
+		}
+
+		$list = array_values( $map );
+		usort(
+			$list,
+			function ( $a, $b ) {
+				return $b['pageviews'] - $a['pageviews'];
+			}
+		);
+
+		return array_slice( $list, 0, max( 1, (int) $limit ) );
+	}
+
+	/**
+	 * Average session duration (seconds) over a date range, derived from the
+	 * spread of each session's events. Cached briefly to absorb dashboard polling.
+	 *
+	 * @param int $days Days back.
+	 * @return int Average seconds per session (0 when there is no data).
+	 */
+	public static function avg_session_seconds( $days ) {
+		$days      = max( 1, (int) $days );
+		$cache_key = 'convertrack_avgdur_' . $days;
+		$cached    = wp_cache_get( $cache_key, 'convertrack' );
+		if ( false !== $cached ) {
+			return (int) $cached;
+		}
+
+		global $wpdb;
+		$events = self::events_table();
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+
+		// Per session: last event minus first event. Averaged across sessions.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$avg = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT AVG(dur) FROM (
+					SELECT TIMESTAMPDIFF(SECOND, MIN(created_at), MAX(created_at)) dur
+					FROM $events WHERE created_at >= %s GROUP BY session_id
+				) t",
+				$start
+			)
+		);
+
+		$avg = (int) round( (float) $avg );
+		wp_cache_set( $cache_key, $avg, 'convertrack', 60 );
+		return $avg;
 	}
 
 	/**
@@ -875,7 +1020,7 @@ class Database {
 			$wpdb->prepare(
 				"SELECT
 					SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
-					SUM(CASE WHEN event_type='click' AND is_conversion=1 THEN 1 ELSE 0 END) conversions,
+					SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions,
 					SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
 					COUNT(DISTINCT visitor_id) uniques
 				 FROM $events WHERE created_at >= %s",
@@ -927,6 +1072,7 @@ class Database {
 		$events  = self::events_table();
 		$daily   = self::daily_table();
 		$sources = self::sources_table();
+		$geo     = self::geo_table();
 		$start   = $date . ' 00:00:00';
 		$end     = $date . ' 23:59:59';
 
@@ -935,6 +1081,8 @@ class Database {
 		$wpdb->query( $wpdb->prepare( "DELETE FROM $daily WHERE stat_date = %s", $date ) );
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$wpdb->query( $wpdb->prepare( "DELETE FROM $sources WHERE stat_date = %s", $date ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( $wpdb->prepare( "DELETE FROM $geo WHERE stat_date = %s", $date ) );
 
 		// Click buckets grouped by selector.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -968,11 +1116,14 @@ class Database {
 			);
 		}
 
-		// Pageview buckets grouped by page (selector left empty).
+		// Pageview buckets grouped by page (selector left empty). Pageview-level
+		// conversions (a visit reaching a configured conversion URL) are counted
+		// here so URL goals show up in the dashboard totals.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$pv_rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT post_id, COUNT(*) AS pageviews, COUNT(DISTINCT visitor_id) AS uniques
+				"SELECT post_id, COUNT(*) AS pageviews, SUM(is_conversion) AS conversions,
+				        COUNT(DISTINCT visitor_id) AS uniques
 				 FROM $events
 				 WHERE event_type='pageview' AND created_at BETWEEN %s AND %s
 				 GROUP BY post_id",
@@ -990,6 +1141,7 @@ class Database {
 				'',
 				array(
 					'pageviews'       => (int) $row['pageviews'],
+					'conversions'     => (int) $row['conversions'],
 					'unique_visitors' => (int) $row['uniques'],
 				)
 			);
@@ -1002,7 +1154,7 @@ class Database {
 				"SELECT source, utm_campaign AS campaign,
 				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
 				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
-				        SUM(CASE WHEN event_type='click' AND is_conversion=1 THEN 1 ELSE 0 END) AS conversions,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) AS conversions,
 				        COUNT(DISTINCT visitor_id) AS uniques
 				 FROM $events
 				 WHERE created_at BETWEEN %s AND %s
@@ -1027,6 +1179,74 @@ class Database {
 				)
 			);
 		}
+
+		// Visitor-country buckets (rows with a resolved country only).
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$geo_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT country,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) AS conversions,
+				        COUNT(DISTINCT visitor_id) AS uniques
+				 FROM $events
+				 WHERE country <> '' AND created_at BETWEEN %s AND %s
+				 GROUP BY country",
+				$start,
+				$end
+			),
+			ARRAY_A
+		);
+
+		foreach ( $geo_rows as $row ) {
+			self::upsert_geo_bucket(
+				$date,
+				(string) $row['country'],
+				array(
+					'pageviews'       => (int) $row['pageviews'],
+					'clicks'          => (int) $row['clicks'],
+					'conversions'     => (int) $row['conversions'],
+					'unique_visitors' => (int) $row['uniques'],
+				)
+			);
+		}
+	}
+
+	/**
+	 * Upsert a single visitor-country bucket for a day.
+	 *
+	 * @param string $date    Y-m-d.
+	 * @param string $country Two-letter country code.
+	 * @param array  $metrics pageviews/clicks/conversions/unique_visitors.
+	 */
+	private static function upsert_geo_bucket( $date, $country, array $metrics ) {
+		global $wpdb;
+
+		$hash = md5( $date . '|geo|' . $country );
+		$geo  = self::geo_table();
+
+		$sql = "INSERT INTO $geo
+			(bucket_hash, stat_date, country, pageviews, clicks, conversions, unique_visitors)
+			VALUES (%s, %s, %s, %d, %d, %d, %d)
+			ON DUPLICATE KEY UPDATE
+				pageviews = pageviews + VALUES(pageviews),
+				clicks = clicks + VALUES(clicks),
+				conversions = conversions + VALUES(conversions),
+				unique_visitors = unique_visitors + VALUES(unique_visitors)";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query(
+			$wpdb->prepare(
+				$sql,
+				$hash,
+				$date,
+				$country,
+				(int) $metrics['pageviews'],
+				(int) $metrics['clicks'],
+				(int) $metrics['conversions'],
+				(int) $metrics['unique_visitors']
+			)
+		);
 	}
 
 	/**
@@ -1040,20 +1260,31 @@ class Database {
 	private static function upsert_source_bucket( $date, $source, $campaign, array $metrics ) {
 		global $wpdb;
 
-		$hash = md5( $date . '|' . $source . '|' . $campaign );
-		$wpdb->insert(
-			self::sources_table(),
-			array(
-				'bucket_hash'     => $hash,
-				'stat_date'       => $date,
-				'source'          => $source,
-				'campaign'        => $campaign,
-				'pageviews'       => (int) $metrics['pageviews'],
-				'clicks'          => (int) $metrics['clicks'],
-				'conversions'     => (int) $metrics['conversions'],
-				'unique_visitors' => (int) $metrics['unique_visitors'],
-			),
-			array( '%s', '%s', '%s', '%s', '%d', '%d', '%d', '%d' )
+		$hash    = md5( $date . '|' . $source . '|' . $campaign );
+		$sources = self::sources_table();
+
+		$sql = "INSERT INTO $sources
+			(bucket_hash, stat_date, source, campaign, pageviews, clicks, conversions, unique_visitors)
+			VALUES (%s, %s, %s, %s, %d, %d, %d, %d)
+			ON DUPLICATE KEY UPDATE
+				pageviews = pageviews + VALUES(pageviews),
+				clicks = clicks + VALUES(clicks),
+				conversions = conversions + VALUES(conversions),
+				unique_visitors = unique_visitors + VALUES(unique_visitors)";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query(
+			$wpdb->prepare(
+				$sql,
+				$hash,
+				$date,
+				$source,
+				$campaign,
+				(int) $metrics['pageviews'],
+				(int) $metrics['clicks'],
+				(int) $metrics['conversions'],
+				(int) $metrics['unique_visitors']
+			)
 		);
 	}
 
@@ -1082,20 +1313,33 @@ class Database {
 			)
 		);
 
-		$wpdb->insert(
-			$daily,
-			array(
-				'bucket_hash'     => $hash,
-				'stat_date'       => $date,
-				'post_id'         => $post_id,
-				'element_selector' => $selector,
-				'element_text'    => $text,
-				'clicks'          => (int) $data['clicks'],
-				'conversions'     => (int) $data['conversions'],
-				'pageviews'       => (int) $data['pageviews'],
-				'unique_visitors' => (int) $data['unique_visitors'],
-			),
-			array( '%s', '%s', '%d', '%s', '%s', '%d', '%d', '%d', '%d' )
+		// Real upsert: a page-level pageview bucket (selector '') can share a hash
+		// with a selector-less click bucket for the same page/day, so merge metrics
+		// rather than letting the second INSERT fail silently.
+		$sql = "INSERT INTO $daily
+			(bucket_hash, stat_date, post_id, element_selector, element_text, clicks, conversions, pageviews, unique_visitors)
+			VALUES (%s, %s, %d, %s, %s, %d, %d, %d, %d)
+			ON DUPLICATE KEY UPDATE
+				element_text = IF(VALUES(element_text) <> '', VALUES(element_text), element_text),
+				clicks = clicks + VALUES(clicks),
+				conversions = conversions + VALUES(conversions),
+				pageviews = pageviews + VALUES(pageviews),
+				unique_visitors = unique_visitors + VALUES(unique_visitors)";
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$wpdb->query(
+			$wpdb->prepare(
+				$sql,
+				$hash,
+				$date,
+				$post_id,
+				$selector,
+				$text,
+				(int) $data['clicks'],
+				(int) $data['conversions'],
+				(int) $data['pageviews'],
+				(int) $data['unique_visitors']
+			)
 		);
 	}
 

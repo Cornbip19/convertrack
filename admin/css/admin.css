@@ -532,6 +532,34 @@
 	margin: 10px 0 0;
 }
 
+/* Hint banner ------------------------------------------------------------ */
+.cvtrk-hint {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	border: 1px solid var(--cvtrk-border);
+	border-left: 4px solid var(--cvtrk-accent);
+	background: #fff;
+	padding: 12px 14px;
+	margin: 0 0 16px;
+	font-size: 13px;
+	color: var(--cvtrk-ink);
+}
+
+.cvtrk-hint[hidden] {
+	display: none;
+}
+
+.cvtrk-hint .dashicons {
+	color: var(--cvtrk-accent);
+	flex: 0 0 auto;
+}
+
+.cvtrk-hint a {
+	white-space: nowrap;
+	font-weight: 600;
+}
+
 /* Tools / settings ------------------------------------------------------- */
 .cvtrk-notice {
 	border: 1px solid var(--cvtrk-border);
