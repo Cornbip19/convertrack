@@ -1892,6 +1892,21 @@ class Database {
 	}
 
 	/**
+	 * Cap a string to a maximum number of characters (multibyte-safe).
+	 *
+	 * @param string $value String.
+	 * @param int    $len   Max characters.
+	 * @return string
+	 */
+	private static function truncate( $value, $len ) {
+		$value = (string) $value;
+		if ( function_exists( 'mb_substr' ) ) {
+			return mb_substr( $value, 0, $len );
+		}
+		return substr( $value, 0, $len );
+	}
+
+	/**
 	 * Upsert a single traffic-source bucket for a day.
 	 *
 	 * @param string $date     Y-m-d.

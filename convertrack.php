@@ -3,7 +3,7 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           1.5.0
+ * Version:           1.6.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Cornbip19
@@ -22,7 +22,7 @@ if ( defined( 'CONVERTRACK_VERSION' ) ) {
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '1.5.0' );
+define( 'CONVERTRACK_VERSION', '1.6.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );
@@ -44,6 +44,17 @@ require_once CONVERTRACK_DIR . 'includes/class-rest-controller.php';
 require_once CONVERTRACK_DIR . 'includes/class-frontend.php';
 require_once CONVERTRACK_DIR . 'includes/class-cron.php';
 require_once CONVERTRACK_DIR . 'includes/class-admin.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-settings.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-credentials.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-database.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-logger.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-oauth.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-api.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-sitemap-scanner.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-processor.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-cron.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-rest-controller.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-admin.php';
 
 // The GitHub self-updater ships only in the self-hosted build. The
 // WordPress.org build omits this file so the directory handles all updates

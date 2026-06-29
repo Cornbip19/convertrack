@@ -16,9 +16,16 @@
 	var ROOT = String( C.root ).replace( /\/$/, '' );
 	var I18N = C.i18n || {};
 
-	function api( path ) {
+	function api( path, options ) {
+		options = options || {};
+		var headers = { 'X-WP-Nonce': C.nonce };
+		if ( options.body ) {
+			headers['Content-Type'] = 'application/json';
+		}
 		return fetch( ROOT + path, {
-			headers: { 'X-WP-Nonce': C.nonce },
+			method: options.method || 'GET',
+			headers: headers,
+			body: options.body ? JSON.stringify( options.body ) : undefined,
 			credentials: 'same-origin'
 		} ).then( function ( r ) {
 			if ( ! r.ok ) {
@@ -26,6 +33,10 @@
 			}
 			return r.json();
 		} );
+	}
+
+	function postApi( path, body ) {
+		return api( path, { method: 'POST', body: body || {} } );
 	}
 
 	/* DOM helpers --------------------------------------------------------- */
@@ -1137,6 +1148,379 @@
 		load();
 	}
 
+	function initGsc() {
+		var root = document.getElementById( 'convertrack-gsc' );
+		if ( ! root ) {
+			return;
+		}
+
+		var state = { page: 1, pages: 1, perPage: 25 };
+		var statusSel = attr( 'gsc-status' );
+		var postTypeSel = attr( 'gsc-post-type' );
+		var prioritySel = attr( 'gsc-priority' );
+		var sitemapSel = attr( 'gsc-sitemap' );
+		var checkedFrom = attr( 'gsc-checked-from' );
+		var checkedTo = attr( 'gsc-checked-to' );
+		var exportLink = attr( 'gsc-export' );
+		var postTabs = attr( 'gsc-post-tabs' );
+
+		function statusText( value ) {
+			return String( value || '' ).replace( /_/g, ' ' ).replace( /\b\w/g, function ( c ) {
+				return c.toUpperCase();
+			} );
+		}
+
+		function dateText( value ) {
+			return value || '-';
+		}
+
+		function loadSummary() {
+			api( '/gsc/summary' )
+				.then( function ( data ) {
+					renderGscSummary( data );
+					renderGscSitemapOptions( data.sitemaps || [] );
+				} )
+				.catch( function () {} );
+		}
+
+		function renderGscSitemapOptions( items ) {
+			if ( ! sitemapSel || sitemapSel.getAttribute( 'data-loaded' ) === '1' || ! items.length ) {
+				return;
+			}
+			items.forEach( function ( item ) {
+				var opt = document.createElement( 'option' );
+				opt.value = item.hash || '';
+				opt.textContent = ( item.url || '' ) + ' (' + num( item.total ) + ')';
+				sitemapSel.appendChild( opt );
+			} );
+			sitemapSel.setAttribute( 'data-loaded', '1' );
+		}
+
+		function renderGscSummary( data ) {
+			var box = attr( 'gsc-summary' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+			var cards = [
+				{ key: 'total', label: I18N.totalUrls || 'Total URLs Found', icon: 'list-view' },
+				{ key: 'indexed', label: I18N.indexed || 'Indexed', icon: 'yes-alt', cls: 'is-accent' },
+				{ key: 'not_indexed', label: I18N.notIndexed || 'Not Indexed', icon: 'dismiss' },
+				{ key: 'pending_due_to_quota', label: I18N.pendingQuota || 'Pending Due to Quota', icon: 'clock' },
+				{ key: 'pending_from_sitemap', label: I18N.pendingSitemap || 'Pending From Sitemap', icon: 'media-code' },
+				{ key: 'crawled_not_indexed', label: I18N.crawledNotIndexed || 'Crawled But Not Indexed', icon: 'visibility' },
+				{ key: 'discovered_not_indexed', label: I18N.discoveredNotIndexed || 'Discovered But Not Indexed', icon: 'search' },
+				{ key: 'duplicate_canonical', label: I18N.duplicateCanonical || 'Duplicate/Canonical Issue', icon: 'admin-page' },
+				{ key: 'blocked_by_robots', label: I18N.blockedRobots || 'Blocked by Robots', icon: 'shield' },
+				{ key: 'noindex_detected', label: I18N.noindexDetected || 'Noindex Detected', icon: 'hidden' },
+				{ key: 'errors', label: I18N.errors || 'Errors', icon: 'warning' },
+				{ key: 'last_sync_time', label: I18N.lastSync || 'Last Sync Time', icon: 'update', text: true },
+				{ key: 'next_scheduled_check', label: I18N.nextCheck || 'Next Scheduled Check', icon: 'calendar-alt', text: true }
+			];
+			cards.forEach( function ( card ) {
+				var item = el( 'div', 'cvtrk-kpi ' + ( card.cls || '' ) );
+				var icon = el( 'span', 'cvtrk-kpi-icon' );
+				icon.appendChild( el( 'span', 'dashicons dashicons-' + card.icon ) );
+				var body = el( 'span', 'cvtrk-kpi-body' );
+				body.appendChild( el( 'span', 'cvtrk-kpi-value', card.text ? dateText( data[ card.key ] ) : num( data[ card.key ] ) ) );
+				body.appendChild( el( 'span', 'cvtrk-kpi-label', card.label ) );
+				item.appendChild( icon );
+				item.appendChild( body );
+				box.appendChild( item );
+			} );
+		}
+
+		function query() {
+			var q = '?page=' + encodeURIComponent( state.page ) + '&per_page=' + encodeURIComponent( state.perPage );
+			q += '&status=' + encodeURIComponent( statusSel ? statusSel.value : 'all' );
+			q += '&post_type=' + encodeURIComponent( postTypeSel ? postTypeSel.value : 'all' );
+			if ( prioritySel && prioritySel.value !== '' ) {
+				q += '&priority=' + encodeURIComponent( prioritySel.value );
+			}
+			if ( sitemapSel && sitemapSel.value !== '' ) {
+				q += '&sitemap_hash=' + encodeURIComponent( sitemapSel.value );
+			}
+			if ( checkedFrom && checkedFrom.value ) {
+				q += '&checked_from=' + encodeURIComponent( checkedFrom.value );
+			}
+			if ( checkedTo && checkedTo.value ) {
+				q += '&checked_to=' + encodeURIComponent( checkedTo.value );
+			}
+			return q;
+		}
+
+		function updateExport() {
+			if ( ! exportLink || ! C.gscExportUrl ) {
+				return;
+			}
+			var href = C.gscExportUrl + '&_wpnonce=' + encodeURIComponent( C.gscExportNonce || '' );
+			href += '&status=' + encodeURIComponent( statusSel ? statusSel.value : 'all' );
+			href += '&post_type=' + encodeURIComponent( postTypeSel ? postTypeSel.value : 'all' );
+			if ( prioritySel && prioritySel.value !== '' ) {
+				href += '&priority=' + encodeURIComponent( prioritySel.value );
+			}
+			if ( sitemapSel && sitemapSel.value !== '' ) {
+				href += '&sitemap_hash=' + encodeURIComponent( sitemapSel.value );
+			}
+			if ( checkedFrom && checkedFrom.value ) {
+				href += '&checked_from=' + encodeURIComponent( checkedFrom.value );
+			}
+			if ( checkedTo && checkedTo.value ) {
+				href += '&checked_to=' + encodeURIComponent( checkedTo.value );
+			}
+			exportLink.href = href;
+		}
+
+		function syncPostTabs() {
+			if ( ! postTabs || ! postTypeSel ) {
+				return;
+			}
+			var value = postTypeSel.value || 'all';
+			postTabs.querySelectorAll( '[data-gsc-post-tab]' ).forEach( function ( tab ) {
+				if ( tab.getAttribute( 'data-gsc-post-tab' ) === value ) {
+					tab.classList.add( 'is-active' );
+				} else {
+					tab.classList.remove( 'is-active' );
+				}
+			} );
+		}
+
+		function loadUrls() {
+			syncPostTabs();
+			updateExport();
+			api( '/gsc/urls' + query() )
+				.then( function ( data ) {
+					state.pages = data.pages || 1;
+					renderGscUrls( data.rows || [] );
+					renderGscPagination( data );
+				} )
+				.catch( function () {} );
+		}
+
+		function renderGscUrls( rows ) {
+			var box = attr( 'gsc-urls' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+			if ( ! rows.length ) {
+				empty( box, I18N.noData );
+				return;
+			}
+
+			var t = table( [
+				{ label: 'URL' },
+				{ label: 'Post Type' },
+				{ label: I18N.gscStatus || 'Google Index Status' },
+				{ label: I18N.coverageState || 'Coverage State' },
+				{ label: I18N.googleVerdict || 'Google Verdict' },
+				{ label: 'Last Checked' },
+				{ label: I18N.nextCheck || 'Next Check' },
+				{ label: I18N.attempts || 'Attempts', num: true },
+				{ label: I18N.actions || 'Actions' }
+			] );
+			var body = t.querySelector( 'tbody' );
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( labelCell( row.post_title || row.url, row.url ) );
+				tr.appendChild( el( 'td', null, row.post_type || '-' ) );
+				var status = el( 'td' );
+				status.appendChild( el( 'span', 'cvtrk-badge cvtrk-gsc-status-' + ( row.index_status || '' ), statusText( row.index_status ) ) );
+				tr.appendChild( status );
+				tr.appendChild( el( 'td', null, row.coverage_state || '-' ) );
+				tr.appendChild( el( 'td', null, row.google_verdict || '-' ) );
+				tr.appendChild( el( 'td', null, dateText( row.last_checked_at ) ) );
+				tr.appendChild( el( 'td', null, dateText( row.next_check_at ) ) );
+				tr.appendChild( numCell( row.attempt_count ) );
+				tr.appendChild( gscActionsCell( row ) );
+				body.appendChild( tr );
+			} );
+			box.appendChild( t );
+		}
+
+		function gscActionsCell( row ) {
+			var td = el( 'td', 'cvtrk-gsc-actions' );
+			var recheck = el( 'button', 'button button-small', 'Recheck' );
+			recheck.type = 'button';
+			recheck.setAttribute( 'data-gsc-action', 'recheck' );
+			recheck.setAttribute( 'data-gsc-id', row.id );
+			td.appendChild( recheck );
+
+			if ( row.url ) {
+				var open = el( 'a', 'button button-small', 'Open' );
+				open.href = row.url;
+				open.target = '_blank';
+				open.rel = 'noopener noreferrer';
+				td.appendChild( open );
+			}
+			if ( row.edit_link ) {
+				var edit = el( 'a', 'button button-small', 'Edit' );
+				edit.href = row.edit_link;
+				td.appendChild( edit );
+			}
+			if ( row.inspection_result_link ) {
+				var inspect = el( 'a', 'button button-small', 'Inspect' );
+				inspect.href = row.inspection_result_link;
+				inspect.target = '_blank';
+				inspect.rel = 'noopener noreferrer';
+				td.appendChild( inspect );
+			}
+
+			var priority = el( 'button', 'button button-small', row.priority ? 'Normal' : 'Priority' );
+			priority.type = 'button';
+			priority.setAttribute( 'data-gsc-action', 'priority' );
+			priority.setAttribute( 'data-gsc-id', row.id );
+			priority.setAttribute( 'data-gsc-priority', row.priority ? '0' : '1' );
+			td.appendChild( priority );
+
+			var ignore = el( 'button', 'button button-small', 'Ignore' );
+			ignore.type = 'button';
+			ignore.setAttribute( 'data-gsc-action', 'ignore' );
+			ignore.setAttribute( 'data-gsc-id', row.id );
+			td.appendChild( ignore );
+
+			return td;
+		}
+
+		function renderGscPagination( data ) {
+			var pageEl = attr( 'gsc-page' );
+			var prev = attr( 'gsc-prev' );
+			var next = attr( 'gsc-next' );
+			if ( pageEl ) {
+				pageEl.textContent = 'Page ' + ( data.page || 1 ) + ' of ' + ( data.pages || 1 ) + ' (' + num( data.total ) + ')';
+			}
+			if ( prev ) {
+				prev.disabled = state.page <= 1;
+			}
+			if ( next ) {
+				next.disabled = state.page >= state.pages;
+			}
+		}
+
+		function loadLogs() {
+			api( '/gsc/logs?limit=50' )
+				.then( function ( data ) {
+					renderGscLogs( data.rows || [] );
+				} )
+				.catch( function () {} );
+		}
+
+		function renderGscLogs( rows ) {
+			var box = attr( 'gsc-logs' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+			if ( ! rows.length ) {
+				empty( box, I18N.noData );
+				return;
+			}
+			var t = table( [
+				{ label: 'Time' },
+				{ label: 'Level' },
+				{ label: 'Source' },
+				{ label: 'Message' }
+			] );
+			var body = t.querySelector( 'tbody' );
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( el( 'td', null, dateText( row.created_at ) ) );
+				tr.appendChild( el( 'td', null, statusText( row.level ) ) );
+				tr.appendChild( el( 'td', null, row.source || '-' ) );
+				tr.appendChild( el( 'td', null, row.message || '-' ) );
+				body.appendChild( tr );
+			} );
+			box.appendChild( t );
+		}
+
+		function reloadAll() {
+			loadSummary();
+			loadUrls();
+			loadLogs();
+		}
+
+		[ statusSel, postTypeSel, prioritySel, sitemapSel, checkedFrom, checkedTo ].forEach( function ( node ) {
+			if ( node ) {
+				node.addEventListener( 'change', function () {
+					state.page = 1;
+					loadUrls();
+				} );
+			}
+		} );
+
+		var prev = attr( 'gsc-prev' );
+		var next = attr( 'gsc-next' );
+		if ( prev ) {
+			prev.addEventListener( 'click', function () {
+				state.page = Math.max( 1, state.page - 1 );
+				loadUrls();
+			} );
+		}
+		if ( next ) {
+			next.addEventListener( 'click', function () {
+				state.page = Math.min( state.pages, state.page + 1 );
+				loadUrls();
+			} );
+		}
+		if ( postTabs && postTypeSel ) {
+			postTabs.addEventListener( 'click', function ( e ) {
+				var tab = e.target && e.target.closest ? e.target.closest( '[data-gsc-post-tab]' ) : null;
+				if ( ! tab ) {
+					return;
+				}
+				postTypeSel.value = tab.getAttribute( 'data-gsc-post-tab' ) || 'all';
+				state.page = 1;
+				loadUrls();
+			} );
+		}
+
+		var urlsBox = attr( 'gsc-urls' );
+		if ( urlsBox ) {
+			urlsBox.addEventListener( 'click', function ( e ) {
+				var btn = e.target && e.target.closest ? e.target.closest( '[data-gsc-action]' ) : null;
+				if ( ! btn ) {
+					return;
+				}
+				var id = btn.getAttribute( 'data-gsc-id' );
+				var action = btn.getAttribute( 'data-gsc-action' );
+				var body = { id: id };
+				if ( action === 'priority' ) {
+					body.priority = btn.getAttribute( 'data-gsc-priority' ) || '0';
+				}
+				btn.disabled = true;
+				postApi( '/gsc/' + action, body )
+					.then( reloadAll )
+					.catch( function () {
+						btn.disabled = false;
+					} );
+			} );
+		}
+
+		var scan = attr( 'gsc-scan' );
+		if ( scan ) {
+			scan.addEventListener( 'click', function () {
+				scan.disabled = true;
+				postApi( '/gsc/scan-sitemap', {} )
+					.then( reloadAll )
+					.catch( function () {} )
+					.then( function () { scan.disabled = false; } );
+			} );
+		}
+
+		var process = attr( 'gsc-process' );
+		if ( process ) {
+			process.addEventListener( 'click', function () {
+				process.disabled = true;
+				postApi( '/gsc/process', {} )
+					.then( reloadAll )
+					.catch( function () {} )
+					.then( function () { process.disabled = false; } );
+			} );
+		}
+
+		reloadAll();
+	}
+
 	/* Boot ---------------------------------------------------------------- */
 
 	initLive();
@@ -1152,4 +1536,5 @@
 	if ( document.getElementById( 'convertrack-funnels' ) ) {
 		initFunnels();
 	}
+	initGsc();
 } )();

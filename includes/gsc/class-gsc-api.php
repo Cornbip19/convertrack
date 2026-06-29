@@ -1,0 +1,243 @@
+<?php
+/**
+ * Google Search Console API client.
+ *
+ * @package Convertrack
+ */
+
+namespace Convertrack\GSC;
+
+defined( 'ABSPATH' ) || exit;
+
+class API {
+
+	const INSPECT_URL        = 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect';
+	const SEARCH_CONSOLE_URL = 'https://www.googleapis.com/webmasters/v3/sites/';
+	const INDEXING_URL       = 'https://indexing.googleapis.com/v3/urlNotifications:publish';
+
+	/**
+	 * Inspect a URL.
+	 *
+	 * @param string $url URL.
+	 * @return array|\WP_Error
+	 */
+	public static function inspect_url( $url ) {
+		$response = self::request(
+			'POST',
+			self::INSPECT_URL,
+			array(
+				'inspectionUrl' => esc_url_raw( $url ),
+				'siteUrl'       => Settings::get( 'property_url' ),
+				'languageCode'  => 'en-US',
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		return self::parse_inspection_response( $response );
+	}
+
+	/**
+	 * Submit a sitemap to Search Console.
+	 *
+	 * @param string $sitemap_url Sitemap URL.
+	 * @return true|\WP_Error
+	 */
+	public static function submit_sitemap( $sitemap_url ) {
+		$site_url = rawurlencode( Settings::get( 'property_url' ) );
+		$feedpath = rawurlencode( esc_url_raw( $sitemap_url ) );
+		$url      = self::SEARCH_CONSOLE_URL . $site_url . '/sitemaps/' . $feedpath;
+
+		$response = self::request( 'PUT', $url, null );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Notify Google Indexing API. Disabled for normal content unless a filter
+	 * explicitly marks the URL eligible.
+	 *
+	 * @param string $url     URL.
+	 * @param int    $post_id Post id.
+	 * @return true|\WP_Error
+	 */
+	public static function indexing_api_notify( $url, $post_id ) {
+		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', false, $post_id, $url );
+		if ( ! $eligible ) {
+			return new \WP_Error( 'convertrack_gsc_indexing_api_not_eligible', __( 'This URL is not eligible for the Google Indexing API.', 'convertrack-click-conversion-analytics' ) );
+		}
+
+		$response = self::request(
+			'POST',
+			self::INDEXING_URL,
+			array(
+				'url'  => esc_url_raw( $url ),
+				'type' => 'URL_UPDATED',
+			)
+		);
+
+		return is_wp_error( $response ) ? $response : true;
+	}
+
+	/**
+	 * Make an authorized Google API request.
+	 *
+	 * @param string     $method HTTP method.
+	 * @param string     $url    URL.
+	 * @param array|null $body   Request body.
+	 * @param bool       $retry  Retry once after token refresh.
+	 * @return array|\WP_Error
+	 */
+	private static function request( $method, $url, $body = null, $retry = true ) {
+		$token = OAuth::access_token();
+		if ( is_wp_error( $token ) ) {
+			return $token;
+		}
+
+		$args = array(
+			'method'      => $method,
+			'timeout'     => 30,
+			'redirection' => 3,
+			'user-agent'  => 'Convertrack/' . CONVERTRACK_VERSION . ' Google-Search-Console',
+			'headers'     => array(
+				'Authorization' => 'Bearer ' . $token,
+				'Accept'        => 'application/json',
+			),
+		);
+
+		if ( null !== $body ) {
+			$args['headers']['Content-Type'] = 'application/json';
+			$args['body'] = wp_json_encode( $body );
+		}
+
+		$response = wp_remote_request( $url, $args );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$raw  = wp_remote_retrieve_body( $response );
+		$data = '' !== $raw ? json_decode( $raw, true ) : array();
+		$data = is_array( $data ) ? $data : array();
+
+		if ( 401 === $code && $retry ) {
+			$refresh = OAuth::refresh_token();
+			if ( is_wp_error( $refresh ) ) {
+				return $refresh;
+			}
+			return self::request( $method, $url, $body, false );
+		}
+
+		if ( $code < 200 || $code >= 300 ) {
+			$message = isset( $data['error']['message'] ) ? $data['error']['message'] : sprintf( 'Google API returned HTTP %d.', $code );
+			$error = new \WP_Error( 'convertrack_gsc_google_api_error', $message, array( 'status' => $code, 'body' => $data ) );
+			if ( self::is_quota_error( $error ) ) {
+				$error->add( 'convertrack_gsc_quota_error', $message, array( 'status' => $code, 'body' => $data ) );
+			}
+			return $error;
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Parse URL Inspection API response into queue fields.
+	 *
+	 * @param array $data API response.
+	 * @return array
+	 */
+	private static function parse_inspection_response( array $data ) {
+		$result = isset( $data['inspectionResult']['indexStatusResult'] ) && is_array( $data['inspectionResult']['indexStatusResult'] )
+			? $data['inspectionResult']['indexStatusResult']
+			: array();
+
+		$verdict  = isset( $result['verdict'] ) ? (string) $result['verdict'] : '';
+		$coverage = isset( $result['coverageState'] ) ? (string) $result['coverageState'] : '';
+		$robots   = isset( $result['robotsTxtState'] ) ? (string) $result['robotsTxtState'] : '';
+		$indexing = isset( $result['indexingState'] ) ? (string) $result['indexingState'] : '';
+		$fetch    = isset( $result['pageFetchState'] ) ? (string) $result['pageFetchState'] : '';
+
+		$status = self::map_status( $verdict, $coverage, $robots, $indexing );
+
+		return array(
+			'index_status'           => $status,
+			'coverage_state'         => $coverage,
+			'google_verdict'         => $verdict,
+			'robots_txt_state'       => $robots,
+			'indexing_state'         => $indexing,
+			'page_fetch_state'       => $fetch,
+			'canonical_url'          => isset( $result['canonical'] ) ? $result['canonical'] : '',
+			'google_canonical'       => isset( $result['googleCanonical'] ) ? $result['googleCanonical'] : '',
+			'user_canonical'         => isset( $result['userCanonical'] ) ? $result['userCanonical'] : '',
+			'inspection_result_link' => isset( $data['inspectionResult']['inspectionResultLink'] ) ? $data['inspectionResult']['inspectionResultLink'] : '',
+			'next_check_at'          => 'indexed' === $status ? Database::mysql_time( WEEK_IN_SECONDS ) : Database::mysql_time( rand( 24, 72 ) * HOUR_IN_SECONDS ),
+		);
+	}
+
+	/**
+	 * Map Google states to Convertrack statuses.
+	 *
+	 * @param string $verdict  Verdict.
+	 * @param string $coverage Coverage state.
+	 * @param string $robots   Robots state.
+	 * @param string $indexing Indexing state.
+	 * @return string
+	 */
+	private static function map_status( $verdict, $coverage, $robots, $indexing ) {
+		$coverage_l = strtolower( $coverage );
+		$robots_l   = strtolower( $robots );
+		$indexing_l = strtolower( $indexing );
+
+		if ( 'PASS' === strtoupper( $verdict ) ) {
+			return 'indexed';
+		}
+		if ( '' !== $robots && false === strpos( $robots_l, 'allowed' ) ) {
+			return 'blocked_by_robots';
+		}
+		if ( false !== strpos( $indexing_l, 'blocked_by_meta_tag' ) || false !== strpos( $coverage_l, 'noindex' ) ) {
+			return 'noindex_detected';
+		}
+		if ( false !== strpos( $coverage_l, 'duplicate' ) || false !== strpos( $coverage_l, 'canonical' ) ) {
+			return 'duplicate_canonical';
+		}
+		if ( false !== strpos( $coverage_l, 'discovered' ) && false !== strpos( $coverage_l, 'not indexed' ) ) {
+			return 'discovered_not_indexed';
+		}
+		if ( false !== strpos( $coverage_l, 'crawled' ) && false !== strpos( $coverage_l, 'not indexed' ) ) {
+			return 'crawled_not_indexed';
+		}
+
+		return 'not_indexed';
+	}
+
+	/**
+	 * Whether an error is quota/rate-limit related.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @return bool
+	 */
+	public static function is_quota_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+
+		$data    = $error->get_error_data();
+		$status  = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 0;
+		$message = strtolower( $error->get_error_message() );
+		$api_status = '';
+
+		if ( is_array( $data ) && isset( $data['body']['error']['status'] ) ) {
+			$api_status = strtolower( (string) $data['body']['error']['status'] );
+		}
+
+		return 429 === $status
+			|| false !== strpos( $message, 'quota' )
+			|| false !== strpos( $message, 'rate limit' )
+			|| false !== strpos( $api_status, 'resource_exhausted' );
+	}
+}

@@ -286,6 +286,17 @@
 			} catch ( e ) {} // eslint-disable-line no-empty
 		}
 		current = normalizeSource( current );
+		// On-site search is page-specific, not an acquisition channel. If the
+		// session's first page is itself a site search, do not bake that term
+		// into the durable first-touch source — otherwise it would be
+		// mis-attached to every later (non-search) page in the session. The
+		// per-page site-search term is applied in eventAttribution() via the
+		// override path instead. utm_term and referrer_query terms are genuine
+		// acquisition signals and stay.
+		if ( current.ks === 'site_search' ) {
+			current.kw = '';
+			current.ks = '';
+		}
 		store.set( key, JSON.stringify( current ) );
 		return current;
 	}

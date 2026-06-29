@@ -23,6 +23,8 @@ $tables = array(
 	$wpdb->prefix . 'convertrack_sources',
 	$wpdb->prefix . 'convertrack_geo',
 	$wpdb->prefix . 'convertrack_search_terms',
+	$wpdb->prefix . 'convertrack_gsc_index_queue',
+	$wpdb->prefix . 'convertrack_gsc_logs',
 );
 foreach ( $tables as $table ) {
 	$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB
@@ -31,13 +33,21 @@ foreach ( $tables as $table ) {
 // Remove options.
 delete_option( 'convertrack_settings' );
 delete_option( 'convertrack_db_version' );
+delete_option( 'convertrack_gsc_settings' );
+delete_option( 'convertrack_gsc_credentials' );
+delete_option( 'convertrack_gsc_db_version' );
+delete_option( 'convertrack_gsc_quota_usage' );
+delete_option( 'convertrack_gsc_last_sync_time' );
 
 // Remove transients (including any per-IP rate-limit keys).
-$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%'" ); // phpcs:ignore WordPress.DB
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_gsc\_%' OR option_name LIKE '\_transient\_convertrack\_gsc\_%'" ); // phpcs:ignore WordPress.DB
 
 // Clear scheduled jobs.
 wp_clear_scheduled_hook( 'convertrack_hourly' );
 wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
+wp_clear_scheduled_hook( 'convertrack_gsc_process_queue' );
+wp_clear_scheduled_hook( 'convertrack_gsc_scan_sitemap' );
+wp_clear_scheduled_hook( 'convertrack_gsc_full_audit' );
 
 // Multisite: best-effort cleanup across sites.
 if ( is_multisite() ) {
@@ -52,15 +62,25 @@ if ( is_multisite() ) {
 			$wpdb->prefix . 'convertrack_sources',
 			$wpdb->prefix . 'convertrack_geo',
 			$wpdb->prefix . 'convertrack_search_terms',
+			$wpdb->prefix . 'convertrack_gsc_index_queue',
+			$wpdb->prefix . 'convertrack_gsc_logs',
 		);
 		foreach ( $mt as $table ) {
 			$wpdb->query( "DROP TABLE IF EXISTS `$table`" ); // phpcs:ignore WordPress.DB
 		}
 		delete_option( 'convertrack_settings' );
 		delete_option( 'convertrack_db_version' );
-		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%'" ); // phpcs:ignore WordPress.DB
+		delete_option( 'convertrack_gsc_settings' );
+		delete_option( 'convertrack_gsc_credentials' );
+		delete_option( 'convertrack_gsc_db_version' );
+		delete_option( 'convertrack_gsc_quota_usage' );
+		delete_option( 'convertrack_gsc_last_sync_time' );
+		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_gsc\_%' OR option_name LIKE '\_transient\_convertrack\_gsc\_%'" ); // phpcs:ignore WordPress.DB
 		wp_clear_scheduled_hook( 'convertrack_hourly' );
 		wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
+		wp_clear_scheduled_hook( 'convertrack_gsc_process_queue' );
+		wp_clear_scheduled_hook( 'convertrack_gsc_scan_sitemap' );
+		wp_clear_scheduled_hook( 'convertrack_gsc_full_audit' );
 
 		restore_current_blog();
 	}

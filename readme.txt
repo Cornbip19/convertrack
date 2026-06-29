@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.5.0
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -19,6 +19,8 @@ Convertrack answers three questions about your site:
 3. **Who's here now?** A live counter shows how many visitors are currently on the site, and what they're viewing.
 4. **Where do they look?** Per-page heatmaps show a click map and a scroll-depth breakdown — how far down each page visitors actually browse.
 5. **Which searches bring them in?** Optional search keyword tracking shows supported UTM terms, site searches, and visible search-referrer queries.
+
+6. **Are important URLs indexed?** The optional Google Index Monitor connects to Search Console, scans sitemaps, and checks URL indexing status in background batches.
 
 **Built for large sites**
 
@@ -35,6 +37,8 @@ The only optional exception is **Visitor location** (off by default): when you t
 
 **Search keyword tracking** is also optional and off by default. When enabled, Convertrack stores supported UTM term values, this site's search query parameter, and search-engine referrer query strings when browsers provide them. Modern search engines often hide organic queries, so those visits may appear as not provided.
 
+**Google Index Monitor** is optional and off until an administrator configures OAuth credentials and connects Google Search Console. When enabled, it sends configured site URLs and sitemap URLs to Google Search Console APIs for indexing inspection and sitemap submission. OAuth tokens are stored encrypted in this site's database, and queue/log data stays in separate `convertrack_gsc_*` tables.
+
 **Updating**
 
 Installed from WordPress.org, Convertrack updates through your dashboard like any other plugin. The separately distributed self-hosted build can additionally update itself from its GitHub Releases.
@@ -49,6 +53,8 @@ By default, visitors whose browser sends a "Do Not Track" signal are not tracked
 
 The optional **Search keyword tracking** setting stores supported search terms locally in this site's database. It does not contact search providers or Google Search Console.
 
+The optional **Google Index Monitor** feature contacts Google Search Console APIs only after an administrator connects it. It sends site URLs for indexing inspection and sitemap submission, and it does not run on frontend page loads.
+
 == Installation ==
 
 1. Upload the `convertrack` folder to `/wp-content/plugins/`, or install the zip from the Plugins screen.
@@ -57,6 +63,8 @@ The optional **Search keyword tracking** setting stores supported search terms l
 4. Watch live data on **Convertrack → Overview**.
 
 For high-traffic sites: (1) disable WP-Cron and trigger `wp-cron.php` from a real system cron so rollups and cleanup run on schedule, and (2) run a persistent object cache (Redis or Memcached) — Convertrack then keeps its rate-limit counters and short stat caches in memory instead of the database.
+
+Optional: open **Convertrack -> Google Index Monitor** to configure Google OAuth, connect Search Console, scan the sitemap, and run indexing checks.
 
 == Frequently Asked Questions ==
 
@@ -75,10 +83,15 @@ No. It stores no IP addresses, names, or email addresses — only a random visit
 = Does it contact any external services? =
 Not by default. The one optional exception is the **Visitor location** setting (off by default): when enabled, it sends each visitor's IP address to a geolocation service (ip-api.com) to resolve the country only — the IP is not stored. Leave it off and no analytics data leaves your site. (Separately, the optional self-hosted build distributed via GitHub queries the GitHub Releases API to check for plugin updates; the WordPress.org version does not.)
 
+The optional **Google Index Monitor** also contacts Google Search Console APIs, but only after an administrator configures and connects it. It sends site URLs for indexing inspection and sitemap submission; it does not run on frontend page loads.
+
 = How do I require visitor consent before tracking? =
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 1.6.0 =
+* Added Google Index Monitor as an optional, isolated Search Console module with OAuth, sitemap scanning, URL Inspection batches, queue reporting, CSV export, and activity logs.
 
 = 1.5.0 =
 * Optional search keyword tracking: stores supported UTM terms, WordPress site-search terms, and visible search-engine referrer query strings when enabled.

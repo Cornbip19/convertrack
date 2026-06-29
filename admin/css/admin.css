@@ -608,3 +608,63 @@
 .cvtrk-tools form {
 	margin: 0;
 }
+
+/* Google Index Monitor --------------------------------------------------- */
+.cvtrk-gsc-kpis {
+	grid-template-columns: repeat( auto-fit, minmax( 190px, 1fr ) );
+}
+
+.cvtrk-gsc-actions {
+	min-width: 260px;
+}
+
+.cvtrk-gsc-actions .button {
+	margin: 0 4px 4px 0;
+}
+
+.cvtrk-gsc-post-tabs {
+	margin-bottom: 14px;
+}
+
+.cvtrk-gsc-post-tabs .cvtrk-tab {
+	background: transparent;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	cursor: pointer;
+}
+
+.cvtrk-pagination {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 14px;
+}
+
+.cvtrk-pagination span {
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cvtrk-gsc-status-indexed {
+	color: #1a1a1a;
+	background: #e8f5e9;
+	border-color: #b8d9bd;
+}
+
+.cvtrk-gsc-status-error,
+.cvtrk-gsc-status-blocked_by_robots,
+.cvtrk-gsc-status-noindex_detected {
+	color: #1a1a1a;
+	background: #fff0f0;
+	border-color: #e2b8b8;
+}
+
+.cvtrk-gsc-status-pending_due_to_quota,
+.cvtrk-gsc-status-pending_from_sitemap,
+.cvtrk-gsc-status-checking,
+.cvtrk-gsc-status-queued {
+	color: #1a1a1a;
+	background: #fff8e5;
+	border-color: #e0cf99;
+}

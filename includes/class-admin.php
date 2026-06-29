@@ -178,6 +178,7 @@ class Admin {
 			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
 			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'visibility', 'page' => 'convertrack-heatmaps' ),
 			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'networking', 'page' => 'convertrack-funnels' ),
+			'gsc'      => array( 'label' => __( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'search', 'page' => 'convertrack-gsc' ),
 			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
 		);
 		?>
@@ -256,6 +257,15 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
+			__( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ),
+			__( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ),
+			'manage_options',
+			'convertrack-gsc',
+			array( $this, 'render_gsc' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
 			__( 'Settings', 'convertrack-click-conversion-analytics' ),
 			__( 'Settings', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
@@ -325,6 +335,8 @@ class Admin {
 				'activeRefresh'  => 10000,
 				'exportUrl'      => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_export' ) ),
 				'exportNonce'    => wp_create_nonce( 'convertrack_export' ),
+				'gscExportUrl'   => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_gsc_export' ) ),
+				'gscExportNonce' => wp_create_nonce( 'convertrack_gsc_export' ),
 				'i18n'           => array(
 					'liveNow'      => __( 'visitors on the site now', 'convertrack-click-conversion-analytics' ),
 					'clicks'       => __( 'Clicks', 'convertrack-click-conversion-analytics' ),
@@ -378,6 +390,24 @@ class Admin {
 					'keywordsOff'        => __( 'Enable search keyword tracking in Settings to collect supported queries.', 'convertrack-click-conversion-analytics' ),
 					'noSearchTerms'      => __( 'No search keywords for this range.', 'convertrack-click-conversion-analytics' ),
 					'unknown'            => __( 'Unknown', 'convertrack-click-conversion-analytics' ),
+					'totalUrls'          => __( 'Total URLs Found', 'convertrack-click-conversion-analytics' ),
+					'indexed'            => __( 'Indexed', 'convertrack-click-conversion-analytics' ),
+					'notIndexed'         => __( 'Not Indexed', 'convertrack-click-conversion-analytics' ),
+					'pendingQuota'       => __( 'Pending Due to Quota', 'convertrack-click-conversion-analytics' ),
+					'pendingSitemap'     => __( 'Pending From Sitemap', 'convertrack-click-conversion-analytics' ),
+					'crawledNotIndexed'  => __( 'Crawled But Not Indexed', 'convertrack-click-conversion-analytics' ),
+					'discoveredNotIndexed' => __( 'Discovered But Not Indexed', 'convertrack-click-conversion-analytics' ),
+					'duplicateCanonical' => __( 'Duplicate/Canonical Issue', 'convertrack-click-conversion-analytics' ),
+					'blockedRobots'      => __( 'Blocked by Robots', 'convertrack-click-conversion-analytics' ),
+					'noindexDetected'    => __( 'Noindex Detected', 'convertrack-click-conversion-analytics' ),
+					'errors'             => __( 'Errors', 'convertrack-click-conversion-analytics' ),
+					'lastSync'           => __( 'Last Sync Time', 'convertrack-click-conversion-analytics' ),
+					'nextCheck'          => __( 'Next Scheduled Check', 'convertrack-click-conversion-analytics' ),
+					'gscStatus'          => __( 'Google Index Status', 'convertrack-click-conversion-analytics' ),
+					'coverageState'      => __( 'Coverage State', 'convertrack-click-conversion-analytics' ),
+					'googleVerdict'      => __( 'Google Verdict', 'convertrack-click-conversion-analytics' ),
+					'attempts'           => __( 'Attempts', 'convertrack-click-conversion-analytics' ),
+					'actions'            => __( 'Actions', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);
@@ -401,6 +431,10 @@ class Admin {
 
 	public function render_funnels() {
 		$this->render_view( 'funnels' );
+	}
+
+	public function render_gsc() {
+		$this->render_view( 'gsc-index-monitor' );
 	}
 
 	public function render_settings() {

@@ -10,6 +10,7 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 - **Search keywords** — optional reporting for supported UTM terms, WordPress site searches, and visible search-referrer queries.
 - **Scales** — events are batched in the browser via `navigator.sendBeacon`, written in bulk, and rolled up into a compact daily-aggregates table by a background job so dashboards stay fast at any size.
 - **Privacy-friendly** — no IP addresses or personal data stored; Do Not Track supported; logged-in users / roles / URLs can be excluded.
+- **Google Index Monitor** - optional Search Console OAuth integration that scans sitemaps and checks URL indexing status in background batches.
 
 ## Architecture
 
@@ -24,9 +25,15 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 | Front-end tracker | `public/js/convertrack.js` |
 | Background jobs | `includes/class-cron.php` |
 | Admin dashboard | `includes/class-admin.php`, `admin/` |
+| Google Index Monitor | `includes/gsc/`, `admin/views/gsc-index-monitor.php` |
 | GitHub self-updater | `includes/class-updater.php` |
 
 Custom tables store raw `events`, live `sessions`, and pre-aggregated rollups for pages, sources, countries, and search keywords.
+Google Index Monitor uses separate `convertrack_gsc_*` options and tables so analytics data and tracking behavior stay isolated.
+
+## Google Index Monitor
+
+Open **Convertrack -> Google Index Monitor** to add a Google OAuth Client ID/secret, Search Console property URL, sitemap URL, quota limit, batch size, and selected post types. The feature is disabled until configured and connected. It uses the URL Inspection API for normal URLs, sitemap resubmission for normal WordPress pages, and only calls the Google Indexing API for URLs explicitly marked eligible by code.
 
 ## Self-updating from GitHub
 
