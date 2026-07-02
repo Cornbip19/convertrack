@@ -105,6 +105,7 @@ class Cron {
 			return;
 		}
 		Sitemap_Scanner::scan();
+		Database::record_snapshot();
 	}
 
 	/**

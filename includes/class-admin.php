@@ -174,18 +174,19 @@ class Admin {
 	 */
 	public static function render_header( $current ) {
 		$tabs = array(
-			'overview' => array( 'label' => __( 'Overview', 'convertrack-click-conversion-analytics' ), 'icon' => 'chart-area', 'page' => 'convertrack' ),
-			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-links', 'page' => 'convertrack-pages' ),
-			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'visibility', 'page' => 'convertrack-heatmaps' ),
-			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'networking', 'page' => 'convertrack-funnels' ),
+			'overview' => array( 'label' => __( 'Overview', 'convertrack-click-conversion-analytics' ), 'icon' => 'overview', 'page' => 'convertrack' ),
+			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'pages', 'page' => 'convertrack-pages' ),
+			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'heatmap', 'page' => 'convertrack-heatmaps' ),
+			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'funnel', 'page' => 'convertrack-funnels' ),
 			'gsc'      => array( 'label' => __( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'search', 'page' => 'convertrack-gsc' ),
-			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'admin-generic', 'page' => 'convertrack-settings' ),
+			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'settings', 'page' => 'convertrack-settings' ),
 		);
+		$logo_path    = plugin_dir_path( CONVERTRACK_FILE ) . 'admin/assets/convertrack-logo.svg';
+		$logo_version = file_exists( $logo_path ) ? filemtime( $logo_path ) : CONVERTRACK_VERSION;
 		?>
 		<div class="cvtrk-header">
 			<h1 class="cvtrk-brand">
-				<span class="dashicons dashicons-chart-line"></span>
-				<?php esc_html_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>
+				<img class="cvtrk-logo" src="<?php echo esc_url( CONVERTRACK_URL . 'admin/assets/convertrack-logo.svg?ver=' . $logo_version ); ?>" width="196" height="48" alt="<?php esc_attr_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>" />
 				<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
 			</h1>
 			<div class="cvtrk-live">
@@ -197,12 +198,59 @@ class Admin {
 		<nav class="cvtrk-tabs">
 			<?php foreach ( $tabs as $key => $tab ) : ?>
 				<a class="cvtrk-tab <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $tab['page'] ) ); ?>">
-					<span class="dashicons dashicons-<?php echo esc_attr( $tab['icon'] ); ?>"></span>
+					<?php echo self::icon( $tab['icon'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 					<?php echo esc_html( $tab['label'] ); ?>
 				</a>
 			<?php endforeach; ?>
 		</nav>
 		<?php
+	}
+
+	/**
+	 * Render a compact, consistent line icon used across admin screens.
+	 *
+	 * @param string $name Icon key.
+	 * @return string SVG markup.
+	 */
+	public static function icon( $name ) {
+		$name  = sanitize_key( $name );
+		$icons = array(
+			'overview'      => '<path d="M4 17.5h16"/><path d="M6 14l3.5-4.5 4 3 4.5-7"/><circle cx="9.5" cy="9.5" r="1.5"/><circle cx="13.5" cy="12.5" r="1.5"/><circle cx="18" cy="5.5" r="1.5"/>',
+			'pages'         => '<path d="M7 4h8l4 4v12H7z"/><path d="M14 4v5h5"/><path d="M10 13h6"/><path d="M10 17h4"/>',
+			'heatmap'       => '<path d="M5 18c2.5-6 5-9 9-9 2.5 0 4.2 1.1 5 3"/><circle cx="8" cy="16" r="2"/><circle cx="14" cy="10" r="2.5"/><circle cx="18" cy="13" r="1.7"/>',
+			'funnel'        => '<path d="M5 5h14l-5.5 6.5V18l-3 1.5v-8z"/>',
+			'search'        => '<circle cx="10.5" cy="10.5" r="5.5"/><path d="M15 15l4 4"/>',
+			'settings'      => '<path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z"/><path d="M12 3.5v2.2M12 18.3v2.2M4.6 7.2l1.9 1.1M17.5 15.7l1.9 1.1M4.6 16.8l1.9-1.1M17.5 8.3l1.9-1.1"/>',
+			'pageviews'     => '<path d="M4 6.5h16v11H4z"/><path d="M8 21h8"/><path d="M12 17.5V21"/><circle cx="12" cy="12" r="2.7"/>',
+			'clicks'        => '<path d="M8 4v11l2.4-2.4L14 20l2.2-1.1-3.5-6.9H16z"/>',
+			'conversions'   => '<path d="M5 12.5l4 4L19 6.5"/><path d="M4 5h11"/><path d="M4 19h16"/>',
+			'rate'          => '<path d="M5 18V9"/><path d="M10 18V5"/><path d="M15 18v-6"/><path d="M20 18V8"/>',
+			'click-through' => '<path d="M5 17l5-5 3 3 6-8"/><path d="M14 7h5v5"/>',
+			'visitors'      => '<circle cx="9" cy="8" r="3"/><path d="M4 19c.8-3 2.5-4.5 5-4.5s4.2 1.5 5 4.5"/><path d="M15 11.5a2.5 2.5 0 1 0-.5-4.9"/><path d="M15.5 15c2.2.3 3.7 1.7 4.5 4"/>',
+			'duration'      => '<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>',
+			'refresh'       => '<path d="M18 8a7 7 0 0 0-12-2l-2 2"/><path d="M4 4v4h4"/><path d="M6 16a7 7 0 0 0 12 2l2-2"/><path d="M20 20v-4h-4"/>',
+			'info'          => '<circle cx="12" cy="12" r="8"/><path d="M12 11v5"/><path d="M12 8h.01"/>',
+			'sessions'      => '<path d="M5 18c.9-3 3.2-4.5 7-4.5s6.1 1.5 7 4.5"/><circle cx="12" cy="8" r="4"/>',
+			'award'         => '<circle cx="12" cy="8" r="4"/><path d="M9.5 11.5L8 20l4-2 4 2-1.5-8.5"/>',
+			'desktop'       => '<path d="M4 5.5h16v10H4z"/><path d="M9 20h6"/><path d="M12 15.5V20"/>',
+			'tablet'        => '<rect x="7" y="3.5" width="10" height="17" rx="2"/><path d="M11 17.5h2"/>',
+			'mobile'        => '<rect x="8.5" y="3" width="7" height="18" rx="2"/><path d="M11.5 17.5h1"/>',
+		);
+
+		if ( ! isset( $icons[ $name ] ) ) {
+			$name = 'overview';
+		}
+
+		return '<svg class="cvtrk-icon cvtrk-icon-' . esc_attr( $name ) . '" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $icons[ $name ] . '</svg>';
+	}
+
+	/**
+	 * URL for the WordPress admin menu icon.
+	 *
+	 * @return string
+	 */
+	private static function menu_icon() {
+		return CONVERTRACK_URL . 'admin/assets/convertrack-menu-icon.png?ver=' . CONVERTRACK_VERSION;
 	}
 
 	/**
@@ -215,7 +263,7 @@ class Admin {
 			'manage_options',
 			self::MENU_SLUG,
 			array( $this, 'render_overview' ),
-			'dashicons-chart-line',
+			self::menu_icon(),
 			58
 		);
 
@@ -342,11 +390,30 @@ class Admin {
 					'clicks'       => __( 'Clicks', 'convertrack-click-conversion-analytics' ),
 					'pageviews'    => __( 'Pageviews', 'convertrack-click-conversion-analytics' ),
 					'conversions'  => __( 'Conversions', 'convertrack-click-conversion-analytics' ),
+					'conversion'   => __( 'Conversion', 'convertrack-click-conversion-analytics' ),
 					'convRate'     => __( 'Conversion rate', 'convertrack-click-conversion-analytics' ),
 					'ctr'          => __( 'Click-through rate', 'convertrack-click-conversion-analytics' ),
 					'uniques'      => __( 'Unique visitors', 'convertrack-click-conversion-analytics' ),
+					'visitor'      => __( 'Visitor', 'convertrack-click-conversion-analytics' ),
 					'noData'       => __( 'No data yet for this range.', 'convertrack-click-conversion-analytics' ),
+					'updated'      => __( 'Updated', 'convertrack-click-conversion-analytics' ),
+					'activityTrend' => __( 'Activity trend', 'convertrack-click-conversion-analytics' ),
+					'pageVisit'    => __( 'Page visit', 'convertrack-click-conversion-analytics' ),
+					'click'        => __( 'Click', 'convertrack-click-conversion-analytics' ),
+					'scroll'       => __( 'Scroll', 'convertrack-click-conversion-analytics' ),
+					'scrolls'      => __( 'Scrolls', 'convertrack-click-conversion-analytics' ),
+					'event'        => __( 'Event', 'convertrack-click-conversion-analytics' ),
+					'device'       => __( 'Device', 'convertrack-click-conversion-analytics' ),
 					'loading'      => __( 'Loading…', 'convertrack-click-conversion-analytics' ),
+					'copied'       => __( 'Copied', 'convertrack-click-conversion-analytics' ),
+					'pending'          => __( 'Pending', 'convertrack-click-conversion-analytics' ),
+					'issues'           => __( 'Issues', 'convertrack-click-conversion-analytics' ),
+					'indexCoverage'    => __( 'Index coverage', 'convertrack-click-conversion-analytics' ),
+					'indexingProgress' => __( 'Indexing progress', 'convertrack-click-conversion-analytics' ),
+					'collectingData'   => __( 'Collecting daily data — the progress line appears after a couple of days of monitoring.', 'convertrack-click-conversion-analytics' ),
+					'indexCoverageSub'  => __( 'Click a status below to see its URLs', 'convertrack-click-conversion-analytics' ),
+					'coverageBreakdown' => __( 'Coverage breakdown', 'convertrack-click-conversion-analytics' ),
+					'noDataYet'         => __( 'No data yet', 'convertrack-click-conversion-analytics' ),
 					'topButtons'   => __( 'Most clicked buttons', 'convertrack-click-conversion-analytics' ),
 					'topPages'     => __( 'Top pages', 'convertrack-click-conversion-analytics' ),
 					'page'         => __( 'Page', 'convertrack-click-conversion-analytics' ),
@@ -366,6 +433,7 @@ class Admin {
 					'clicksHere'   => __( 'clicks', 'convertrack-click-conversion-analytics' ),
 					'showPage'     => __( 'Show page behind heatmap', 'convertrack-click-conversion-analytics' ),
 					'noHeatmap'    => __( 'No heatmap data for this page yet.', 'convertrack-click-conversion-analytics' ),
+					'noHeatmapPages' => __( 'No page activity in this range yet. Heatmaps appear once visitors view and click on your pages.', 'convertrack-click-conversion-analytics' ),
 					'pageTop'      => __( 'Top of page', 'convertrack-click-conversion-analytics' ),
 					'pageBottom'   => __( 'Bottom of page', 'convertrack-click-conversion-analytics' ),
 					'allDevices'   => __( 'All devices', 'convertrack-click-conversion-analytics' ),

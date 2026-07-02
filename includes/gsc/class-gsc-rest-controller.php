@@ -54,6 +54,16 @@ class Rest_Controller {
 			)
 		);
 
+		register_rest_route(
+			$namespace,
+			'/gsc/properties',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'properties' ),
+				'permission_callback' => array( $this, 'can_manage' ),
+			)
+		);
+
 		foreach ( array( 'recheck', 'ignore', 'priority', 'scan-sitemap', 'process' ) as $action ) {
 			register_rest_route(
 				$namespace,
@@ -87,7 +97,26 @@ class Rest_Controller {
 		$data['settings_ready'] = Settings::ready();
 		$data['credentials'] = Credentials::public_status();
 		$data['sitemaps'] = Database::sitemap_options();
+		$data['history']  = Database::summary_history( 30 );
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
+	}
+
+	/**
+	 * List the connected account's verified Search Console properties for the picker.
+	 *
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function properties() {
+		if ( ! Credentials::is_connected() ) {
+			return $this->no_cache( new \WP_REST_Response( array( 'connected' => false, 'sites' => array() ), 200 ) );
+		}
+
+		$sites = API::list_sites();
+		if ( is_wp_error( $sites ) ) {
+			return $sites;
+		}
+
+		return $this->no_cache( new \WP_REST_Response( array( 'connected' => true, 'sites' => $sites ), 200 ) );
 	}
 
 	/**

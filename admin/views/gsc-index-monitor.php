@@ -29,11 +29,23 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 				case 'settings-saved':
 					esc_html_e( 'Google Index Monitor settings saved.', 'convertrack-click-conversion-analytics' );
 					break;
+				case 'client-saved':
+					esc_html_e( 'Google API credentials saved. You can now connect Search Console.', 'convertrack-click-conversion-analytics' );
+					break;
 				case 'oauth-connected':
 					esc_html_e( 'Google Search Console connected.', 'convertrack-click-conversion-analytics' );
 					break;
 				case 'oauth-disconnected':
 					esc_html_e( 'Google Search Console disconnected.', 'convertrack-click-conversion-analytics' );
+					break;
+				case 'oauth-property-warning':
+					echo esc_html(
+						sprintf(
+							/* translators: %s: detail message from the property check. */
+							__( 'Connected to Google, but the Search Console property URL may not match a property this account owns: %s', 'convertrack-click-conversion-analytics' ),
+							$detail
+						)
+					);
 					break;
 				default:
 					echo esc_html( $detail ? $detail : __( 'Google Index Monitor action completed.', 'convertrack-click-conversion-analytics' ) );
@@ -42,6 +54,66 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 			?>
 		</div>
 	<?php endif; ?>
+
+	<?php
+	$cvtrk_redirect_uri = \Convertrack\GSC\OAuth::redirect_uri();
+	$cvtrk_link_kses    = array( 'a' => array( 'href' => array(), 'target' => array(), 'rel' => array() ) );
+	?>
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<h2><?php esc_html_e( 'Google API credentials', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<span class="cvtrk-card-sub">
+				<?php echo $credentials['has_client'] ? esc_html__( 'Saved', 'convertrack-click-conversion-analytics' ) : esc_html__( 'Not set', 'convertrack-click-conversion-analytics' ); ?>
+			</span>
+		</div>
+		<div class="cvtrk-card-body">
+			<p class="description">
+				<?php esc_html_e( 'Convertrack connects to your Google account directly using your own Google Cloud OAuth client. This one-time setup takes a few minutes:', 'convertrack-click-conversion-analytics' ); ?>
+			</p>
+			<ol class="cvtrk-gsc-steps">
+				<li><?php echo wp_kses( sprintf( __( 'Open the <a href="%s" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> and create or select a project.', 'convertrack-click-conversion-analytics' ), 'https://console.cloud.google.com/' ), $cvtrk_link_kses ); ?></li>
+				<li>
+					<?php
+					echo wp_kses( sprintf( __( 'Enable the <a href="%s" target="_blank" rel="noopener noreferrer">Google Search Console API</a> for the project.', 'convertrack-click-conversion-analytics' ), 'https://console.cloud.google.com/apis/library/searchconsole.googleapis.com' ), $cvtrk_link_kses );
+					if ( ! empty( $s['use_indexing_api'] ) ) {
+						echo ' ';
+						echo wp_kses( sprintf( __( 'Also enable the <a href="%s" target="_blank" rel="noopener noreferrer">Web Search Indexing API</a>.', 'convertrack-click-conversion-analytics' ), 'https://console.cloud.google.com/apis/library/indexing.googleapis.com' ), $cvtrk_link_kses );
+					}
+					?>
+				</li>
+				<li><?php esc_html_e( 'On the OAuth consent screen, choose "External" and add your Google account as a test user.', 'convertrack-click-conversion-analytics' ); ?></li>
+				<li><?php esc_html_e( 'Create an OAuth client ID of type "Web application".', 'convertrack-click-conversion-analytics' ); ?></li>
+				<li><?php esc_html_e( 'Add this exact Authorized redirect URI to that client:', 'convertrack-click-conversion-analytics' ); ?></li>
+			</ol>
+			<p class="cvtrk-gsc-redirect">
+				<input type="text" readonly class="regular-text code" data-cvtrk="gsc-redirect-uri" value="<?php echo esc_attr( $cvtrk_redirect_uri ); ?>" />
+				<button type="button" class="button" data-cvtrk="gsc-copy-redirect"><?php esc_html_e( 'Copy', 'convertrack-click-conversion-analytics' ); ?></button>
+			</p>
+			<?php if ( 0 === strpos( (string) $cvtrk_redirect_uri, 'http://' ) && false === strpos( (string) $cvtrk_redirect_uri, '://localhost' ) && false === strpos( (string) $cvtrk_redirect_uri, '://127.0.0.1' ) ) : ?>
+				<p class="description" style="color:#b84a62;">
+					<?php esc_html_e( 'Google requires an https (or localhost) redirect URI. Enable HTTPS for this site, or filter convertrack_gsc_redirect_uri to an https URL, before connecting.', 'convertrack-click-conversion-analytics' ); ?>
+				</p>
+			<?php endif; ?>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="convertrack_gsc_save_client" />
+				<?php wp_nonce_field( 'convertrack_gsc_save_client' ); ?>
+				<table class="form-table" role="presentation">
+					<tr>
+						<th scope="row"><label for="cvtrk-gsc-client-id"><?php esc_html_e( 'OAuth Client ID', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td><input type="text" id="cvtrk-gsc-client-id" class="regular-text" name="convertrack_gsc_client_id" value="<?php echo esc_attr( $credentials['client_id'] ); ?>" autocomplete="off" placeholder="1234567890-abc.apps.googleusercontent.com" /></td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cvtrk-gsc-client-secret"><?php esc_html_e( 'OAuth Client Secret', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<input type="password" id="cvtrk-gsc-client-secret" class="regular-text" name="convertrack_gsc_client_secret" value="" autocomplete="off" placeholder="<?php echo $credentials['has_client'] ? esc_attr__( 'Saved — leave blank to keep', 'convertrack-click-conversion-analytics' ) : ''; ?>" />
+							<p class="description"><?php esc_html_e( 'Stored encrypted in this site\'s database. Leave blank to keep the saved secret.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
+				</table>
+				<?php submit_button( __( 'Save API credentials', 'convertrack-click-conversion-analytics' ) ); ?>
+			</form>
+		</div>
+	</div>
 
 	<div class="cvtrk-card">
 		<div class="cvtrk-card-head">
@@ -66,20 +138,13 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						</td>
 					</tr>
 					<tr>
-						<th scope="row"><label for="cvtrk-gsc-client-id"><?php esc_html_e( 'OAuth Client ID', 'convertrack-click-conversion-analytics' ); ?></label></th>
-						<td><input type="text" id="cvtrk-gsc-client-id" class="regular-text" name="convertrack_gsc_settings[client_id]" value="<?php echo esc_attr( $s['client_id'] ); ?>" autocomplete="off" /></td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="cvtrk-gsc-client-secret"><?php esc_html_e( 'OAuth Client Secret', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<th scope="row"><label for="cvtrk-gsc-property"><?php esc_html_e( 'Search Console property', 'convertrack-click-conversion-analytics' ); ?></label></th>
 						<td>
-							<input type="password" id="cvtrk-gsc-client-secret" class="regular-text" name="convertrack_gsc_client_secret" value="" autocomplete="new-password" placeholder="<?php echo $credentials['has_client_secret'] ? esc_attr__( 'Saved - enter a new value to replace', 'convertrack-click-conversion-analytics' ) : ''; ?>" />
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="cvtrk-gsc-property"><?php esc_html_e( 'Search Console property URL', 'convertrack-click-conversion-analytics' ); ?></label></th>
-						<td>
-							<input type="text" id="cvtrk-gsc-property" class="regular-text" name="convertrack_gsc_settings[property_url]" value="<?php echo esc_attr( $s['property_url'] ); ?>" />
-							<p class="description"><?php esc_html_e( 'Use the exact Search Console property, e.g. https://example.com/ or sc-domain:example.com.', 'convertrack-click-conversion-analytics' ); ?></p>
+							<select class="regular-text" data-cvtrk="gsc-property-picker" style="display:none;margin-bottom:8px;">
+								<option value=""><?php esc_html_e( 'Choose a connected property…', 'convertrack-click-conversion-analytics' ); ?></option>
+							</select>
+							<input type="text" id="cvtrk-gsc-property" class="regular-text" name="convertrack_gsc_settings[property_url]" data-cvtrk="gsc-property-input" value="<?php echo esc_attr( $s['property_url'] ); ?>" />
+							<p class="description"><?php esc_html_e( 'After connecting, pick a verified property from the list above, or type it exactly (e.g. https://example.com/ or sc-domain:example.com).', 'convertrack-click-conversion-analytics' ); ?></p>
 						</td>
 					</tr>
 					<tr>
@@ -120,19 +185,42 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 			</form>
 
 			<div class="cvtrk-tools">
-				<a class="button button-primary" href="<?php echo esc_url( $oauth_url ); ?>"><?php esc_html_e( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ); ?></a>
+				<?php if ( $credentials['has_client'] ) : ?>
+					<a class="button button-primary" href="<?php echo esc_url( $oauth_url ); ?>">
+						<?php echo $credentials['connected'] ? esc_html__( 'Reconnect Google Search Console', 'convertrack-click-conversion-analytics' ) : esc_html__( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ); ?>
+					</a>
+				<?php else : ?>
+					<button type="button" class="button button-primary" disabled><?php esc_html_e( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ); ?></button>
+				<?php endif; ?>
 				<?php if ( $credentials['connected'] ) : ?>
 					<a class="button" href="<?php echo esc_url( $disconnect_url ); ?>"><?php esc_html_e( 'Disconnect', 'convertrack-click-conversion-analytics' ); ?></a>
 				<?php endif; ?>
+				<p class="description">
+					<?php
+					if ( $credentials['connected'] && '' !== $credentials['google_account'] ) {
+						echo esc_html(
+							sprintf(
+								/* translators: %s: connected Google account email. */
+								__( 'Connected as %s.', 'convertrack-click-conversion-analytics' ),
+								$credentials['google_account']
+							)
+						);
+					} elseif ( ! $credentials['has_client'] ) {
+						esc_html_e( 'Save your Google API credentials above, then connect.', 'convertrack-click-conversion-analytics' );
+					} else {
+						esc_html_e( 'You will be redirected to Google to sign in and grant Search Console access.', 'convertrack-click-conversion-analytics' );
+					}
+					?>
+				</p>
 			</div>
 		</div>
 	</div>
 
-	<div class="cvtrk-kpis cvtrk-gsc-kpis" data-cvtrk="gsc-summary">
+	<div class="cvtrk-gsc-panel" data-cvtrk="gsc-summary">
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
 
-	<div class="cvtrk-card">
+	<div class="cvtrk-card" id="convertrack-gsc-queue">
 		<div class="cvtrk-card-head">
 			<h2><?php esc_html_e( 'URL Index Queue', 'convertrack-click-conversion-analytics' ); ?></h2>
 			<span class="cvtrk-card-sub"><?php esc_html_e( 'Paginated background inspection results', 'convertrack-click-conversion-analytics' ); ?></span>
@@ -153,6 +241,11 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						<option value="not_indexed"><?php esc_html_e( 'Not Indexed', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="pending_due_to_quota"><?php esc_html_e( 'Pending Due to Quota', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="pending_from_sitemap"><?php esc_html_e( 'Pending From Sitemap', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="crawled_not_indexed"><?php esc_html_e( 'Crawled But Not Indexed', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="discovered_not_indexed"><?php esc_html_e( 'Discovered But Not Indexed', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="duplicate_canonical"><?php esc_html_e( 'Duplicate/Canonical Issue', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="blocked_by_robots"><?php esc_html_e( 'Blocked by Robots', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="noindex_detected"><?php esc_html_e( 'Noindex Detected', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="error"><?php esc_html_e( 'Errors', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>

@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '1.5.0';
+	const DB_VERSION = '1.6.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 
@@ -140,6 +140,7 @@ class Database {
 			KEY created_at (created_at),
 			KEY post_created (post_id, created_at),
 			KEY type_created (event_type, created_at),
+			KEY heatmap_device (post_id, event_type, device_type, created_at),
 			KEY search_keyword (search_keyword),
 			KEY visitor_id (visitor_id),
 			KEY session_id (session_id)
@@ -227,6 +228,7 @@ class Database {
 
 		foreach ( $sql as $statement ) {
 			dbDelta( $statement );
+			self::log_db_error( 'install/dbDelta' );
 		}
 
 		update_option( self::DB_VERSION_OPTION, self::DB_VERSION );
@@ -238,6 +240,25 @@ class Database {
 	public static function maybe_upgrade() {
 		if ( get_option( self::DB_VERSION_OPTION ) !== self::DB_VERSION ) {
 			self::install();
+		}
+	}
+
+	/**
+	 * Log the last database error when debugging is on, so silent schema or
+	 * insert failures (e.g. a column missing after a failed migration on an
+	 * unusual MySQL config) are diagnosable instead of only surfacing as
+	 * "stored: 0" to the tracker.
+	 *
+	 * @param string $context Where the failure occurred.
+	 */
+	private static function log_db_error( $context ) {
+		if ( ! defined( 'WP_DEBUG' ) || ! WP_DEBUG ) {
+			return;
+		}
+		global $wpdb;
+		if ( ! empty( $wpdb->last_error ) ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+			error_log( 'Convertrack DB error (' . $context . '): ' . $wpdb->last_error );
 		}
 	}
 
@@ -462,7 +483,12 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$result = $wpdb->query( $wpdb->prepare( $sql, $values ) );
 
-		return false === $result ? 0 : (int) $result;
+		if ( false === $result ) {
+			self::log_db_error( 'insert_events' );
+			return 0;
+		}
+
+		return (int) $result;
 	}
 
 	/**
@@ -694,11 +720,13 @@ class Database {
 	public static function top_buttons( $days, $limit = 20, $post_id = 0 ) {
 		global $wpdb;
 
+		$today  = self::today();
 		$start  = self::date_days_ago( max( 1, (int) $days ) - 1 );
 		$limit  = max( 1, min( 200, (int) $limit ) );
 		$daily  = self::daily_table();
-		$where  = 'stat_date >= %s AND element_selector <> %s';
-		$params = array( $start, '' );
+		$events = self::events_table();
+		$where  = 'stat_date >= %s AND stat_date < %s AND element_selector <> %s';
+		$params = array( $start, $today, '' );
 
 		if ( $post_id > 0 ) {
 			$where   .= ' AND post_id = %d';
@@ -712,7 +740,63 @@ class Database {
 		$params[] = $limit;
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		return $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A );
+		$hist = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A );
+
+		$raw_where  = "event_type='click' AND element_selector <> '' AND created_at >= %s";
+		$raw_params = array( $today . ' 00:00:00' );
+		if ( $post_id > 0 ) {
+			$raw_where   .= ' AND post_id = %d';
+			$raw_params[] = (int) $post_id;
+		}
+		$raw_params[] = $limit * 4;
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$today_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT element_selector,
+				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1) AS element_text,
+				        COUNT(*) AS clicks,
+				        SUM(is_conversion) AS conversions
+				 FROM $events
+				 WHERE $raw_where
+				 GROUP BY element_selector ORDER BY clicks DESC LIMIT %d",
+				$raw_params
+			),
+			ARRAY_A
+		);
+
+		$map = array();
+		foreach ( array( $hist, $today_rows ) as $set ) {
+			foreach ( $set as $row ) {
+				$selector = (string) $row['element_selector'];
+				if ( '' === $selector ) {
+					continue;
+				}
+				if ( ! isset( $map[ $selector ] ) ) {
+					$map[ $selector ] = array(
+						'element_selector' => $selector,
+						'element_text'     => (string) $row['element_text'],
+						'clicks'           => 0,
+						'conversions'      => 0,
+					);
+				}
+				if ( '' !== (string) $row['element_text'] ) {
+					$map[ $selector ]['element_text'] = (string) $row['element_text'];
+				}
+				$map[ $selector ]['clicks']      += (int) $row['clicks'];
+				$map[ $selector ]['conversions'] += (int) $row['conversions'];
+			}
+		}
+
+		$list = array_values( $map );
+		usort(
+			$list,
+			function ( $a, $b ) {
+				return (int) $b['clicks'] - (int) $a['clicks'];
+			}
+		);
+
+		return array_slice( $list, 0, $limit );
 	}
 
 	/**
@@ -725,17 +809,66 @@ class Database {
 	public static function top_pages( $days, $limit = 20 ) {
 		global $wpdb;
 
+		$today = self::today();
 		$start = self::date_days_ago( max( 1, (int) $days ) - 1 );
 		$limit = max( 1, min( 200, (int) $limit ) );
 		$daily = self::daily_table();
+		$events = self::events_table();
 
 		$sql = "SELECT post_id, SUM(clicks) AS clicks, SUM(pageviews) AS pageviews,
 		               SUM(conversions) AS conversions
-		        FROM $daily WHERE stat_date >= %s
+		        FROM $daily WHERE stat_date >= %s AND stat_date < %s
 		        GROUP BY post_id ORDER BY clicks DESC, pageviews DESC LIMIT %d";
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		return $wpdb->get_results( $wpdb->prepare( $sql, $start, $limit ), ARRAY_A );
+		$hist = $wpdb->get_results( $wpdb->prepare( $sql, $start, $today, $limit ), ARRAY_A );
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$today_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT post_id,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) AS conversions
+				 FROM $events
+				 WHERE created_at >= %s
+				 GROUP BY post_id ORDER BY clicks DESC, pageviews DESC LIMIT %d",
+				$today . ' 00:00:00',
+				$limit * 4
+			),
+			ARRAY_A
+		);
+
+		$map = array();
+		foreach ( array( $hist, $today_rows ) as $set ) {
+			foreach ( $set as $row ) {
+				$post_id = (int) $row['post_id'];
+				if ( ! isset( $map[ $post_id ] ) ) {
+					$map[ $post_id ] = array(
+						'post_id'     => $post_id,
+						'clicks'      => 0,
+						'pageviews'   => 0,
+						'conversions' => 0,
+					);
+				}
+				$map[ $post_id ]['clicks']      += (int) $row['clicks'];
+				$map[ $post_id ]['pageviews']   += (int) $row['pageviews'];
+				$map[ $post_id ]['conversions'] += (int) $row['conversions'];
+			}
+		}
+
+		$list = array_values( $map );
+		usort(
+			$list,
+			function ( $a, $b ) {
+				if ( (int) $a['clicks'] === (int) $b['clicks'] ) {
+					return (int) $b['pageviews'] - (int) $a['pageviews'];
+				}
+				return (int) $b['clicks'] - (int) $a['clicks'];
+			}
+		);
+
+		return array_slice( $list, 0, $limit );
 	}
 
 	/**
@@ -1081,6 +1214,146 @@ class Database {
 	}
 
 	/**
+	 * Activity volume by hour of day for the selected range.
+	 *
+	 * @param int $days Days back.
+	 * @return array Hourly rows, 00:00 through 23:00.
+	 */
+	public static function activity_by_hour( $days ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT HOUR(created_at) hour,
+				        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+				        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+				        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions
+				 FROM $events
+				 WHERE created_at >= %s
+				 GROUP BY HOUR(created_at)",
+				$start
+			),
+			ARRAY_A
+		);
+
+		$map = array();
+		foreach ( $rows as $row ) {
+			$map[ (int) $row['hour'] ] = $row;
+		}
+
+		$out = array();
+		for ( $h = 0; $h < 24; $h++ ) {
+			$row     = isset( $map[ $h ] ) ? $map[ $h ] : array();
+			$out[] = array(
+				'hour'        => sprintf( '%02d:00', $h ),
+				'pageviews'   => isset( $row['pageviews'] ) ? (int) $row['pageviews'] : 0,
+				'clicks'      => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
+				'conversions' => isset( $row['conversions'] ) ? (int) $row['conversions'] : 0,
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Event-type mix for the engagement visualization.
+	 *
+	 * @param int $days Days back.
+	 * @return array
+	 */
+	public static function engagement_breakdown( $days ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT
+					SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+					SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+					SUM(CASE WHEN event_type='scroll' THEN 1 ELSE 0 END) scrolls,
+					SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversions
+				 FROM $events WHERE created_at >= %s",
+				$start
+			),
+			ARRAY_A
+		);
+
+		$row = is_array( $row ) ? $row : array();
+		return array(
+			'pageviews'   => isset( $row['pageviews'] ) ? (int) $row['pageviews'] : 0,
+			'clicks'      => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
+			'scrolls'     => isset( $row['scrolls'] ) ? (int) $row['scrolls'] : 0,
+			'conversions' => isset( $row['conversions'] ) ? (int) $row['conversions'] : 0,
+		);
+	}
+
+	/**
+	 * Recent raw events for the activity timeline.
+	 *
+	 * @param int $days  Days back.
+	 * @param int $limit Max rows.
+	 * @return array
+	 */
+	public static function recent_events( $days, $limit = 80 ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$limit  = max( 1, min( 200, (int) $limit ) );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
+				        element_text, element_selector, element_href, is_conversion,
+				        device_type, country, source, created_at
+				 FROM $events
+				 WHERE created_at >= %s
+				 ORDER BY created_at DESC, id DESC
+				 LIMIT %d",
+				$start,
+				$limit
+			),
+			ARRAY_A
+		);
+
+		$out = array();
+		foreach ( $rows as $row ) {
+			$visitor_id = (string) $row['visitor_id'];
+			$session_id = (string) $row['session_id'];
+			$out[]      = array(
+				'id'               => (int) $row['id'],
+				'time'             => (string) $row['created_at'],
+				'visitor'          => '' !== $visitor_id ? substr( $visitor_id, 0, 8 ) : '',
+				'session'          => '' !== $session_id ? substr( $session_id, 0, 8 ) : '',
+				'type'             => (string) $row['event_type'],
+				'post_id'          => (int) $row['post_id'],
+				'page_url'         => (string) $row['page_url'],
+				'page_title'       => (string) $row['page_title'],
+				'element_text'     => (string) $row['element_text'],
+				'element_selector' => (string) $row['element_selector'],
+				'element_href'     => (string) $row['element_href'],
+				'is_conversion'    => (int) $row['is_conversion'],
+				'device'           => (string) $row['device_type'],
+				'country'          => (string) $row['country'],
+				'source'           => '' === (string) $row['source'] ? 'Direct' : (string) $row['source'],
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Heatmap data for one page: click density grid + scroll-depth distribution.
 	 *
 	 * Click positions are stored as tenths of a percent of the page (0-1000) and
@@ -1119,7 +1392,16 @@ class Database {
 				        ROUND(pos_y/10) gy,
 				        ROUND(rel_x/10) erx,
 				        ROUND(rel_y/10) ery,
-				        MAX(CASE WHEN viewport_w > 0 THEN 1 ELSE 0 END) has_rel,
+				        AVG(pos_x) px,
+				        AVG(pos_y) py,
+				        AVG(viewport_w) vw,
+				        AVG(viewport_h) vh,
+				        AVG(document_w) dw,
+				        AVG(document_h) dh,
+				        AVG(scroll_x) sx,
+				        AVG(scroll_y) sy,
+				        MAX(CASE WHEN COALESCE(NULLIF(heatmap_selector,''), element_selector) <> '' THEN 1 ELSE 0 END) has_rel,
+				        MAX(CASE WHEN viewport_w > 0 AND viewport_h > 0 AND document_w > 0 AND document_h > 0 THEN 1 ELSE 0 END) has_viewport,
 				        COUNT(*) w
 				 FROM $events
 				 WHERE $click_where
@@ -1139,7 +1421,16 @@ class Database {
 				'y'        => (int) $r['gy'],
 				'rx'       => (int) $r['erx'],
 				'ry'       => (int) $r['ery'],
+				'px'       => (int) round( (float) $r['px'] ),
+				'py'       => (int) round( (float) $r['py'] ),
+				'vw'       => (int) round( (float) $r['vw'] ),
+				'vh'       => (int) round( (float) $r['vh'] ),
+				'dw'       => (int) round( (float) $r['dw'] ),
+				'dh'       => (int) round( (float) $r['dh'] ),
+				'sx'       => (int) round( (float) $r['sx'] ),
+				'sy'       => (int) round( (float) $r['sy'] ),
 				'has_rel'  => ! empty( $r['has_rel'] ) ? 1 : 0,
+				'has_viewport' => ! empty( $r['has_viewport'] ) ? 1 : 0,
 				'w'        => $w,
 			);
 			if ( $w > $max_w ) {

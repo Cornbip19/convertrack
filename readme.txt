@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.6.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,23 @@ The optional **Google Index Monitor** also contacts Google Search Console APIs, 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.0.0 =
+Major release: a direct Google Search Console connection, a redesigned Google Index Monitor, richer chart controls, and a round of UI polish and hardening.
+* Google Index Monitor now connects directly to Google with your own Google Cloud OAuth client (Client ID + Secret) instead of a hosted broker — enter your credentials, click Connect, and sign in to Google.
+* Added a guided setup with the exact Authorized redirect URI to copy into Google Cloud.
+* After connecting, pick your Search Console property from a dropdown of your verified properties.
+* Tokens are refreshed and revoked directly with Google; the client secret and refresh token are stored encrypted.
+* Redesigned the Google Index Monitor summary into a professional coverage panel: an index-coverage donut, an indexing-progress trend line (collected daily), and clickable status cards that drill into the matching URLs in the queue below.
+* Overview activity chart: click a legend key to show/hide Pageviews, Clicks, or Conversions (the chart rescales to the visible series), and refined the line charts with thinner, cleaner lines.
+* Refined the click heatmap rendering: smaller, tighter warm blobs with a cleaner falloff (no more oversized glowing circles) and small, subtle click dots.
+* Replaced the dashboard header logo with a lightweight vector — admin screens load faster and stay crisp on high-DPI displays.
+* Truncated dashboard labels and URLs now reveal their full text on hover.
+* Fixed the active dashboard tab being clipped at the bottom.
+* Heatmaps show clear guidance when a site has no page activity yet, instead of a perpetual loading state.
+* Nudged the smallest chart axis and bar labels up for readability.
+* Database errors are now logged when WP_DEBUG is enabled, so a failed schema migration is diagnosable instead of silently dropping events.
+* Added a WordPress-version safety check so older cores fail gracefully with an admin notice.
 
 = 1.6.0 =
 * Added Google Index Monitor as an optional, isolated Search Console module with OAuth, sitemap scanning, URL Inspection batches, queue reporting, CSV export, and activity logs.

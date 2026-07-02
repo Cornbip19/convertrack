@@ -72,6 +72,7 @@ class Processor {
 
 		update_option( 'convertrack_gsc_last_sync_time', current_time( 'mysql' ), false );
 		Database::clear_summary_cache();
+		Database::record_snapshot();
 		Logger::info( 'processor', 'GSC inspection batch completed.', array( 'processed' => $processed, 'errors' => $errors ) );
 
 		return array(

@@ -29,15 +29,19 @@ defined( 'ABSPATH' ) || exit;
 			</select>
 		</label>
 
-		<label class="cvtrk-field">
-			<?php esc_html_e( 'Device', 'convertrack-click-conversion-analytics' ); ?>
-			<select data-cvtrk="device">
-				<option value="all" selected><?php esc_html_e( 'All devices', 'convertrack-click-conversion-analytics' ); ?></option>
-				<option value="desktop"><?php esc_html_e( 'Desktop', 'convertrack-click-conversion-analytics' ); ?></option>
+		<div class="cvtrk-field cvtrk-device-field">
+			<span><?php esc_html_e( 'Device', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div class="cvtrk-segmented" data-cvtrk="device-toggle" role="group" aria-label="<?php esc_attr_e( 'Device', 'convertrack-click-conversion-analytics' ); ?>">
+				<button type="button" class="cvtrk-segment is-active" data-cvtrk-device="desktop"><?php echo Admin::icon( 'desktop' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'Desktop', 'convertrack-click-conversion-analytics' ); ?></button>
+				<button type="button" class="cvtrk-segment" data-cvtrk-device="tablet"><?php echo Admin::icon( 'tablet' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'Tablet', 'convertrack-click-conversion-analytics' ); ?></button>
+				<button type="button" class="cvtrk-segment" data-cvtrk-device="mobile"><?php echo Admin::icon( 'mobile' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><?php esc_html_e( 'Mobile', 'convertrack-click-conversion-analytics' ); ?></button>
+			</div>
+			<select data-cvtrk="device" class="cvtrk-device-select">
+				<option value="desktop" selected><?php esc_html_e( 'Desktop', 'convertrack-click-conversion-analytics' ); ?></option>
 				<option value="tablet"><?php esc_html_e( 'Tablet', 'convertrack-click-conversion-analytics' ); ?></option>
 				<option value="mobile"><?php esc_html_e( 'Mobile', 'convertrack-click-conversion-analytics' ); ?></option>
 			</select>
-		</label>
+		</div>
 
 		<label class="cvtrk-field">
 			<?php esc_html_e( 'Coordinates', 'convertrack-click-conversion-analytics' ); ?>

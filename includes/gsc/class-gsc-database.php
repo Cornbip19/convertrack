@@ -14,6 +14,8 @@ class Database {
 	const DB_VERSION        = '1.0.0';
 	const DB_VERSION_OPTION = 'convertrack_gsc_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_gsc_summary';
+	const HISTORY_OPTION    = 'convertrack_gsc_status_history';
+	const HISTORY_MAX_DAYS  = 90;
 
 	/**
 	 * Queue table.
@@ -556,6 +558,72 @@ class Database {
 	 */
 	public static function clear_summary_cache() {
 		delete_transient( self::SUMMARY_CACHE_KEY );
+	}
+
+	/**
+	 * Record one daily snapshot of index-status counts for the trend graph.
+	 *
+	 * Keyed by site-local date, so repeated calls in the same day just refresh
+	 * that day's entry (keeping the latest counts). Capped to the most recent
+	 * HISTORY_MAX_DAYS days. Stored in an option — no schema/migration needed.
+	 */
+	public static function record_snapshot() {
+		$today   = gmdate( 'Y-m-d', (int) current_time( 'timestamp' ) );
+		$history = get_option( self::HISTORY_OPTION, array() );
+		if ( ! is_array( $history ) ) {
+			$history = array();
+		}
+
+		$counts  = self::summary();
+		$pending = (int) $counts['pending_due_to_quota'] + (int) $counts['pending_from_sitemap']
+			+ (int) $counts['crawled_not_indexed'] + (int) $counts['discovered_not_indexed'];
+		$issues  = (int) $counts['not_indexed'] + (int) $counts['duplicate_canonical']
+			+ (int) $counts['blocked_by_robots'] + (int) $counts['noindex_detected'];
+
+		$history[ $today ] = array(
+			'total'   => (int) $counts['total'],
+			'indexed' => (int) $counts['indexed'],
+			'pending' => $pending,
+			'issues'  => $issues,
+			'errors'  => (int) $counts['errors'],
+		);
+
+		if ( count( $history ) > self::HISTORY_MAX_DAYS ) {
+			ksort( $history );
+			$history = array_slice( $history, -self::HISTORY_MAX_DAYS, null, true );
+		}
+
+		update_option( self::HISTORY_OPTION, $history, false );
+	}
+
+	/**
+	 * Return the daily status snapshots (oldest first) for the trend graph.
+	 *
+	 * @param int $days Max days to return.
+	 * @return array List of { date, total, indexed, pending, issues, errors }.
+	 */
+	public static function summary_history( $days = 30 ) {
+		$days    = max( 1, min( self::HISTORY_MAX_DAYS, (int) $days ) );
+		$history = get_option( self::HISTORY_OPTION, array() );
+		if ( ! is_array( $history ) || empty( $history ) ) {
+			return array();
+		}
+
+		ksort( $history );
+		$sliced = array_slice( $history, -$days, null, true );
+		$out    = array();
+		foreach ( $sliced as $date => $row ) {
+			$out[] = array(
+				'date'    => (string) $date,
+				'total'   => isset( $row['total'] ) ? (int) $row['total'] : 0,
+				'indexed' => isset( $row['indexed'] ) ? (int) $row['indexed'] : 0,
+				'pending' => isset( $row['pending'] ) ? (int) $row['pending'] : 0,
+				'issues'  => isset( $row['issues'] ) ? (int) $row['issues'] : 0,
+				'errors'  => isset( $row['errors'] ) ? (int) $row['errors'] : 0,
+			);
+		}
+
+		return $out;
 	}
 
 	/**

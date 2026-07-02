@@ -106,7 +106,8 @@ class Rest_Controller {
 				'callback'            => array( $this, 'stats_heatmap_snapshot' ),
 				'permission_callback' => array( $this, 'can_view_stats' ),
 				'args'                => array(
-					'post' => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
+					'post'   => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
+					'device' => array( 'default' => 'desktop', 'sanitize_callback' => 'sanitize_key' ),
 				),
 			)
 		);
@@ -213,11 +214,14 @@ class Rest_Controller {
 				'geo_enabled'          => (bool) Settings::get( 'enable_geo' ),
 				'avg_session_seconds'  => Database::avg_session_seconds( $range ),
 				'series'               => Database::clicks_timeseries( $range ),
+				'activity_hours'       => Database::activity_by_hour( $range ),
+				'engagement'           => Database::engagement_breakdown( $range ),
 			);
 			wp_cache_set( $cache_key, $data, 'convertrack', 15 );
 		}
 
-		$data['active'] = Presence::active_count();
+		$data['active']        = Presence::active_count();
+		$data['recent_events'] = Database::recent_events( $range, 100 );
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -253,6 +257,8 @@ class Rest_Controller {
 	 */
 	public function stats_heatmap_snapshot( $request ) {
 		$post_id = (int) $request->get_param( 'post' );
+		$device  = sanitize_key( (string) $request->get_param( 'device' ) );
+		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'desktop';
 		if ( $post_id <= 0 || 'publish' !== get_post_status( $post_id ) ) {
 			return new \WP_Error( 'convertrack_bad_post', 'Invalid page.', array( 'status' => 400 ) );
 		}
@@ -268,7 +274,7 @@ class Rest_Controller {
 			array(
 				'timeout'     => 10,
 				'redirection' => 3,
-				'user-agent'  => 'Convertrack/' . CONVERTRACK_VERSION . ' heatmap-snapshot',
+				'user-agent'  => $this->snapshot_user_agent( $device ),
 				'cookies'     => array(),
 				'headers'     => array(
 					'Cache-Control' => 'no-cache',
@@ -293,11 +299,28 @@ class Rest_Controller {
 				array(
 					'post_id' => $post_id,
 					'url'     => $permalink,
+					'device'  => $device,
 					'html'    => $html,
 				),
 				200
 			)
 		);
+	}
+
+	/**
+	 * User-agent string for responsive heatmap snapshots.
+	 *
+	 * @param string $device desktop|tablet|mobile.
+	 * @return string
+	 */
+	private function snapshot_user_agent( $device ) {
+		if ( 'mobile' === $device ) {
+			return 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 Convertrack/' . CONVERTRACK_VERSION;
+		}
+		if ( 'tablet' === $device ) {
+			return 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1 Convertrack/' . CONVERTRACK_VERSION;
+		}
+		return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Convertrack/' . CONVERTRACK_VERSION;
 	}
 
 	/**
@@ -325,7 +348,9 @@ class Rest_Controller {
 		$html = preg_replace( '#<script\b[^>]*>.*?</script>#is', '', (string) $html );
 		$html = preg_replace( '#<script\b[^>]*/>#is', '', $html );
 
-		$inject = '<base href="' . esc_url( $base_url ) . '">' .
+		$viewport = preg_match( '#<meta\b[^>]*name=["\']viewport["\'][^>]*>#i', $html ) ? '' : '<meta name="viewport" content="width=device-width, initial-scale=1">';
+		$inject = $viewport .
+			'<base href="' . esc_url( $base_url ) . '">' .
 			'<style id="convertrack-heatmap-snapshot-css">' .
 			'html{scroll-behavior:auto!important;margin-top:0!important;}' .
 			'*,*:before,*:after{animation:none!important;transition:none!important;}' .

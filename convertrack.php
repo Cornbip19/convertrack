@@ -3,7 +3,7 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           1.6.0
+ * Version:           2.0.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Cornbip19
@@ -22,7 +22,22 @@ if ( defined( 'CONVERTRACK_VERSION' ) ) {
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '1.6.0' );
+// Safety net: bail cleanly on cores older than the declared minimum instead of
+// risking fatals from newer APIs. WordPress.org enforces "Requires at least" at
+// install time; this also covers manually copied installs.
+if ( isset( $GLOBALS['wp_version'] ) && version_compare( $GLOBALS['wp_version'], '5.8', '<' ) ) {
+	add_action(
+		'admin_notices',
+		function () {
+			echo '<div class="notice notice-error"><p>' .
+				esc_html__( 'Convertrack requires WordPress 5.8 or newer. Please update WordPress to activate this plugin.', 'convertrack-click-conversion-analytics' ) .
+				'</p></div>';
+		}
+	);
+	return;
+}
+
+define( 'CONVERTRACK_VERSION', '2.0.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );

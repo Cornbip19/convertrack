@@ -57,7 +57,6 @@
 	 * ----------------------------------------------------------------- */
 
 	var queue = [];
-	var device = detectDevice();
 	var detectedSource = detectSource();
 	var source = resolveAcquisitionSource( detectedSource );
 	var selector = buildSelector( cfg.selectors );
@@ -95,8 +94,10 @@
 		var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
 		var coords = clickPosition( e, el );
 		var attr = eventAttribution();
+		var eventDevice = detectDevice();
 		queue.push( {
 			t: 'click',
+			ts: nowMs(),
 			pid: cfg.postId || 0,
 			url: currentPath(),
 			title: docTitle(),
@@ -108,7 +109,7 @@
 			hsel: heatmapPath( el ),
 			href: href,
 			conv: isConversion( el, href ) ? 1 : 0,
-			dev: device,
+			dev: eventDevice,
 			src: attr.src,
 			rh: attr.rh,
 			us: attr.us,
@@ -144,8 +145,11 @@
 	 * ----------------------------------------------------------------- */
 
 	var pageAttr = eventAttribution();
+	var pageViewMetrics = viewportSnapshot();
+	var pageDevice = detectDevice();
 	queue.push( {
 		t: 'pageview',
+		ts: nowMs(),
 		pid: cfg.postId || 0,
 		url: currentPath(),
 		title: docTitle(),
@@ -156,7 +160,7 @@
 		sel: '',
 		href: '',
 		conv: isConversionUrl( currentPath() ) ? 1 : 0,
-		dev: device,
+		dev: pageDevice,
 		src: pageAttr.src,
 		rh: pageAttr.rh,
 		us: pageAttr.us,
@@ -164,7 +168,13 @@
 		uc: pageAttr.uc,
 		ut: pageAttr.ut,
 		kw: pageAttr.kw,
-		ks: pageAttr.ks
+		ks: pageAttr.ks,
+		vw: pageViewMetrics.vw,
+		vh: pageViewMetrics.vh,
+		dw: pageViewMetrics.dw,
+		dh: pageViewMetrics.dh,
+		sx: pageViewMetrics.sx,
+		sy: pageViewMetrics.sy
 	} );
 
 	heartbeat();
@@ -503,10 +513,21 @@
 
 	function detectDevice() {
 		var ua = navigator.userAgent || '';
-		if ( /Mobi|Android|iPhone|iPod/i.test( ua ) ) {
+		var doc = document.documentElement || {};
+		var width = Math.max( 1, window.innerWidth || doc.clientWidth || 1 );
+		if ( /iPad|Tablet|PlayBook|Silk/i.test( ua ) || ( /Macintosh/i.test( ua ) && navigator.maxTouchPoints > 1 ) ) {
+			return 'tablet';
+		}
+		if ( /iPhone|iPod|Mobi|Android.*Mobile/i.test( ua ) ) {
 			return 'mobile';
 		}
-		if ( /iPad|Tablet|PlayBook|Silk/i.test( ua ) || ( /Android/i.test( ua ) && ! /Mobi/i.test( ua ) ) ) {
+		if ( /Android/i.test( ua ) && ! /Mobi/i.test( ua ) ) {
+			return 'tablet';
+		}
+		if ( width <= 600 ) {
+			return 'mobile';
+		}
+		if ( width <= 1024 ) {
 			return 'tablet';
 		}
 		return 'desktop';
@@ -634,6 +655,19 @@
 		};
 	}
 
+	function viewportSnapshot() {
+		var doc = document.documentElement || {};
+		var d = pageDims();
+		return {
+			vw: clampInt( Math.max( 1, window.innerWidth || doc.clientWidth || 1 ), 1, 1000000 ),
+			vh: clampInt( Math.max( 1, window.innerHeight || doc.clientHeight || 1 ), 1, 1000000 ),
+			dw: clampInt( d.w, 1, 1000000 ),
+			dh: clampInt( d.h, 1, 1000000 ),
+			sx: clampInt( Math.max( 0, window.pageXOffset || doc.scrollLeft || 0 ), 0, 1000000 ),
+			sy: clampInt( Math.max( 0, window.pageYOffset || doc.scrollTop || 0 ), 0, 1000000 )
+		};
+	}
+
 	// Click position as tenths of a percent (0-1000) of the full page and
 	// clicked element. The element-relative values let heatmaps stay attached
 	// to sticky/fixed controls instead of smearing by viewport scroll offset.
@@ -641,11 +675,7 @@
 		var d = pageDims();
 		var px = ( typeof e.pageX === 'number' ) ? e.pageX : ( ( e.clientX || 0 ) + ( window.pageXOffset || 0 ) );
 		var py = ( typeof e.pageY === 'number' ) ? e.pageY : ( ( e.clientY || 0 ) + ( window.pageYOffset || 0 ) );
-		var doc = document.documentElement || {};
-		var sx = Math.max( 0, window.pageXOffset || doc.scrollLeft || 0 );
-		var sy = Math.max( 0, window.pageYOffset || doc.scrollTop || 0 );
-		var vw = Math.max( 1, window.innerWidth || doc.clientWidth || 1 );
-		var vh = Math.max( 1, window.innerHeight || doc.clientHeight || 1 );
+		var view = viewportSnapshot();
 		var rx = 0;
 		var ry = 0;
 
@@ -664,12 +694,12 @@
 			cy: clampInt( Math.round( ( py / d.h ) * 1000 ), 0, 1000 ),
 			rx: rx,
 			ry: ry,
-			vw: clampInt( vw, 1, 1000000 ),
-			vh: clampInt( vh, 1, 1000000 ),
-			dw: clampInt( d.w, 1, 1000000 ),
-			dh: clampInt( d.h, 1, 1000000 ),
-			sx: clampInt( sx, 0, 1000000 ),
-			sy: clampInt( sy, 0, 1000000 )
+			vw: view.vw,
+			vh: view.vh,
+			dw: view.dw,
+			dh: view.dh,
+			sx: view.sx,
+			sy: view.sy
 		};
 	}
 
@@ -703,13 +733,15 @@
 		scrollSent = true;
 		if ( maxScroll > 0 ) {
 			var attr = eventAttribution();
+			var eventDevice = detectDevice();
 			queue.push( {
 				t: 'scroll',
+				ts: nowMs(),
 				pid: cfg.postId || 0,
 				url: currentPath(),
 				title: docTitle(),
 				tag: '', id: '', cls: '', txt: '', sel: '', href: '', conv: 0,
-				dev: device,
+				dev: eventDevice,
 				src: attr.src, rh: attr.rh, us: attr.us, um: attr.um, uc: attr.uc, ut: attr.ut, kw: attr.kw, ks: attr.ks,
 				sd: maxScroll
 			} );

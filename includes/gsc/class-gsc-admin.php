@@ -16,11 +16,13 @@ class Admin {
 	 */
 	public function register() {
 		add_action( 'admin_post_convertrack_gsc_save_settings', array( $this, 'save_settings' ) );
+		add_action( 'admin_post_convertrack_gsc_save_client', array( $this, 'save_client' ) );
 		add_action( 'admin_post_convertrack_gsc_oauth_start', array( $this, 'oauth_start' ) );
 		add_action( 'admin_post_convertrack_gsc_oauth_callback', array( $this, 'oauth_callback' ) );
 		add_action( 'admin_post_convertrack_gsc_disconnect', array( $this, 'disconnect' ) );
 		add_action( 'admin_post_convertrack_gsc_export', array( $this, 'export' ) );
 		add_action( 'admin_notices', array( $this, 'migration_notice' ) );
+		add_action( 'admin_notices', array( $this, 'reconnect_notice' ) );
 	}
 
 	/**
@@ -35,16 +37,32 @@ class Admin {
 
 		Settings::save( $input );
 
-		$secret = isset( $_POST['convertrack_gsc_client_secret'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['convertrack_gsc_client_secret'] ) ) ) : '';
-		if ( '' !== $secret ) {
-			$stored = Credentials::set_client_secret( $secret );
-			if ( is_wp_error( $stored ) ) {
-				$this->redirect( 'settings-error', $stored->get_error_message() );
-			}
-		}
-
 		Logger::info( 'settings', 'Google Index Monitor settings saved.' );
 		$this->redirect( 'settings-saved' );
+	}
+
+	/**
+	 * Save the site owner's Google OAuth client credentials.
+	 */
+	public function save_client() {
+		$this->check_admin_action( 'convertrack_gsc_save_client' );
+
+		$client_id     = isset( $_POST['convertrack_gsc_client_id'] ) ? sanitize_text_field( wp_unslash( $_POST['convertrack_gsc_client_id'] ) ) : '';
+		$client_secret = isset( $_POST['convertrack_gsc_client_secret'] ) ? trim( (string) wp_unslash( $_POST['convertrack_gsc_client_secret'] ) ) : '';
+
+		// The secret is never echoed back to the form, so an empty submission
+		// means "keep the stored one".
+		if ( '' === $client_secret ) {
+			$client_secret = Credentials::client_secret();
+		}
+
+		$stored = Credentials::store_client( $client_id, $client_secret );
+		if ( is_wp_error( $stored ) ) {
+			$this->redirect( 'client-error', $stored->get_error_message() );
+		}
+
+		Logger::info( 'oauth', 'Google OAuth client credentials saved.' );
+		$this->redirect( 'client-saved' );
 	}
 
 	/**
@@ -53,10 +71,15 @@ class Admin {
 	public function oauth_start() {
 		$this->check_admin_action( 'convertrack_gsc_oauth_start' );
 
-		$state = wp_generate_password( 32, false, false );
-		set_transient( self::state_key(), $state, 10 * MINUTE_IN_SECONDS );
+		if ( ! Credentials::has_client() ) {
+			$this->redirect( 'oauth-error', __( 'Enter and save your Google OAuth Client ID and Secret before connecting.', 'convertrack-click-conversion-analytics' ) );
+		}
 
-		$url = OAuth::authorization_url( self::callback_url(), $state );
+		$state    = wp_generate_password( 32, false, false );
+		$verifier = wp_generate_password( 64, false, false );
+		set_transient( self::state_key(), array( 'state' => $state, 'verifier' => $verifier ), 10 * MINUTE_IN_SECONDS );
+
+		$url = OAuth::connect_url( OAuth::redirect_uri(), $state, OAuth::code_challenge( $verifier ) );
 		if ( is_wp_error( $url ) ) {
 			$this->redirect( 'oauth-error', $url->get_error_message() );
 		}
@@ -73,29 +96,49 @@ class Admin {
 			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		$expected = get_transient( self::state_key() );
-		$state    = isset( $_GET['state'] ) ? sanitize_text_field( wp_unslash( $_GET['state'] ) ) : '';
+		$stored = get_transient( self::state_key() );
 		delete_transient( self::state_key() );
+		$state          = isset( $_GET['state'] ) ? sanitize_text_field( wp_unslash( $_GET['state'] ) ) : '';
+		$expected_state = is_array( $stored ) && isset( $stored['state'] ) ? (string) $stored['state'] : '';
+		$verifier       = is_array( $stored ) && isset( $stored['verifier'] ) ? (string) $stored['verifier'] : '';
 
-		if ( empty( $expected ) || ! hash_equals( (string) $expected, (string) $state ) ) {
+		if ( '' === $expected_state || ! hash_equals( $expected_state, (string) $state ) ) {
+			// A duplicate or back-button hit of the callback after a successful
+			// connect: don't show a scary error for what already worked.
+			if ( ! isset( $_GET['error'] ) && Credentials::is_connected() ) {
+				$this->redirect( 'oauth-connected' );
+			}
 			Logger::error( 'oauth', 'OAuth callback failed state validation.' );
 			$this->redirect( 'oauth-error', __( 'Invalid OAuth state. Please try connecting again.', 'convertrack-click-conversion-analytics' ) );
 		}
 
 		if ( isset( $_GET['error'] ) ) {
 			$error = sanitize_text_field( wp_unslash( $_GET['error'] ) );
-			Logger::error( 'oauth', 'Google OAuth returned an error.', array( 'error' => $error ) );
+			Logger::error( 'oauth', 'Google returned an OAuth error.', array( 'error' => $error ) );
 			$this->redirect( 'oauth-error', $error );
 		}
 
 		$code = isset( $_GET['code'] ) ? sanitize_text_field( wp_unslash( $_GET['code'] ) ) : '';
 		if ( '' === $code ) {
-			$this->redirect( 'oauth-error', __( 'Google OAuth did not return an authorization code.', 'convertrack-click-conversion-analytics' ) );
+			$this->redirect( 'oauth-error', __( 'The connection did not complete. Please try again.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		$result = OAuth::exchange_code( $code, self::callback_url() );
+		$result = OAuth::exchange_code( $code, $verifier, OAuth::redirect_uri() );
 		if ( is_wp_error( $result ) ) {
 			$this->redirect( 'oauth-error', $result->get_error_message() );
+		}
+
+		// Connection succeeded; the reconnect prompt (if any) no longer applies.
+		delete_transient( 'convertrack_gsc_reconnect_required' );
+
+		// Warn (without failing) only for genuine ownership mismatches; a transient
+		// network/5xx error from the verify call shouldn't masquerade as one.
+		$verify = API::verify_property();
+		if ( is_wp_error( $verify ) ) {
+			Logger::warning( 'oauth', 'Connected, but property verification failed.', array( 'error' => $verify->get_error_message() ) );
+			if ( in_array( $verify->get_error_code(), array( 'convertrack_gsc_property_not_found', 'convertrack_gsc_property_unverified' ), true ) ) {
+				$this->redirect( 'oauth-property-warning', $verify->get_error_message() );
+			}
 		}
 
 		$this->redirect( 'oauth-connected' );
@@ -106,8 +149,9 @@ class Admin {
 	 */
 	public function disconnect() {
 		$this->check_admin_action( 'convertrack_gsc_disconnect' );
+		OAuth::revoke();
 		Credentials::clear_tokens();
-		Logger::info( 'oauth', 'Google Search Console OAuth disconnected.' );
+		Logger::info( 'oauth', 'Google Search Console disconnected.' );
 		$this->redirect( 'oauth-disconnected' );
 	}
 
@@ -180,6 +224,32 @@ class Admin {
 		?>
 		<div class="notice notice-error">
 			<p><?php echo esc_html( sprintf( __( 'Convertrack Google Index Monitor migration failed: %s', 'convertrack-click-conversion-analytics' ), $error ) ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Prompt the admin to reconnect after Google has revoked or expired the grant.
+	 */
+	public function reconnect_notice() {
+		if ( ! current_user_can( 'manage_options' ) || ! get_transient( 'convertrack_gsc_reconnect_required' ) ) {
+			return;
+		}
+		$url = admin_url( 'admin.php?page=convertrack-gsc' );
+		?>
+		<div class="notice notice-warning is-dismissible">
+			<p>
+				<?php
+				echo wp_kses(
+					sprintf(
+						/* translators: %s: Search Console settings page URL. */
+						__( 'Convertrack lost its Google Search Console connection — Google revoked or expired it. <a href="%s">Reconnect Search Console</a>.', 'convertrack-click-conversion-analytics' ),
+						esc_url( $url )
+					),
+					array( 'a' => array( 'href' => array() ) )
+				);
+				?>
+			</p>
 		</div>
 		<?php
 	}

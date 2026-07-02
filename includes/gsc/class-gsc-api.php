@@ -85,6 +85,79 @@ class API {
 	}
 
 	/**
+	 * Verify the saved property URL is one the connected account can access.
+	 * Returns true when it matches, or a WP_Error describing the mismatch. Used
+	 * to surface a clear message instead of a silent 403 during inspection.
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function verify_property() {
+		$property = (string) Settings::get( 'property_url' );
+		if ( '' === $property ) {
+			return true;
+		}
+
+		$response = self::request( 'GET', rtrim( self::SEARCH_CONSOLE_URL, '/' ) );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$entries = isset( $response['siteEntry'] ) && is_array( $response['siteEntry'] ) ? $response['siteEntry'] : array();
+		foreach ( $entries as $entry ) {
+			if ( ! isset( $entry['siteUrl'] ) || $entry['siteUrl'] !== $property ) {
+				continue;
+			}
+			if ( isset( $entry['permissionLevel'] ) && 'siteUnverifiedUser' === $entry['permissionLevel'] ) {
+				return new \WP_Error(
+					'convertrack_gsc_property_unverified',
+					sprintf(
+						/* translators: %s: property URL. */
+						__( 'The connected Google account can see %s but is not a verified owner of it.', 'convertrack-click-conversion-analytics' ),
+						$property
+					)
+				);
+			}
+			return true;
+		}
+
+		return new \WP_Error(
+			'convertrack_gsc_property_not_found',
+			sprintf(
+				/* translators: %s: property URL. */
+				__( '%s is not among the properties this Google account can access. Check the format (e.g. https://example.com/ vs sc-domain:example.com).', 'convertrack-click-conversion-analytics' ),
+				$property
+			)
+		);
+	}
+
+	/**
+	 * List the verified Search Console properties the connected account can
+	 * access, for the property picker in the admin UI.
+	 *
+	 * @return array|\WP_Error List of { siteUrl, permissionLevel }.
+	 */
+	public static function list_sites() {
+		$response = self::request( 'GET', rtrim( self::SEARCH_CONSOLE_URL, '/' ) );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$entries = isset( $response['siteEntry'] ) && is_array( $response['siteEntry'] ) ? $response['siteEntry'] : array();
+		$out     = array();
+		foreach ( $entries as $entry ) {
+			if ( empty( $entry['siteUrl'] ) ) {
+				continue;
+			}
+			$out[] = array(
+				'siteUrl'         => (string) $entry['siteUrl'],
+				'permissionLevel' => isset( $entry['permissionLevel'] ) ? (string) $entry['permissionLevel'] : '',
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * Make an authorized Google API request.
 	 *
 	 * @param string     $method HTTP method.

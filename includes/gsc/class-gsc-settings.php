@@ -28,7 +28,6 @@ class Settings {
 	public static function defaults() {
 		return array(
 			'enabled'                       => 0,
-			'client_id'                     => '',
 			'property_url'                  => home_url( '/' ),
 			'sitemap_url'                   => home_url( '/wp-sitemap.xml' ),
 			'daily_quota_limit'             => 2000,
@@ -92,7 +91,6 @@ class Settings {
 
 		$clean = array(
 			'enabled'                       => empty( $input['enabled'] ) ? 0 : 1,
-			'client_id'                     => isset( $input['client_id'] ) ? trim( sanitize_text_field( wp_unslash( $input['client_id'] ) ) ) : '',
 			'property_url'                  => self::sanitize_property_url( isset( $input['property_url'] ) ? wp_unslash( $input['property_url'] ) : $d['property_url'] ),
 			'sitemap_url'                   => isset( $input['sitemap_url'] ) ? esc_url_raw( trim( wp_unslash( $input['sitemap_url'] ) ) ) : $d['sitemap_url'],
 			'daily_quota_limit'             => self::clamp_int( $input, 'daily_quota_limit', 1, 2000, $d['daily_quota_limit'] ),
@@ -151,10 +149,8 @@ class Settings {
 	 */
 	public static function ready() {
 		return (bool) self::get( 'enabled' )
-			&& '' !== self::get( 'client_id' )
 			&& '' !== self::get( 'property_url' )
 			&& '' !== self::get( 'sitemap_url' )
-			&& Credentials::has_client_secret()
 			&& Credentials::is_connected();
 	}
 

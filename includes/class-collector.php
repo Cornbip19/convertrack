@@ -185,8 +185,33 @@ class Collector {
 			'scroll_x'         => min( 1000000, isset( $raw['sx'] ) ? absint( $raw['sx'] ) : 0 ),
 			'scroll_y'         => min( 1000000, isset( $raw['sy'] ) ? absint( $raw['sy'] ) : 0 ),
 			'scroll_depth'     => min( 100, isset( $raw['sd'] ) ? absint( $raw['sd'] ) : 0 ),
-			'created_at'       => $now,
+			'created_at'       => self::event_timestamp( $raw, $now ),
 		);
+	}
+
+	/**
+	 * Resolve the event timestamp from the client payload, bounded for safety.
+	 *
+	 * Older tracker scripts did not send per-event timestamps, so invalid or
+	 * missing values fall back to the server receive time.
+	 *
+	 * @param array  $raw      Raw event from the request.
+	 * @param string $fallback Server-side fallback timestamp.
+	 * @return string Site-local mysql datetime.
+	 */
+	private static function event_timestamp( array $raw, $fallback ) {
+		if ( ! isset( $raw['ts'] ) || ! is_numeric( $raw['ts'] ) ) {
+			return $fallback;
+		}
+
+		$unix = (int) floor( (float) $raw['ts'] / 1000 );
+		$now  = time();
+		if ( $unix < ( $now - DAY_IN_SECONDS ) || $unix > ( $now + ( 5 * MINUTE_IN_SECONDS ) ) ) {
+			return $fallback;
+		}
+
+		$local = get_date_from_gmt( gmdate( 'Y-m-d H:i:s', $unix ), 'Y-m-d H:i:s' );
+		return $local ? $local : $fallback;
 	}
 
 	/**

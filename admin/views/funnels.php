@@ -26,28 +26,28 @@ defined( 'ABSPATH' ) || exit;
 
 	<div class="cvtrk-kpis">
 		<div class="cvtrk-kpi">
-			<span class="cvtrk-kpi-icon"><span class="dashicons dashicons-groups"></span></span>
+			<span class="cvtrk-kpi-icon"><?php echo Admin::icon( 'sessions' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 			<span class="cvtrk-kpi-body">
 				<span class="cvtrk-kpi-value" data-cvtrk="funnel-sessions">-</span>
 				<span class="cvtrk-kpi-label"><?php esc_html_e( 'Sessions', 'convertrack-click-conversion-analytics' ); ?></span>
 			</span>
 		</div>
 		<div class="cvtrk-kpi is-accent">
-			<span class="cvtrk-kpi-icon"><span class="dashicons dashicons-yes-alt"></span></span>
+			<span class="cvtrk-kpi-icon"><?php echo Admin::icon( 'conversions' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 			<span class="cvtrk-kpi-body">
 				<span class="cvtrk-kpi-value" data-cvtrk="funnel-converting">-</span>
 				<span class="cvtrk-kpi-label"><?php esc_html_e( 'Converting sessions', 'convertrack-click-conversion-analytics' ); ?></span>
 			</span>
 		</div>
 		<div class="cvtrk-kpi">
-			<span class="cvtrk-kpi-icon"><span class="dashicons dashicons-chart-bar"></span></span>
+			<span class="cvtrk-kpi-icon"><?php echo Admin::icon( 'rate' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 			<span class="cvtrk-kpi-body">
 				<span class="cvtrk-kpi-value" data-cvtrk="funnel-rate">-</span>
 				<span class="cvtrk-kpi-label"><?php esc_html_e( 'Session conversion rate', 'convertrack-click-conversion-analytics' ); ?></span>
 			</span>
 		</div>
 		<div class="cvtrk-kpi">
-			<span class="cvtrk-kpi-icon"><span class="dashicons dashicons-awards"></span></span>
+			<span class="cvtrk-kpi-icon"><?php echo Admin::icon( 'award' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 			<span class="cvtrk-kpi-body">
 				<span class="cvtrk-kpi-value" data-cvtrk="funnel-conversions">-</span>
 				<span class="cvtrk-kpi-label"><?php esc_html_e( 'Total conversions', 'convertrack-click-conversion-analytics' ); ?></span>
