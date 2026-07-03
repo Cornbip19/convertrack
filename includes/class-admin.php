@@ -497,6 +497,10 @@ class Admin {
 					'gscNotifyGoogle'    => __( 'Notify Google', 'convertrack-click-conversion-analytics' ),
 					'gscNotifyHint'      => __( 'Sends a Google Indexing API notification for this URL. Google officially supports this only for job-posting and livestream pages.', 'convertrack-click-conversion-analytics' ),
 					'gscIndexingNotified' => __( 'Google has been notified about this URL. The next recheck will show whether it was picked up.', 'convertrack-click-conversion-analytics' ),
+					'gscNoInspectLinks'  => __( 'No URLs with Search Console links in the current view. Adjust the filters above first.', 'convertrack-click-conversion-analytics' ),
+					'gscTabsOpened'      => __( 'Opened in Search Console:', 'convertrack-click-conversion-analytics' ),
+					'gscTabsHint'        => __( 'Click "Request Indexing" in each tab.', 'convertrack-click-conversion-analytics' ),
+					'gscTabsBlocked'     => __( 'Your browser blocked some tabs — allow pop-ups for this site and click again. Opened:', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);

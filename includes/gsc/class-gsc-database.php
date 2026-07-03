@@ -477,8 +477,14 @@ class Database {
 		$offset   = ( $page - 1 ) * $per_page;
 
 		if ( ! empty( $args['status'] ) && 'all' !== $args['status'] ) {
-			$where[]   = 'index_status = %s';
-			$prepare[] = sanitize_key( $args['status'] );
+			if ( 'needs_indexing' === $args['status'] ) {
+				// Combined view of pages Google knows about but has not indexed —
+				// the "request indexing" work queue.
+				$where[] = "index_status IN ('not_indexed','crawled_not_indexed','discovered_not_indexed')";
+			} else {
+				$where[]   = 'index_status = %s';
+				$prepare[] = sanitize_key( $args['status'] );
+			}
 		}
 		if ( ! empty( $args['post_type'] ) && 'all' !== $args['post_type'] ) {
 			$where[]   = 'post_type = %s';

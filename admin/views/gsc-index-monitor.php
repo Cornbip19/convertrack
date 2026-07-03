@@ -260,6 +260,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 					<?php esc_html_e( 'Status', 'convertrack-click-conversion-analytics' ); ?>
 					<select data-cvtrk="gsc-status">
 						<option value="all"><?php esc_html_e( 'All URLs', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="needs_indexing"><?php esc_html_e( 'Needs Indexing (all stuck pages)', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="indexed"><?php esc_html_e( 'Indexed', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="not_indexed"><?php esc_html_e( 'Not Indexed', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="pending_due_to_quota"><?php esc_html_e( 'Pending Due to Quota', 'convertrack-click-conversion-analytics' ); ?></option>
@@ -307,6 +308,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 				</label>
 				<button type="button" class="button" data-cvtrk="gsc-scan"><?php esc_html_e( 'Scan Sitemap', 'convertrack-click-conversion-analytics' ); ?></button>
 				<button type="button" class="button" data-cvtrk="gsc-process"><?php esc_html_e( 'Run Batch', 'convertrack-click-conversion-analytics' ); ?></button>
+				<button type="button" class="button" data-cvtrk="gsc-open-gsc" title="<?php esc_attr_e( 'Opens each listed URL (up to 10) in Google Search Console, where you can click Request Indexing.', 'convertrack-click-conversion-analytics' ); ?>"><?php esc_html_e( 'Open in GSC', 'convertrack-click-conversion-analytics' ); ?></button>
 				<a class="button" data-cvtrk="gsc-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
 			</div>
 

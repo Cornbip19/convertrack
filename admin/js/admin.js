@@ -2123,6 +2123,7 @@
 			if ( ! box ) {
 				return;
 			}
+			state.lastRows = rows;
 			clear( box );
 			if ( ! rows.length ) {
 				empty( box, I18N.noData );
@@ -2478,6 +2479,37 @@
 		if ( process ) {
 			process.addEventListener( 'click', function () {
 				runInspectionLoop( 0 );
+			} );
+		}
+
+		// Bulk workflow: open the listed URLs (max 10) in Search Console tabs so
+		// "Request Indexing" is one click away in each.
+		var openGsc = attr( 'gsc-open-gsc' );
+		if ( openGsc ) {
+			openGsc.addEventListener( 'click', function () {
+				var links = [];
+				( state.lastRows || [] ).forEach( function ( row ) {
+					if ( row.inspection_result_link && links.length < 10 ) {
+						links.push( row.inspection_result_link );
+					}
+				} );
+				if ( ! links.length ) {
+					setGscProgress( I18N.gscNoInspectLinks || 'No URLs with Search Console links in the current view. Adjust the filters above first.', true );
+					return;
+				}
+				var opened = 0;
+				links.forEach( function ( href ) {
+					var w = window.open( href, '_blank' );
+					if ( w ) {
+						w.opener = null;
+						opened++;
+					}
+				} );
+				if ( opened < links.length ) {
+					setGscProgress( ( I18N.gscTabsBlocked || 'Your browser blocked some tabs — allow pop-ups for this site and click again. Opened:' ) + ' ' + opened + ' / ' + links.length, true );
+				} else {
+					setGscProgress( ( I18N.gscTabsOpened || 'Opened in Search Console:' ) + ' ' + opened + '. ' + ( I18N.gscTabsHint || 'Click "Request Indexing" in each tab.' ) );
+				}
 			} );
 		}
 

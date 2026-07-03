@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.2
+Stable tag: 2.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,10 @@ The optional **Google Index Monitor** also contacts Google Search Console APIs, 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.0.3 =
+* New "Needs Indexing (all stuck pages)" status filter: one combined view of every page Google knows about but has not indexed (Not Indexed, Crawled and Discovered but not indexed). Also available in the CSV export.
+* New "Open in GSC" toolbar button: opens up to 10 of the currently listed URLs in Google Search Console tabs, each one click away from Request Indexing. Priority-flagged URLs sort to the top of the list.
 
 = 2.0.2 =
 * New "Notify Google" button on non-indexed URLs in the queue: sends an official Google Indexing API notification for that URL. Requires the Indexing API option in settings, the Web Search Indexing API enabled in your Google Cloud project, and a one-time reconnect to grant the permission. Note: Google officially supports this API for job-posting and livestream pages only; notifications for other content may be ignored (200 requests/day quota).
