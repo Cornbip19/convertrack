@@ -494,6 +494,9 @@ class Admin {
 					'gscPropsEmpty'      => __( 'No Search Console properties found for this account. Verify your site in Search Console first.', 'convertrack-click-conversion-analytics' ),
 					'retry'              => __( 'Retry', 'convertrack-click-conversion-analytics' ),
 					'gscInspectHint'     => __( 'Opens Google Search Console, where you can use "Request Indexing".', 'convertrack-click-conversion-analytics' ),
+					'gscNotifyGoogle'    => __( 'Notify Google', 'convertrack-click-conversion-analytics' ),
+					'gscNotifyHint'      => __( 'Sends a Google Indexing API notification for this URL. Google officially supports this only for job-posting and livestream pages.', 'convertrack-click-conversion-analytics' ),
+					'gscIndexingNotified' => __( 'Google has been notified about this URL. The next recheck will show whether it was picked up.', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);

@@ -296,6 +296,19 @@ class Database {
 	}
 
 	/**
+	 * Fetch a single queue row.
+	 *
+	 * @param int $id Row id.
+	 * @return array|null
+	 */
+	public static function get_row( $id ) {
+		global $wpdb;
+		$table = self::queue_table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE id = %d", (int) $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? $row : null;
+	}
+
+	/**
 	 * Mark a row as checking.
 	 *
 	 * @param int $id Row id.

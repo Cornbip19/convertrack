@@ -64,7 +64,7 @@ class Rest_Controller {
 			)
 		);
 
-		foreach ( array( 'recheck', 'ignore', 'priority', 'scan-sitemap', 'process' ) as $action ) {
+		foreach ( array( 'recheck', 'ignore', 'priority', 'scan-sitemap', 'process', 'indexing-notify' ) as $action ) {
 			register_rest_route(
 				$namespace,
 				'/gsc/' . $action,
@@ -240,6 +240,52 @@ class Rest_Controller {
 			return $result;
 		}
 		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result ), 200 ) );
+	}
+
+	/**
+	 * Manually notify the Google Indexing API about a URL.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function indexing_notify( $request ) {
+		$id = absint( $this->json_value( $request, 'id' ) );
+		if ( ! $id ) {
+			return new \WP_Error( 'convertrack_gsc_bad_id', __( 'Missing URL row ID.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
+		}
+
+		if ( ! Settings::get( 'use_indexing_api' ) ) {
+			return new \WP_Error(
+				'convertrack_gsc_indexing_api_off',
+				__( 'Turn on the Google Indexing API option in the settings, save, and reconnect Google before using Notify Google.', 'convertrack-click-conversion-analytics' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$row = Database::get_row( $id );
+		if ( ! $row ) {
+			return new \WP_Error( 'convertrack_gsc_bad_id', __( 'Missing URL row ID.', 'convertrack-click-conversion-analytics' ), array( 'status' => 404 ) );
+		}
+
+		$result = API::indexing_api_notify( $row['url'], (int) $row['post_id'], true );
+		if ( is_wp_error( $result ) ) {
+			$message = $result->get_error_message();
+			if ( false !== stripos( $message, 'insufficient authentication scopes' ) ) {
+				$message .= ' ' . __( 'Reconnect Google Search Console to grant the Indexing API permission.', 'convertrack-click-conversion-analytics' );
+			}
+			Logger::error( 'indexing-api', 'Manual Indexing API notification failed.', array( 'url' => $row['url'], 'error' => $result->get_error_message() ) );
+			return new \WP_Error( 'convertrack_gsc_indexing_notify_failed', $message, array( 'status' => 400 ) );
+		}
+
+		$this->update_row_action(
+			$id,
+			array(
+				'index_status'  => 'submitted_via_indexing_api',
+				'next_check_at' => Database::mysql_time( DAY_IN_SECONDS ),
+			)
+		);
+		Logger::info( 'indexing-api', 'URL manually submitted to the Google Indexing API.', array( 'url' => $row['url'] ) );
+		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}
 
 	/**

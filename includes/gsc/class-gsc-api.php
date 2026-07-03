@@ -59,15 +59,18 @@ class API {
 	}
 
 	/**
-	 * Notify Google Indexing API. Disabled for normal content unless a filter
-	 * explicitly marks the URL eligible.
+	 * Notify Google Indexing API. The automatic (background) path stays
+	 * disabled for normal content unless a filter marks the URL eligible;
+	 * an explicit admin click ("Notify Google") defaults to eligible but can
+	 * still be vetoed by the same filter.
 	 *
 	 * @param string $url     URL.
 	 * @param int    $post_id Post id.
+	 * @param bool   $manual  True when an admin explicitly requested it.
 	 * @return true|\WP_Error
 	 */
-	public static function indexing_api_notify( $url, $post_id ) {
-		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', false, $post_id, $url );
+	public static function indexing_api_notify( $url, $post_id, $manual = false ) {
+		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', $manual, $post_id, $url );
 		if ( ! $eligible ) {
 			return new \WP_Error( 'convertrack_gsc_indexing_api_not_eligible', __( 'This URL is not eligible for the Google Indexing API.', 'convertrack-click-conversion-analytics' ) );
 		}

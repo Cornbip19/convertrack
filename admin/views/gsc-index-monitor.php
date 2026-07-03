@@ -19,7 +19,7 @@ $disconnect_url = wp_nonce_url( admin_url( 'admin-post.php?action=convertrack_gs
 $notice = isset( $_GET['cvtrk_gsc_notice'] ) ? sanitize_key( wp_unslash( $_GET['cvtrk_gsc_notice'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode( wp_unslash( $_GET['cvtrk_gsc_detail'] ) ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 ?>
-<div class="wrap convertrack" id="convertrack-gsc">
+<div class="wrap convertrack" id="convertrack-gsc" data-gsc-indexing-api="<?php echo esc_attr( ! empty( $s['use_indexing_api'] ) ? '1' : '0' ); ?>">
 	<?php Admin::render_header( 'gsc' ); ?>
 
 	<?php if ( $notice ) : ?>
@@ -195,8 +195,11 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						<td>
 							<label>
 								<input type="checkbox" name="convertrack_gsc_settings[use_indexing_api]" value="1" <?php checked( $s['use_indexing_api'], 1 ); ?> />
-								<?php esc_html_e( 'Allow Indexing API notifications only for URLs explicitly marked eligible by code.', 'convertrack-click-conversion-analytics' ); ?>
+								<?php esc_html_e( 'Enable Google Indexing API notifications, including a per-URL "Notify Google" button in the queue below.', 'convertrack-click-conversion-analytics' ); ?>
 							</label>
+							<p class="description">
+								<?php esc_html_e( 'Google officially supports the Indexing API only for job-posting and livestream pages — notifications for other content may be ignored. Quota is 200 requests per day. Requires enabling the Web Search Indexing API in your Google Cloud project (see setup above) and reconnecting Google once to grant the extra permission.', 'convertrack-click-conversion-analytics' ); ?>
+							</p>
 						</td>
 					</tr>
 				</table>
@@ -266,6 +269,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						<option value="duplicate_canonical"><?php esc_html_e( 'Duplicate/Canonical Issue', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="blocked_by_robots"><?php esc_html_e( 'Blocked by Robots', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="noindex_detected"><?php esc_html_e( 'Noindex Detected', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="submitted_via_indexing_api"><?php esc_html_e( 'Submitted via Indexing API', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="error"><?php esc_html_e( 'Errors', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>

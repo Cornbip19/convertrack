@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,12 @@ The optional **Google Index Monitor** also contacts Google Search Console APIs, 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.0.2 =
+* New "Notify Google" button on non-indexed URLs in the queue: sends an official Google Indexing API notification for that URL. Requires the Indexing API option in settings, the Web Search Indexing API enabled in your Google Cloud project, and a one-time reconnect to grant the permission. Note: Google officially supports this API for job-posting and livestream pages only; notifications for other content may be ignored (200 requests/day quota).
+* Notified URLs move to a "Submitted via Indexing API" status with an automatic next-day recheck, and can be filtered in the queue.
+* Row actions (Recheck, Ignore, Priority, Notify Google) now surface their error message instead of failing silently.
+* Self-updater now selects the release package by name, so additional release assets can never break future updates.
 
 = 2.0.1 =
 Google Index Monitor reliability release: inspections now actually run after a scan, and every failure is visible and actionable.

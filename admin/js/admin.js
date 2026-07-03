@@ -1780,6 +1780,7 @@
 
 		var state = { page: 1, pages: 1, perPage: 25 };
 		var proc = { running: false };
+		var indexingApiOn = root.getAttribute( 'data-gsc-indexing-api' ) === '1';
 		var statusSel = attr( 'gsc-status' );
 		var postTypeSel = attr( 'gsc-post-type' );
 		var prioritySel = attr( 'gsc-priority' );
@@ -2191,6 +2192,16 @@
 				td.appendChild( inspect );
 			}
 
+			var notifiable = [ 'not_indexed', 'crawled_not_indexed', 'discovered_not_indexed', 'pending_from_sitemap', 'queued', 'error' ];
+			if ( indexingApiOn && notifiable.indexOf( row.index_status ) !== -1 ) {
+				var notify = el( 'button', 'button button-small', I18N.gscNotifyGoogle || 'Notify Google' );
+				notify.type = 'button';
+				notify.setAttribute( 'data-gsc-action', 'indexing-notify' );
+				notify.setAttribute( 'data-gsc-id', row.id );
+				notify.title = I18N.gscNotifyHint || 'Sends a Google Indexing API notification for this URL. Google officially supports this only for job-posting and livestream pages.';
+				td.appendChild( notify );
+			}
+
 			var priority = el( 'button', 'button button-small', row.priority ? 'Normal' : 'Priority' );
 			priority.type = 'button';
 			priority.setAttribute( 'data-gsc-action', 'priority' );
@@ -2331,9 +2342,15 @@
 				}
 				btn.disabled = true;
 				postApi( '/gsc/' + action, body )
-					.then( reloadAll )
-					.catch( function () {
+					.then( function () {
+						if ( action === 'indexing-notify' ) {
+							setGscProgress( I18N.gscIndexingNotified || 'Google has been notified about this URL. The next recheck will show whether it was picked up.' );
+						}
+						reloadAll();
+					} )
+					.catch( function ( err ) {
 						btn.disabled = false;
+						setGscProgress( ( err && err.message ) || 'Request failed.', true );
 					} );
 			} );
 		}
