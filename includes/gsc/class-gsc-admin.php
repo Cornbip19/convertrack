@@ -37,6 +37,14 @@ class Admin {
 
 		Settings::save( $input );
 
+		if ( Credentials::is_connected() ) {
+			$verify = API::verify_property();
+			if ( is_wp_error( $verify ) && in_array( $verify->get_error_code(), array( 'convertrack_gsc_property_not_found', 'convertrack_gsc_property_unverified' ), true ) ) {
+				Logger::warning( 'settings', 'Settings saved, but the property failed verification.', array( 'error' => $verify->get_error_message() ) );
+				$this->redirect( 'settings-property-warning', $verify->get_error_message() );
+			}
+		}
+
 		Logger::info( 'settings', 'Google Index Monitor settings saved.' );
 		$this->redirect( 'settings-saved' );
 	}
@@ -131,6 +139,10 @@ class Admin {
 		// Connection succeeded; the reconnect prompt (if any) no longer applies.
 		delete_transient( 'convertrack_gsc_reconnect_required' );
 
+		// Adopt the account's matching property when the setting is still the
+		// default or provably wrong, so verify_property() checks the right one.
+		$chosen = $this->maybe_adopt_property();
+
 		// Warn (without failing) only for genuine ownership mismatches; a transient
 		// network/5xx error from the verify call shouldn't masquerade as one.
 		$verify = API::verify_property();
@@ -141,7 +153,69 @@ class Admin {
 			}
 		}
 
-		$this->redirect( 'oauth-connected' );
+		$this->redirect( 'oauth-connected', $chosen );
+	}
+
+	/**
+	 * After a successful connect, point the property setting at the account
+	 * property that matches this site — but never clobber a deliberate,
+	 * valid choice.
+	 *
+	 * @return string The adopted property, or '' when nothing changed.
+	 */
+	private function maybe_adopt_property() {
+		$sites = API::list_sites();
+		if ( is_wp_error( $sites ) || empty( $sites ) ) {
+			if ( is_wp_error( $sites ) ) {
+				Logger::warning( 'oauth', 'Could not list Search Console properties after connect.', array( 'error' => $sites->get_error_message() ) );
+			}
+			return '';
+		}
+
+		$verified = array();
+		foreach ( $sites as $site ) {
+			if ( isset( $site['permissionLevel'] ) && 'siteUnverifiedUser' === $site['permissionLevel'] ) {
+				continue;
+			}
+			$verified[] = (string) $site['siteUrl'];
+		}
+		if ( empty( $verified ) ) {
+			return '';
+		}
+
+		$current  = (string) Settings::get( 'property_url' );
+		$default  = trailingslashit( home_url( '/' ) );
+		$site_all = wp_list_pluck( $sites, 'siteUrl' );
+
+		// The user already picked a property the account can access — keep it.
+		if ( '' !== $current && $current !== $default && in_array( $current, $site_all, true ) ) {
+			return '';
+		}
+
+		$host = strtolower( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
+		$bare = preg_replace( '/^www\./', '', $host );
+
+		$candidates = array(
+			'sc-domain:' . $bare,
+			$default,
+			'https://' . $host . '/',
+			'https://' . $bare . '/',
+			'https://www.' . $bare . '/',
+			'http://' . $host . '/',
+			'http://' . $bare . '/',
+			'http://www.' . $bare . '/',
+		);
+
+		foreach ( $candidates as $candidate ) {
+			if ( ! in_array( $candidate, $verified, true ) || $candidate === $current ) {
+				continue;
+			}
+			Settings::save( array_merge( Settings::all(), array( 'property_url' => $candidate ) ) );
+			Logger::info( 'oauth', 'Search Console property auto-selected after connect.', array( 'property' => $candidate, 'previous' => $current ) );
+			return $candidate;
+		}
+
+		return '';
 	}
 
 	/**

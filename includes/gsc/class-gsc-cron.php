@@ -11,10 +11,11 @@ defined( 'ABSPATH' ) || exit;
 
 class Cron {
 
-	const PROCESS = 'convertrack_gsc_process_queue';
-	const SCAN    = 'convertrack_gsc_scan_sitemap';
-	const FULL    = 'convertrack_gsc_full_audit';
-	const GROUP   = 'convertrack';
+	const PROCESS     = 'convertrack_gsc_process_queue';
+	const PROCESS_NOW = 'convertrack_gsc_process_now';
+	const SCAN        = 'convertrack_gsc_scan_sitemap';
+	const FULL        = 'convertrack_gsc_full_audit';
+	const GROUP       = 'convertrack';
 
 	/**
 	 * Register hooks.
@@ -22,6 +23,7 @@ class Cron {
 	public function register() {
 		add_filter( 'cron_schedules', array( __CLASS__, 'add_schedules' ) );
 		add_action( self::PROCESS, array( __CLASS__, 'run_process' ) );
+		add_action( self::PROCESS_NOW, array( __CLASS__, 'run_process_now' ) );
 		add_action( self::SCAN, array( __CLASS__, 'run_scan' ) );
 		add_action( self::FULL, array( __CLASS__, 'run_full_audit' ) );
 
@@ -50,7 +52,7 @@ class Cron {
 	public static function schedule() {
 		if ( self::action_scheduler_available() ) {
 			if ( ! as_next_scheduled_action( self::PROCESS, array(), self::GROUP ) ) {
-				as_schedule_recurring_action( time() + HOUR_IN_SECONDS, HOUR_IN_SECONDS, self::PROCESS, array(), self::GROUP );
+				as_schedule_recurring_action( time() + 5 * MINUTE_IN_SECONDS, HOUR_IN_SECONDS, self::PROCESS, array(), self::GROUP );
 			}
 			if ( ! as_next_scheduled_action( self::SCAN, array(), self::GROUP ) ) {
 				as_schedule_recurring_action( time() + DAY_IN_SECONDS, DAY_IN_SECONDS, self::SCAN, array(), self::GROUP );
@@ -62,7 +64,7 @@ class Cron {
 		}
 
 		if ( ! wp_next_scheduled( self::PROCESS ) ) {
-			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', self::PROCESS );
+			wp_schedule_event( time() + 5 * MINUTE_IN_SECONDS, 'hourly', self::PROCESS );
 		}
 		if ( ! wp_next_scheduled( self::SCAN ) ) {
 			wp_schedule_event( time() + DAY_IN_SECONDS, 'daily', self::SCAN );
@@ -78,13 +80,39 @@ class Cron {
 	public static function unschedule() {
 		if ( self::action_scheduler_available() ) {
 			as_unschedule_all_actions( self::PROCESS, array(), self::GROUP );
+			as_unschedule_all_actions( self::PROCESS_NOW, array(), self::GROUP );
 			as_unschedule_all_actions( self::SCAN, array(), self::GROUP );
 			as_unschedule_all_actions( self::FULL, array(), self::GROUP );
 		}
 
 		wp_clear_scheduled_hook( self::PROCESS );
+		wp_clear_scheduled_hook( self::PROCESS_NOW );
 		wp_clear_scheduled_hook( self::SCAN );
 		wp_clear_scheduled_hook( self::FULL );
+	}
+
+	/**
+	 * Schedule a near-immediate one-shot processing run.
+	 *
+	 * Uses a dedicated hook so WP-Cron's 10-minute duplicate-event rule can't
+	 * collide with the recurring PROCESS event.
+	 *
+	 * @param int $delay Seconds from now.
+	 */
+	public static function kick_processing( $delay = 0 ) {
+		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
+			if ( ! as_next_scheduled_action( self::PROCESS_NOW, array(), self::GROUP ) ) {
+				as_schedule_single_action( time() + max( 0, (int) $delay ), self::PROCESS_NOW, array(), self::GROUP );
+			}
+			return;
+		}
+
+		if ( ! wp_next_scheduled( self::PROCESS_NOW ) ) {
+			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::PROCESS_NOW );
+			if ( function_exists( 'spawn_cron' ) ) {
+				spawn_cron();
+			}
+		}
 	}
 
 	/**
@@ -98,14 +126,43 @@ class Cron {
 	}
 
 	/**
+	 * One-shot processing run that re-kicks itself while work remains.
+	 *
+	 * Chain terminates: every inspected/errored row gets a future next_check_at,
+	 * and abort/quota states stop the re-kick.
+	 */
+	public static function run_process_now() {
+		if ( ! Settings::get( 'enabled' ) ) {
+			return;
+		}
+
+		$result = Processor::process_batch( 25 );
+		if ( ! is_array( $result ) ) {
+			return;
+		}
+
+		if ( ! empty( $result['busy'] ) ) {
+			self::kick_processing( 2 * MINUTE_IN_SECONDS );
+			return;
+		}
+
+		if ( empty( $result['aborted'] ) && empty( $result['quota_reached'] ) && ! empty( $result['remaining'] ) ) {
+			self::kick_processing( MINUTE_IN_SECONDS );
+		}
+	}
+
+	/**
 	 * Run sitemap scan.
 	 */
 	public static function run_scan() {
 		if ( ! Settings::get( 'enabled' ) ) {
 			return;
 		}
-		Sitemap_Scanner::scan();
+		$scan = Sitemap_Scanner::scan();
 		Database::record_snapshot();
+		if ( ! is_wp_error( $scan ) ) {
+			self::kick_processing();
+		}
 	}
 
 	/**
@@ -119,6 +176,7 @@ class Cron {
 		if ( ! is_wp_error( $scan ) ) {
 			$count = Database::schedule_full_audit();
 			Logger::info( 'full-audit', 'Weekly full audit scheduled.', array( 'urls' => $count ) );
+			self::kick_processing();
 		}
 	}
 

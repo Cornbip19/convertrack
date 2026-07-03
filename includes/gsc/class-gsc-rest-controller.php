@@ -98,6 +98,7 @@ class Rest_Controller {
 		$data['credentials'] = Credentials::public_status();
 		$data['sitemaps'] = Database::sitemap_options();
 		$data['history']  = Database::summary_history( 30 );
+		$data['last_batch_error'] = get_option( Processor::LAST_ERROR_OPTION ) ?: null; // phpcs:ignore Universal.Operators.DisallowShortTernary.Found
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
 
@@ -113,6 +114,9 @@ class Rest_Controller {
 
 		$sites = API::list_sites();
 		if ( is_wp_error( $sites ) ) {
+			if ( API::is_api_disabled_error( $sites ) ) {
+				return new \WP_Error( 'convertrack_gsc_api_disabled', API::api_disabled_hint(), array( 'status' => 403 ) );
+			}
 			return $sites;
 		}
 
@@ -215,16 +219,23 @@ class Rest_Controller {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
+
+		// Backstop for the admin-driven loop: continue inspecting in the background.
+		Cron::kick_processing();
+		$result['remaining'] = Database::due_count();
+
 		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result ), 200 ) );
 	}
 
 	/**
 	 * Trigger processor.
 	 *
+	 * @param \WP_REST_Request $request Request.
 	 * @return \WP_REST_Response|\WP_Error
 	 */
-	public function process() {
-		$result = Processor::process_batch();
+	public function process( $request ) {
+		$limit  = min( 50, absint( $this->json_value( $request, 'limit' ) ) );
+		$result = Processor::process_batch( $limit );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}

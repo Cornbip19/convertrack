@@ -227,6 +227,75 @@ class Database {
 	}
 
 	/**
+	 * Count rows currently due for processing (same criteria as due_batch()).
+	 *
+	 * @return int
+	 */
+	public static function due_count() {
+		global $wpdb;
+		$table = self::queue_table();
+		$now   = current_time( 'mysql' );
+
+		$sql = $wpdb->prepare(
+			"SELECT COUNT(*) FROM $table
+			WHERE index_status <> 'ignored'
+				AND index_status <> 'checking'
+				AND (next_check_at IS NULL OR next_check_at <= %s)",
+			$now
+		);
+
+		return (int) $wpdb->get_var( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Re-queue rows stranded in 'checking' by an interrupted batch.
+	 *
+	 * Rows in 'checking' are excluded from due_batch() and protected from
+	 * upsert_url(), so a fatal mid-batch would otherwise strand them forever.
+	 *
+	 * @param int $minutes Age in minutes before a checking row is considered stale.
+	 * @return int
+	 */
+	public static function release_stale_checking( $minutes = 15 ) {
+		global $wpdb;
+		$table  = self::queue_table();
+		$now    = current_time( 'mysql' );
+		$cutoff = self::mysql_time( - max( 1, (int) $minutes ) * MINUTE_IN_SECONDS );
+
+		$result = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $table
+				SET index_status = 'queued', next_check_at = %s, updated_at = %s
+				WHERE index_status = 'checking' AND updated_at < %s",
+				$now,
+				$now,
+				$cutoff
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		if ( $result ) {
+			self::clear_summary_cache();
+		}
+		return (int) $result;
+	}
+
+	/**
+	 * Return a row to the queue without recording an attempt or error.
+	 *
+	 * @param int $id Row id.
+	 */
+	public static function mark_queued( $id ) {
+		self::update_row(
+			$id,
+			array(
+				'index_status'  => 'queued',
+				'next_check_at' => current_time( 'mysql' ),
+				'updated_at'    => current_time( 'mysql' ),
+			)
+		);
+	}
+
+	/**
 	 * Mark a row as checking.
 	 *
 	 * @param int $id Row id.
@@ -685,6 +754,15 @@ class Database {
 		$row['in_sitemap'] = ! empty( $row['in_sitemap'] );
 		$row['edit_link'] = $post_id > 0 ? get_edit_post_link( $post_id, 'raw' ) : '';
 		$row['post_title'] = $post_id > 0 ? get_the_title( $post_id ) : '';
+
+		// Output-only: give never-inspected rows a Search Console inspection
+		// deep link too, so "Request Indexing" is always one click away.
+		if ( empty( $row['inspection_result_link'] ) && ! empty( $row['url'] ) ) {
+			$property = (string) Settings::get( 'property_url' );
+			if ( '' !== $property ) {
+				$row['inspection_result_link'] = 'https://search.google.com/search-console/inspect?resource_id=' . rawurlencode( $property ) . '&id=' . rawurlencode( $row['url'] );
+			}
+		}
 
 		return $row;
 	}

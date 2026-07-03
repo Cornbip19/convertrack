@@ -33,7 +33,17 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 					esc_html_e( 'Google API credentials saved. You can now connect Search Console.', 'convertrack-click-conversion-analytics' );
 					break;
 				case 'oauth-connected':
-					esc_html_e( 'Google Search Console connected.', 'convertrack-click-conversion-analytics' );
+					if ( '' !== $detail ) {
+						echo esc_html(
+							sprintf(
+								/* translators: %s: auto-selected Search Console property. */
+								__( 'Google Search Console connected. Search Console property set to %s.', 'convertrack-click-conversion-analytics' ),
+								$detail
+							)
+						);
+					} else {
+						esc_html_e( 'Google Search Console connected.', 'convertrack-click-conversion-analytics' );
+					}
 					break;
 				case 'oauth-disconnected':
 					esc_html_e( 'Google Search Console disconnected.', 'convertrack-click-conversion-analytics' );
@@ -43,6 +53,15 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						sprintf(
 							/* translators: %s: detail message from the property check. */
 							__( 'Connected to Google, but the Search Console property URL may not match a property this account owns: %s', 'convertrack-click-conversion-analytics' ),
+							$detail
+						)
+					);
+					break;
+				case 'settings-property-warning':
+					echo esc_html(
+						sprintf(
+							/* translators: %s: detail message from the property check. */
+							__( 'Settings saved, but the Search Console property may not match a property this account owns: %s', 'convertrack-click-conversion-analytics' ),
 							$detail
 						)
 					);
@@ -145,6 +164,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 							</select>
 							<input type="text" id="cvtrk-gsc-property" class="regular-text" name="convertrack_gsc_settings[property_url]" data-cvtrk="gsc-property-input" value="<?php echo esc_attr( $s['property_url'] ); ?>" />
 							<p class="description"><?php esc_html_e( 'After connecting, pick a verified property from the list above, or type it exactly (e.g. https://example.com/ or sc-domain:example.com).', 'convertrack-click-conversion-analytics' ); ?></p>
+							<p class="description" data-cvtrk="gsc-property-status" hidden aria-live="polite"></p>
 						</td>
 					</tr>
 					<tr>
@@ -285,6 +305,8 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 				<button type="button" class="button" data-cvtrk="gsc-process"><?php esc_html_e( 'Run Batch', 'convertrack-click-conversion-analytics' ); ?></button>
 				<a class="button" data-cvtrk="gsc-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
 			</div>
+
+			<div class="cvtrk-notice" data-cvtrk="gsc-progress" hidden aria-live="polite" style="margin:12px 0;"></div>
 
 			<div data-cvtrk="gsc-urls"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			<div class="cvtrk-pagination">

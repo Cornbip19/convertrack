@@ -30,7 +30,11 @@
 			credentials: 'same-origin'
 		} ).then( function ( r ) {
 			if ( ! r.ok ) {
-				throw new Error( 'HTTP ' + r.status );
+				return r.json().catch( function () {
+					return null;
+				} ).then( function ( body ) {
+					throw new Error( ( body && body.message ) || 'HTTP ' + r.status );
+				} );
 			}
 			return r.json();
 		} );
@@ -1775,6 +1779,7 @@
 		}
 
 		var state = { page: 1, pages: 1, perPage: 25 };
+		var proc = { running: false };
 		var statusSel = attr( 'gsc-status' );
 		var postTypeSel = attr( 'gsc-post-type' );
 		var prioritySel = attr( 'gsc-priority' );
@@ -1799,6 +1804,9 @@
 				.then( function ( data ) {
 					renderGscSummary( data );
 					renderGscSitemapOptions( data.sitemaps || [] );
+					if ( ! proc.running && data.last_batch_error && data.last_batch_error.message ) {
+						setGscProgress( data.last_batch_error.message, true );
+					}
 				} )
 				.catch( function () {} );
 		}
@@ -2137,9 +2145,13 @@
 				tr.appendChild( labelCell( row.post_title || row.url, row.url ) );
 				tr.appendChild( el( 'td', null, row.post_type || '-' ) );
 				var status = el( 'td' );
-				status.appendChild( el( 'span', 'cvtrk-badge cvtrk-gsc-status-' + ( row.index_status || '' ), statusText( row.index_status ) ) );
+				var badge = el( 'span', 'cvtrk-badge cvtrk-gsc-status-' + ( row.index_status || '' ), statusText( row.index_status ) );
+				if ( row.error_message ) {
+					badge.title = row.error_message;
+				}
+				status.appendChild( badge );
 				tr.appendChild( status );
-				tr.appendChild( el( 'td', null, row.coverage_state || '-' ) );
+				tr.appendChild( el( 'td', null, row.coverage_state || row.error_message || '-' ) );
 				tr.appendChild( el( 'td', null, row.google_verdict || '-' ) );
 				tr.appendChild( el( 'td', null, dateText( row.last_checked_at ) ) );
 				tr.appendChild( el( 'td', null, dateText( row.next_check_at ) ) );
@@ -2175,6 +2187,7 @@
 				inspect.href = row.inspection_result_link;
 				inspect.target = '_blank';
 				inspect.rel = 'noopener noreferrer';
+				inspect.title = I18N.gscInspectHint || 'Opens Google Search Console, where you can use "Request Indexing".';
 				td.appendChild( inspect );
 			}
 
@@ -2239,7 +2252,24 @@
 				tr.appendChild( el( 'td', null, dateText( row.created_at ) ) );
 				tr.appendChild( el( 'td', null, statusText( row.level ) ) );
 				tr.appendChild( el( 'td', null, row.source || '-' ) );
-				tr.appendChild( el( 'td', null, row.message || '-' ) );
+				var msg = el( 'td', null, row.message || '-' );
+				var ctx = null;
+				try {
+					ctx = row.context ? JSON.parse( row.context ) : null;
+				} catch ( e ) {
+					ctx = null;
+				}
+				if ( ctx && ( ctx.error || ctx.reason ) ) {
+					var detail = String( ctx.error || ctx.reason );
+					if ( ctx.url ) {
+						detail = ctx.url + ' — ' + detail;
+					}
+					var detailEl = el( 'div', 'cvtrk-gsc-log-detail', detail );
+					detailEl.style.color = '#b84a62';
+					detailEl.style.fontSize = '12px';
+					msg.appendChild( detailEl );
+				}
+				tr.appendChild( msg );
 				body.appendChild( tr );
 			} );
 			box.appendChild( t );
@@ -2309,36 +2339,164 @@
 		}
 
 		var scan = attr( 'gsc-scan' );
+		var process = attr( 'gsc-process' );
+		var progressBox = attr( 'gsc-progress' );
+		var CHUNK = 5;
+		var MAX_CHUNKS = 20;
+
+		function setGscProgress( text, isError ) {
+			if ( ! progressBox ) {
+				return;
+			}
+			if ( ! text ) {
+				progressBox.hidden = true;
+				return;
+			}
+			progressBox.hidden = false;
+			progressBox.textContent = text;
+			progressBox.style.color = isError ? '#b84a62' : '';
+		}
+
+		function setGscButtonsDisabled( disabled ) {
+			if ( scan ) {
+				scan.disabled = disabled;
+			}
+			if ( process ) {
+				process.disabled = disabled;
+			}
+		}
+
+		function runInspectionLoop( knownTotal ) {
+			if ( proc.running ) {
+				return Promise.resolve();
+			}
+			proc.running = true;
+			setGscButtonsDisabled( true );
+
+			var done = 0;
+			var errs = 0;
+			var chunks = 0;
+			var total = Number( knownTotal ) || 0;
+
+			function step() {
+				return postApi( '/gsc/process', { limit: CHUNK } ).then( function ( d ) {
+					chunks++;
+					done += ( Number( d.processed ) || 0 ) + ( Number( d.errors ) || 0 );
+					errs += Number( d.errors ) || 0;
+					var remaining = Number( d.remaining ) || 0;
+					if ( done + remaining > total ) {
+						total = done + remaining;
+					}
+
+					if ( d.busy ) {
+						setGscProgress( I18N.gscBackground || 'Another inspection run is already active — processing will continue in the background.' );
+						return;
+					}
+					if ( d.aborted ) {
+						setGscProgress( ( I18N.gscInspectStopped || 'Inspection stopped:' ) + ' ' + ( d.abort_reason || d.last_error || '' ), true );
+						return;
+					}
+					if ( d.quota_reached ) {
+						setGscProgress( I18N.gscQuotaReached || 'Daily inspection quota reached. Remaining URLs will be checked automatically tomorrow.', true );
+						return;
+					}
+					if ( remaining <= 0 || chunks >= MAX_CHUNKS ) {
+						var doneText = ( I18N.gscInspectDone || 'Inspection finished:' ) + ' ' + done + ' ' + ( I18N.gscUrlsChecked || 'URLs checked' );
+						if ( errs > 0 ) {
+							doneText += ', ' + errs + ' ' + ( I18N.errors || 'Errors' ).toLowerCase() + ( d.last_error ? ' — ' + d.last_error : '' );
+						}
+						if ( remaining > 0 ) {
+							doneText += ' (' + remaining + ' ' + ( I18N.gscRemaining || 'remaining, continuing in the background' ) + ')';
+						}
+						setGscProgress( doneText, errs > 0 );
+						return;
+					}
+
+					setGscProgress( ( I18N.gscInspecting || 'Inspecting URLs…' ) + ' ' + done + ' / ' + total + ( errs > 0 ? ' — ' + errs + ' ' + ( I18N.errors || 'Errors' ).toLowerCase() : '' ) );
+					return step();
+				} );
+			}
+
+			setGscProgress( ( I18N.gscInspecting || 'Inspecting URLs…' ) + ( total > 0 ? ' 0 / ' + total : '' ) );
+
+			return step()
+				.catch( function ( err ) {
+					setGscProgress( ( I18N.gscInspectFailed || 'Inspection failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+				} )
+				.then( function () {
+					proc.running = false;
+					setGscButtonsDisabled( false );
+					reloadAll();
+				} );
+		}
+
 		if ( scan ) {
 			scan.addEventListener( 'click', function () {
-				scan.disabled = true;
+				if ( proc.running ) {
+					return;
+				}
+				setGscButtonsDisabled( true );
+				setGscProgress( I18N.gscScanning || 'Scanning sitemap…' );
 				postApi( '/gsc/scan-sitemap', {} )
-					.then( reloadAll )
-					.catch( function () {} )
-					.then( function () { scan.disabled = false; } );
+					.then( function ( data ) {
+						var found = Number( data.stored ) || Number( data.sitemap_urls ) || 0;
+						var remaining = Number( data.remaining ) || 0;
+						setGscButtonsDisabled( false );
+						loadUrls();
+						if ( remaining > 0 ) {
+							setGscProgress( ( I18N.gscScanDone || 'Sitemap scan complete — URLs queued:' ) + ' ' + found + '. ' + ( I18N.gscStartingInspection || 'Starting inspection…' ) );
+							return runInspectionLoop( remaining );
+						}
+						setGscProgress( ( I18N.gscScanDone || 'Sitemap scan complete — URLs queued:' ) + ' ' + found + '. ' + ( I18N.gscNothingDue || 'No URLs are currently due for inspection.' ) );
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						setGscButtonsDisabled( false );
+						setGscProgress( ( I18N.gscScanFailed || 'Sitemap scan failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+						loadLogs();
+					} );
 			} );
 		}
 
-		var process = attr( 'gsc-process' );
 		if ( process ) {
 			process.addEventListener( 'click', function () {
-				process.disabled = true;
-				postApi( '/gsc/process', {} )
-					.then( reloadAll )
-					.catch( function () {} )
-					.then( function () { process.disabled = false; } );
+				runInspectionLoop( 0 );
 			} );
 		}
 
 		// Populate the property picker from the connected account's verified sites.
 		var propertyPicker = attr( 'gsc-property-picker' );
 		var propertyInput = attr( 'gsc-property-input' );
-		if ( propertyPicker && propertyInput ) {
+		var propertyStatus = attr( 'gsc-property-status' );
+
+		function setPropertyStatus( text, isError ) {
+			if ( ! propertyStatus ) {
+				return;
+			}
+			if ( ! text ) {
+				propertyStatus.hidden = true;
+				return;
+			}
+			propertyStatus.hidden = false;
+			propertyStatus.textContent = text;
+			propertyStatus.style.color = isError ? '#b84a62' : '';
+		}
+
+		function loadProperties() {
+			setPropertyStatus( I18N.gscPropsLoading || 'Loading Search Console properties…' );
 			api( '/gsc/properties' )
 				.then( function ( data ) {
 					var sites = ( data && data.sites ) || [];
-					if ( ! data || ! data.connected || ! sites.length ) {
+					if ( ! data || ! data.connected ) {
+						setPropertyStatus( '' );
 						return;
+					}
+					if ( ! sites.length ) {
+						setPropertyStatus( I18N.gscPropsEmpty || 'No Search Console properties found for this account. Verify your site in Search Console first.', true );
+						return;
+					}
+					while ( propertyPicker.options.length > 1 ) {
+						propertyPicker.remove( 1 );
 					}
 					sites.forEach( function ( site ) {
 						var opt = document.createElement( 'option' );
@@ -2350,8 +2508,22 @@
 						propertyPicker.appendChild( opt );
 					} );
 					propertyPicker.style.display = '';
+					setPropertyStatus( '' );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					setPropertyStatus( ( I18N.gscPropsError || "Couldn't load properties:" ) + ' ' + ( ( err && err.message ) || '' ), true );
+					if ( propertyStatus ) {
+						propertyStatus.appendChild( document.createTextNode( ' ' ) );
+						var retry = el( 'button', 'button-link', I18N.retry || 'Retry' );
+						retry.type = 'button';
+						retry.addEventListener( 'click', loadProperties );
+						propertyStatus.appendChild( retry );
+					}
+				} );
+		}
+
+		if ( propertyPicker && propertyInput ) {
+			loadProperties();
 			propertyPicker.addEventListener( 'change', function () {
 				if ( propertyPicker.value ) {
 					propertyInput.value = propertyPicker.value;

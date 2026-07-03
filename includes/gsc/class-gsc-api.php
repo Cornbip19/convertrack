@@ -313,4 +313,74 @@ class API {
 			|| false !== strpos( $message, 'rate limit' )
 			|| false !== strpos( $api_status, 'resource_exhausted' );
 	}
+
+	/**
+	 * Whether an error is a Google permission/ownership rejection.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @return bool
+	 */
+	public static function is_permission_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+
+		$data       = $error->get_error_data();
+		$status     = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 0;
+		$api_status = '';
+
+		if ( is_array( $data ) && isset( $data['body']['error']['status'] ) ) {
+			$api_status = strtolower( (string) $data['body']['error']['status'] );
+		}
+
+		return 403 === $status || 'permission_denied' === $api_status;
+	}
+
+	/**
+	 * Whether an error means the Search Console API is not enabled in the
+	 * user's Google Cloud project. Google returns two shapes for this:
+	 * legacy errors[0].reason = accessNotConfigured, and the newer
+	 * details[].reason = SERVICE_DISABLED ErrorInfo.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @return bool
+	 */
+	public static function is_api_disabled_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+
+		$data  = $error->get_error_data();
+		$body  = is_array( $data ) && isset( $data['body']['error'] ) && is_array( $data['body']['error'] ) ? $data['body']['error'] : array();
+		$state = isset( $body['status'] ) ? strtolower( (string) $body['status'] ) : '';
+
+		if ( isset( $body['errors'][0]['reason'] ) && 'accessnotconfigured' === strtolower( (string) $body['errors'][0]['reason'] ) ) {
+			return true;
+		}
+
+		if ( isset( $body['details'] ) && is_array( $body['details'] ) ) {
+			foreach ( $body['details'] as $detail ) {
+				if ( isset( $detail['reason'] ) && 'service_disabled' === strtolower( (string) $detail['reason'] ) ) {
+					return true;
+				}
+			}
+		}
+
+		$message = strtolower( $error->get_error_message() );
+		return 'permission_denied' === $state
+			&& ( false !== strpos( $message, 'has not been used in project' ) || false !== strpos( $message, 'is disabled' ) );
+	}
+
+	/**
+	 * Actionable hint shown when the Search Console API is disabled.
+	 *
+	 * @return string
+	 */
+	public static function api_disabled_hint() {
+		return sprintf(
+			/* translators: %s: Google Cloud Console API library URL. */
+			__( 'The Google Search Console API is not enabled in your Google Cloud project. Enable it at %s, wait a few minutes, then reload this page.', 'convertrack-click-conversion-analytics' ),
+			'https://console.cloud.google.com/apis/library/searchconsole.googleapis.com'
+		);
+	}
 }

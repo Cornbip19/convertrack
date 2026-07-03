@@ -38,6 +38,9 @@ delete_option( 'convertrack_gsc_credentials' );
 delete_option( 'convertrack_gsc_db_version' );
 delete_option( 'convertrack_gsc_quota_usage' );
 delete_option( 'convertrack_gsc_last_sync_time' );
+delete_option( 'convertrack_gsc_processing_lock' );
+delete_option( 'convertrack_gsc_last_batch_error' );
+delete_option( 'convertrack_gsc_status_history' );
 
 // Remove transients (including any per-IP rate-limit keys).
 $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_gsc\_%' OR option_name LIKE '\_transient\_convertrack\_gsc\_%'" ); // phpcs:ignore WordPress.DB
@@ -46,6 +49,7 @@ $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\
 wp_clear_scheduled_hook( 'convertrack_hourly' );
 wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
 wp_clear_scheduled_hook( 'convertrack_gsc_process_queue' );
+wp_clear_scheduled_hook( 'convertrack_gsc_process_now' );
 wp_clear_scheduled_hook( 'convertrack_gsc_scan_sitemap' );
 wp_clear_scheduled_hook( 'convertrack_gsc_full_audit' );
 
@@ -75,10 +79,14 @@ if ( is_multisite() ) {
 		delete_option( 'convertrack_gsc_db_version' );
 		delete_option( 'convertrack_gsc_quota_usage' );
 		delete_option( 'convertrack_gsc_last_sync_time' );
+		delete_option( 'convertrack_gsc_processing_lock' );
+		delete_option( 'convertrack_gsc_last_batch_error' );
+		delete_option( 'convertrack_gsc_status_history' );
 		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\_transient\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_%' OR option_name LIKE '\_transient\_timeout\_convertrack\_gsc\_%' OR option_name LIKE '\_transient\_convertrack\_gsc\_%'" ); // phpcs:ignore WordPress.DB
 		wp_clear_scheduled_hook( 'convertrack_hourly' );
 		wp_clear_scheduled_hook( 'convertrack_session_cleanup' );
 		wp_clear_scheduled_hook( 'convertrack_gsc_process_queue' );
+		wp_clear_scheduled_hook( 'convertrack_gsc_process_now' );
 		wp_clear_scheduled_hook( 'convertrack_gsc_scan_sitemap' );
 		wp_clear_scheduled_hook( 'convertrack_gsc_full_audit' );
 

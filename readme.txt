@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -90,7 +90,16 @@ Return `true` from the `convertrack_skip_tracking` filter while consent has not 
 
 == Changelog ==
 
-= 2.0.0 =
+= 2.0.1 =
+Google Index Monitor reliability release: inspections now actually run after a scan, and every failure is visible and actionable.
+* URL inspection now starts automatically after a sitemap scan, processed in small chunks with a live progress line; a background task continues the queue if you leave the page.
+* The first scheduled background inspection runs within minutes instead of an hour after setup.
+* Google's real error messages are now visible everywhere: a persistent status banner, per-URL details in the queue table, and full error details in the Activity Log.
+* Inspection batches stop after repeated Google permission errors to protect your daily quota, with a clear explanation — including a direct enable link when the Search Console API is not turned on in your Google Cloud project.
+* Reconnecting Google now auto-selects the Search Console property that matches your site's domain (domain properties preferred) when the setting is still the default or invalid.
+* The property picker shows loading and error states with a Retry option instead of failing silently, and saving a property your account doesn't own warns immediately.
+* Every URL row has an Inspect link that opens Google Search Console's inspection screen, where Request Indexing is one click away.
+* Overlapping inspection runs are prevented by a lock, rows stranded by an interrupted batch recover automatically, and uninstall cleans up all monitor data.
 Major release: a direct Google Search Console connection, a redesigned Google Index Monitor, richer chart controls, and a round of UI polish and hardening.
 * Google Index Monitor now connects directly to Google with your own Google Cloud OAuth client (Client ID + Secret) instead of a hosted broker — enter your credentials, click Connect, and sign in to Google.
 * Added a guided setup with the exact Authorized redirect URI to copy into Google Cloud.
