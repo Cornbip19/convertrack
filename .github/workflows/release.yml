@@ -50,10 +50,19 @@ jobs:
             ./ wporg/$WPORG_PLUGIN/
           cd wporg && zip -r "../$PLUGIN-wordpress-org.zip" "$WPORG_PLUGIN"
 
+      # Only the self-hosted zip goes on the release: GitHub sorts release
+      # assets alphabetically, so attaching the wordpress.org build too would
+      # make older self-updaters (which take the first .zip) install a build
+      # without the updater. The wp.org zip is kept as a workflow artifact.
+      - name: Keep WordPress.org zip as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: convertrack-wordpress-org
+          path: convertrack-wordpress-org.zip
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             convertrack.zip
-            convertrack-wordpress-org.zip
           generate_release_notes: true

@@ -276,19 +276,32 @@ class Updater {
 	}
 
 	/**
-	 * Choose the best download URL: a uploaded .zip asset if present, else the
-	 * auto-generated source zipball.
+	 * Choose the best download URL. GitHub lists release assets alphabetically,
+	 * so "first .zip" is not reliable: prefer the asset named exactly
+	 * "{slug}.zip", never pick a wordpress.org build (it has no self-updater),
+	 * and fall back to the auto-generated source zipball.
 	 *
 	 * @param array $body Release payload.
 	 * @return string
 	 */
 	private function resolve_package( $body ) {
+		$fallback = '';
 		if ( ! empty( $body['assets'] ) && is_array( $body['assets'] ) ) {
 			foreach ( $body['assets'] as $asset ) {
-				if ( isset( $asset['browser_download_url'] ) && preg_match( '/\.zip$/i', $asset['browser_download_url'] ) ) {
+				if ( ! isset( $asset['browser_download_url'] ) || ! preg_match( '/\.zip$/i', $asset['browser_download_url'] ) ) {
+					continue;
+				}
+				$name = isset( $asset['name'] ) ? (string) $asset['name'] : '';
+				if ( $name === $this->slug . '.zip' ) {
 					return esc_url_raw( $asset['browser_download_url'] );
 				}
+				if ( '' === $fallback && false === strpos( $name, 'wordpress-org' ) ) {
+					$fallback = esc_url_raw( $asset['browser_download_url'] );
+				}
 			}
+		}
+		if ( '' !== $fallback ) {
+			return $fallback;
 		}
 		return isset( $body['zipball_url'] ) ? esc_url_raw( $body['zipball_url'] ) : '';
 	}
