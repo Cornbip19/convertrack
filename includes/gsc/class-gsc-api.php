@@ -161,6 +161,47 @@ class API {
 	}
 
 	/**
+	 * Query the Search Analytics API for keyword/page performance rows.
+	 *
+	 * Uses dataState 'final' so ranges are stable and re-syncs idempotent
+	 * (fresh partial days are excluded). Metrics (clicks, impressions, ctr,
+	 * position) are always returned per row.
+	 *
+	 * @param string $start_date    Start date (Y-m-d, inclusive).
+	 * @param string $end_date      End date (Y-m-d, inclusive).
+	 * @param array  $dimensions    Dimensions, e.g. array( 'query', 'page' ).
+	 * @param int    $row_limit     Rows per request (1-25000).
+	 * @param int    $start_row     Pagination offset.
+	 * @param array  $filter_groups Raw dimensionFilterGroups, optional.
+	 * @return array|\WP_Error { rows: [ { keys, clicks, impressions, ctr, position } ], responseAggregationType }
+	 */
+	public static function search_analytics_query( $start_date, $end_date, array $dimensions = array( 'query', 'page' ), $row_limit = 25000, $start_row = 0, array $filter_groups = array() ) {
+		$site = rawurlencode( (string) Settings::get( 'property_url' ) );
+		$body = array(
+			'startDate'  => sanitize_text_field( $start_date ),
+			'endDate'    => sanitize_text_field( $end_date ),
+			'dimensions' => array_values( $dimensions ),
+			'rowLimit'   => max( 1, min( 25000, (int) $row_limit ) ),
+			'startRow'   => max( 0, (int) $start_row ),
+			'dataState'  => 'final',
+			'type'       => 'web',
+		);
+		if ( ! empty( $filter_groups ) ) {
+			$body['dimensionFilterGroups'] = $filter_groups;
+		}
+
+		$response = self::request( 'POST', self::SEARCH_CONSOLE_URL . $site . '/searchAnalytics/query', $body );
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		return array(
+			'rows'                    => isset( $response['rows'] ) && is_array( $response['rows'] ) ? $response['rows'] : array(),
+			'responseAggregationType' => isset( $response['responseAggregationType'] ) ? (string) $response['responseAggregationType'] : '',
+		);
+	}
+
+	/**
 	 * Make an authorized Google API request.
 	 *
 	 * @param string     $method HTTP method.

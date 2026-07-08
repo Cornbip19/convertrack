@@ -57,6 +57,51 @@ final class Plugin {
 	public $gsc_admin;
 
 	/**
+	 * @var \Convertrack\GSC\Keywords_Cron
+	 */
+	public $gsc_keywords_cron;
+
+	/**
+	 * @var \Convertrack\GSC\Keywords_Analyzer
+	 */
+	public $gsc_keywords_analyzer;
+
+	/**
+	 * @var \Convertrack\GSC\Keywords_Rest_Controller
+	 */
+	public $gsc_keywords_rest;
+
+	/**
+	 * @var \Convertrack\GSC\Keywords_Admin
+	 */
+	public $gsc_keywords_admin;
+
+	/**
+	 * @var \Convertrack\NotFound\Rest_Controller
+	 */
+	public $notfound_rest;
+
+	/**
+	 * @var \Convertrack\NotFound\Cron
+	 */
+	public $notfound_cron;
+
+	/**
+	 * @var \Convertrack\NotFound\Admin
+	 */
+	public $notfound_admin;
+
+	/**
+	 * @var \Convertrack\NotFound\Redirector
+	 */
+	public $notfound_redirector;
+
+	/**
+	 * @var \Convertrack\NotFound\Detector
+	 */
+	public $notfound_detector;
+
+	/**
 	 * Singleton accessor.
 	 *
 	 * @return Plugin
@@ -78,16 +123,27 @@ final class Plugin {
 		// Keep schema current after plugin updates without needing reactivation.
 		Database::maybe_upgrade();
 		\Convertrack\GSC\Database::maybe_upgrade();
+		\Convertrack\GSC\Keywords_Database::maybe_upgrade();
+		\Convertrack\NotFound\Database::maybe_upgrade();
 
 		load_plugin_textdomain( 'convertrack-click-conversion-analytics', false, dirname( CONVERTRACK_BASENAME ) . '/languages' );
 
-		$this->rest     = new Rest_Controller();
-		$this->frontend = new Frontend();
-		$this->cron     = new Cron();
-		$this->admin    = new Admin();
-		$this->gsc_rest  = new \Convertrack\GSC\Rest_Controller();
-		$this->gsc_cron  = new \Convertrack\GSC\Cron();
-		$this->gsc_admin = new \Convertrack\GSC\Admin();
+		$this->rest               = new Rest_Controller();
+		$this->frontend           = new Frontend();
+		$this->cron               = new Cron();
+		$this->admin              = new Admin();
+		$this->gsc_rest           = new \Convertrack\GSC\Rest_Controller();
+		$this->gsc_cron           = new \Convertrack\GSC\Cron();
+		$this->gsc_admin          = new \Convertrack\GSC\Admin();
+		$this->gsc_keywords_cron     = new \Convertrack\GSC\Keywords_Cron();
+		$this->gsc_keywords_analyzer = new \Convertrack\GSC\Keywords_Analyzer();
+		$this->gsc_keywords_rest     = new \Convertrack\GSC\Keywords_Rest_Controller();
+		$this->gsc_keywords_admin    = new \Convertrack\GSC\Keywords_Admin();
+		$this->notfound_rest      = new \Convertrack\NotFound\Rest_Controller();
+		$this->notfound_cron      = new \Convertrack\NotFound\Cron();
+		$this->notfound_admin     = new \Convertrack\NotFound\Admin();
+		$this->notfound_redirector = new \Convertrack\NotFound\Redirector();
+		$this->notfound_detector  = new \Convertrack\NotFound\Detector();
 
 		$this->rest->register();
 		$this->frontend->register();
@@ -96,6 +152,15 @@ final class Plugin {
 		$this->gsc_rest->register();
 		$this->gsc_cron->register();
 		$this->gsc_admin->register();
+		$this->gsc_keywords_cron->register();
+		$this->gsc_keywords_analyzer->register();
+		$this->gsc_keywords_rest->register();
+		$this->gsc_keywords_admin->register();
+		$this->notfound_rest->register();
+		$this->notfound_cron->register();
+		$this->notfound_admin->register();
+		$this->notfound_redirector->register();
+		$this->notfound_detector->register();
 
 		// Self-updater only exists in the self-hosted build (see main file).
 		if ( class_exists( __NAMESPACE__ . '\\Updater' ) ) {

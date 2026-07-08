@@ -64,6 +64,18 @@ defined( 'ABSPATH' ) || exit;
 		<?php endforeach; ?>
 	</div>
 
+	<div class="cvtrk-card cvtrk-overview-health-card">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( 'Site health at a glance', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Analytics, redirects, indexing, and plugin status in one place', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="overview-health"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+		</div>
+	</div>
+
 	<div class="cvtrk-hint" data-cvtrk="conv-hint" hidden>
 		<?php echo Admin::icon( 'info' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 		<span>

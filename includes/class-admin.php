@@ -170,7 +170,7 @@ class Admin {
 	/**
 	 * Render the shared header (brand + live pill) and tab navigation.
 	 *
-	 * @param string $current Active tab key: overview|pages|heatmaps|funnels|settings.
+	 * @param string $current Active tab key: overview|pages|heatmaps|funnels|gsc|404|settings.
 	 */
 	public static function render_header( $current ) {
 		$tabs = array(
@@ -179,27 +179,34 @@ class Admin {
 			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'heatmap', 'page' => 'convertrack-heatmaps' ),
 			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'funnel', 'page' => 'convertrack-funnels' ),
 			'gsc'      => array( 'label' => __( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'search', 'page' => 'convertrack-gsc' ),
+			'keywords' => array( 'label' => __( 'Keyword Insights', 'convertrack-click-conversion-analytics' ), 'icon' => 'keywords', 'page' => 'convertrack-gsc-keywords' ),
+			'404'      => array( 'label' => __( '404 Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'warning', 'page' => 'convertrack-404-monitor' ),
 			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'settings', 'page' => 'convertrack-settings' ),
 		);
 		$logo_path    = plugin_dir_path( CONVERTRACK_FILE ) . 'admin/assets/convertrack-logo.svg';
 		$logo_version = file_exists( $logo_path ) ? filemtime( $logo_path ) : CONVERTRACK_VERSION;
 		?>
 		<div class="cvtrk-header">
-			<h1 class="cvtrk-brand">
-				<img class="cvtrk-logo" src="<?php echo esc_url( CONVERTRACK_URL . 'admin/assets/convertrack-logo.svg?ver=' . $logo_version ); ?>" width="196" height="48" alt="<?php esc_attr_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>" />
-				<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
-			</h1>
-			<div class="cvtrk-live">
-				<span class="cvtrk-dot"></span>
-				<b data-cvtrk="active">–</b>
-				<span><?php esc_html_e( 'on the site now', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div class="cvtrk-brand-block">
+				<h1 class="cvtrk-brand">
+					<img class="cvtrk-logo" src="<?php echo esc_url( CONVERTRACK_URL . 'admin/assets/convertrack-logo.svg?ver=' . $logo_version ); ?>" width="196" height="48" alt="<?php esc_attr_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>" />
+					<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
+				</h1>
+				<p class="cvtrk-tagline"><?php esc_html_e( 'First-party visitor analytics for WordPress', 'convertrack-click-conversion-analytics' ); ?></p>
+			</div>
+			<div class="cvtrk-header-status">
+				<div class="cvtrk-live" aria-live="polite">
+					<span class="cvtrk-dot" aria-hidden="true"></span>
+					<b data-cvtrk="active">-</b>
+					<span><?php esc_html_e( 'on the site now', 'convertrack-click-conversion-analytics' ); ?></span>
+				</div>
 			</div>
 		</div>
-		<nav class="cvtrk-tabs">
+		<nav class="cvtrk-tabs" aria-label="<?php esc_attr_e( 'Convertrack sections', 'convertrack-click-conversion-analytics' ); ?>">
 			<?php foreach ( $tabs as $key => $tab ) : ?>
-				<a class="cvtrk-tab <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $tab['page'] ) ); ?>">
+				<a class="cvtrk-tab <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $tab['page'] ) ); ?>" <?php echo $key === $current ? 'aria-current="page"' : ''; ?>>
 					<?php echo self::icon( $tab['icon'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-					<?php echo esc_html( $tab['label'] ); ?>
+					<span><?php echo esc_html( $tab['label'] ); ?></span>
 				</a>
 			<?php endforeach; ?>
 		</nav>
@@ -220,6 +227,8 @@ class Admin {
 			'heatmap'       => '<path d="M5 18c2.5-6 5-9 9-9 2.5 0 4.2 1.1 5 3"/><circle cx="8" cy="16" r="2"/><circle cx="14" cy="10" r="2.5"/><circle cx="18" cy="13" r="1.7"/>',
 			'funnel'        => '<path d="M5 5h14l-5.5 6.5V18l-3 1.5v-8z"/>',
 			'search'        => '<circle cx="10.5" cy="10.5" r="5.5"/><path d="M15 15l4 4"/>',
+			'keywords'      => '<path d="M12 3.5l1.8 4.4 4.4 1.8-4.4 1.8L12 16l-1.8-4.5L5.8 9.7l4.4-1.8z"/><path d="M18 15.5l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z"/>',
+			'warning'       => '<path d="M12 4l9 16H3z"/><path d="M12 9v5"/><path d="M12 17h.01"/>',
 			'settings'      => '<path d="M12 8.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z"/><path d="M12 3.5v2.2M12 18.3v2.2M4.6 7.2l1.9 1.1M17.5 15.7l1.9 1.1M4.6 16.8l1.9-1.1M17.5 8.3l1.9-1.1"/>',
 			'pageviews'     => '<path d="M4 6.5h16v11H4z"/><path d="M8 21h8"/><path d="M12 17.5V21"/><circle cx="12" cy="12" r="2.7"/>',
 			'clicks'        => '<path d="M8 4v11l2.4-2.4L14 20l2.2-1.1-3.5-6.9H16z"/>',
@@ -314,6 +323,24 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
+			__( 'Keyword Insights', 'convertrack-click-conversion-analytics' ),
+			__( 'Keyword Insights', 'convertrack-click-conversion-analytics' ),
+			'manage_options',
+			'convertrack-gsc-keywords',
+			array( $this, 'render_gsc_keywords' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			__( '404 Monitor', 'convertrack-click-conversion-analytics' ),
+			__( '404 Monitor', 'convertrack-click-conversion-analytics' ),
+			'manage_options',
+			'convertrack-404-monitor',
+			array( $this, 'render_404_monitor' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
 			__( 'Settings', 'convertrack-click-conversion-analytics' ),
 			__( 'Settings', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
@@ -381,10 +408,27 @@ class Admin {
 				'root'           => esc_url_raw( rest_url( Rest_Controller::REST_NAMESPACE ) ),
 				'nonce'          => wp_create_nonce( 'wp_rest' ),
 				'activeRefresh'  => 10000,
+				'version'        => CONVERTRACK_VERSION,
+				'logoUrl'        => esc_url_raw( CONVERTRACK_URL . 'admin/assets/convertrack-logo.svg' ),
+				'adminUrls'      => array(
+					'overview' => esc_url_raw( admin_url( 'admin.php?page=convertrack' ) ),
+					'settings' => esc_url_raw( admin_url( 'admin.php?page=convertrack-settings' ) ),
+					'gsc'      => esc_url_raw( admin_url( 'admin.php?page=convertrack-gsc' ) ),
+					'gscKeywords' => esc_url_raw( admin_url( 'admin.php?page=convertrack-gsc-keywords' ) ),
+					'notFound' => esc_url_raw( admin_url( 'admin.php?page=convertrack-404-monitor' ) ),
+				),
+				'health'         => array(
+					'wpVersion'  => get_bloginfo( 'version' ),
+					'phpVersion' => PHP_VERSION,
+				),
 				'exportUrl'      => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_export' ) ),
 				'exportNonce'    => wp_create_nonce( 'convertrack_export' ),
 				'gscExportUrl'   => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_gsc_export' ) ),
 				'gscExportNonce' => wp_create_nonce( 'convertrack_gsc_export' ),
+				'notFoundExportUrl'   => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_404_export' ) ),
+				'notFoundExportNonce' => wp_create_nonce( 'convertrack_404_export' ),
+				'gscKeywordsExportUrl'   => esc_url_raw( admin_url( 'admin-post.php?action=convertrack_gsc_keywords_export' ) ),
+				'gscKeywordsExportNonce' => wp_create_nonce( 'convertrack_gsc_keywords_export' ),
 				'i18n'           => array(
 					'liveNow'      => __( 'visitors on the site now', 'convertrack-click-conversion-analytics' ),
 					'clicks'       => __( 'Clicks', 'convertrack-click-conversion-analytics' ),
@@ -397,6 +441,22 @@ class Admin {
 					'visitor'      => __( 'Visitor', 'convertrack-click-conversion-analytics' ),
 					'noData'       => __( 'No data yet for this range.', 'convertrack-click-conversion-analytics' ),
 					'updated'      => __( 'Updated', 'convertrack-click-conversion-analytics' ),
+					'siteHealth'   => __( 'Site health at a glance', 'convertrack-click-conversion-analytics' ),
+					'siteHealthSub' => __( 'Analytics, redirects, indexing, and plugin status in one place', 'convertrack-click-conversion-analytics' ),
+					'analyticsActivity' => __( 'Analytics activity', 'convertrack-click-conversion-analytics' ),
+					'pluginHealth' => __( 'Plugin health', 'convertrack-click-conversion-analytics' ),
+					'operational'  => __( 'Operational', 'convertrack-click-conversion-analytics' ),
+					'total404s'    => __( 'Total 404 URLs', 'convertrack-click-conversion-analytics' ),
+					'activeRedirects' => __( 'Active redirects', 'convertrack-click-conversion-analytics' ),
+					'pendingRecommendations' => __( 'Pending recommendations', 'convertrack-click-conversion-analytics' ),
+					'sitemapStatus' => __( 'Sitemap status', 'convertrack-click-conversion-analytics' ),
+					'lastScan'     => __( 'Last scan', 'convertrack-click-conversion-analytics' ),
+					'trackingActive' => __( 'Tracking active', 'convertrack-click-conversion-analytics' ),
+					'noActivityYet' => __( 'No activity yet', 'convertrack-click-conversion-analytics' ),
+					'setupNeeded'  => __( 'Setup needed', 'convertrack-click-conversion-analytics' ),
+					'notConnected' => __( 'Not connected', 'convertrack-click-conversion-analytics' ),
+					'connected'    => __( 'Connected', 'convertrack-click-conversion-analytics' ),
+					'never'        => __( 'Never', 'convertrack-click-conversion-analytics' ),
 					'activityTrend' => __( 'Activity trend', 'convertrack-click-conversion-analytics' ),
 					'pageVisit'    => __( 'Page visit', 'convertrack-click-conversion-analytics' ),
 					'click'        => __( 'Click', 'convertrack-click-conversion-analytics' ),
@@ -501,6 +561,85 @@ class Admin {
 					'gscTabsOpened'      => __( 'Opened in Search Console:', 'convertrack-click-conversion-analytics' ),
 					'gscTabsHint'        => __( 'Click "Request Indexing" in each tab.', 'convertrack-click-conversion-analytics' ),
 					'gscTabsBlocked'     => __( 'Your browser blocked some tabs — allow pop-ups for this site and click again. Opened:', 'convertrack-click-conversion-analytics' ),
+					'kwTotalKeywords'    => __( 'Tracked keywords', 'convertrack-click-conversion-analytics' ),
+					'kwHighOpportunity'  => __( 'High opportunity', 'convertrack-click-conversion-analytics' ),
+					'kwPagesMissing'     => __( 'Pages with missing keywords', 'convertrack-click-conversion-analytics' ),
+					'kwPageTwo'          => __( 'Page-2 rankings (11-20)', 'convertrack-click-conversion-analytics' ),
+					'kwLowCtr'           => __( 'High impressions, low CTR', 'convertrack-click-conversion-analytics' ),
+					'kwBranded'          => __( 'Branded', 'convertrack-click-conversion-analytics' ),
+					'kwNonBranded'       => __( 'Non-branded', 'convertrack-click-conversion-analytics' ),
+					'kwLastSync'         => __( 'Last keyword sync', 'convertrack-click-conversion-analytics' ),
+					'kwLastAnalysis'     => __( 'Last content analysis', 'convertrack-click-conversion-analytics' ),
+					'kwPendingAnalysis'  => __( 'Keywords awaiting analysis', 'convertrack-click-conversion-analytics' ),
+					'kwSyncRunning'      => __( 'Syncing keyword data from Search Console…', 'convertrack-click-conversion-analytics' ),
+					'kwSyncDone'         => __( 'Keyword sync complete. Content analysis continues in the background.', 'convertrack-click-conversion-analytics' ),
+					'kwSyncFailed'       => __( 'Keyword sync failed:', 'convertrack-click-conversion-analytics' ),
+					'kwSyncQueued'       => __( 'Keyword sync started…', 'convertrack-click-conversion-analytics' ),
+					'kwAnalyzeQueued'    => __( 'Re-analysis queued for', 'convertrack-click-conversion-analytics' ),
+					'kwRowsLabel'        => __( 'keywords', 'convertrack-click-conversion-analytics' ),
+					'kwNotConnected'     => __( 'Connect Google Search Console on the Google Index Monitor tab to collect keyword data.', 'convertrack-click-conversion-analytics' ),
+					'kwDisabled'         => __( 'Enable Keyword Insights in the settings below, save, then run your first sync.', 'convertrack-click-conversion-analytics' ),
+					'kwNeverSynced'      => __( 'No keyword data yet. Run your first sync to import queries from Search Console.', 'convertrack-click-conversion-analytics' ),
+					'kwSyncFirst'        => __( 'Sync now', 'convertrack-click-conversion-analytics' ),
+					'kwNoResults'        => __( 'No keywords match the current filters.', 'convertrack-click-conversion-analytics' ),
+					'kwSelectRows'       => __( 'Choose at least one keyword first.', 'convertrack-click-conversion-analytics' ),
+					'kwBulkQueued'       => __( 'Queued for re-analysis:', 'convertrack-click-conversion-analytics' ),
+					'kwDetails'          => __( 'Details', 'convertrack-click-conversion-analytics' ),
+					'kwReanalyze'        => __( 'Re-analyze', 'convertrack-click-conversion-analytics' ),
+					'kwKeyword'          => __( 'Keyword', 'convertrack-click-conversion-analytics' ),
+					'kwTypes'            => __( 'Type', 'convertrack-click-conversion-analytics' ),
+					'kwImpressions'      => __( 'Impressions', 'convertrack-click-conversion-analytics' ),
+					'kwCtrShort'         => __( 'CTR', 'convertrack-click-conversion-analytics' ),
+					'kwPosition'         => __( 'Position', 'convertrack-click-conversion-analytics' ),
+					'kwPresence'         => __( 'Presence', 'convertrack-click-conversion-analytics' ),
+					'kwOpportunity'      => __( 'Opportunity', 'convertrack-click-conversion-analytics' ),
+					'kwAction'           => __( 'Recommended action', 'convertrack-click-conversion-analytics' ),
+					'kwAnalyzed'         => __( 'Analyzed', 'convertrack-click-conversion-analytics' ),
+					'kwPresent'          => __( 'Present', 'convertrack-click-conversion-analytics' ),
+					'kwPartial'          => __( 'Partial', 'convertrack-click-conversion-analytics' ),
+					'kwMissing'          => __( 'Missing', 'convertrack-click-conversion-analytics' ),
+					'kwOverused'         => __( 'Overused', 'convertrack-click-conversion-analytics' ),
+					'kwNeedsImprovement' => __( 'Needs improvement', 'convertrack-click-conversion-analytics' ),
+					'kwUnknown'          => __( 'Not analyzable', 'convertrack-click-conversion-analytics' ),
+					'kwOppHigh'          => __( 'High', 'convertrack-click-conversion-analytics' ),
+					'kwOppMedium'        => __( 'Medium', 'convertrack-click-conversion-analytics' ),
+					'kwOppLow'           => __( 'Low', 'convertrack-click-conversion-analytics' ),
+					'kwOppOptimized'     => __( 'Optimized', 'convertrack-click-conversion-analytics' ),
+					'kwQueuedForAnalysis' => __( 'Queued for analysis', 'convertrack-click-conversion-analytics' ),
+					'kwIncluded'         => __( 'Included on page', 'convertrack-click-conversion-analytics' ),
+					'kwPartialGroup'     => __( 'Partially covered', 'convertrack-click-conversion-analytics' ),
+					'kwMissingGroup'     => __( 'Missing from page', 'convertrack-click-conversion-analytics' ),
+					'kwPageRecs'         => __( 'Recommended actions for this page', 'convertrack-click-conversion-analytics' ),
+					'kwPlacements'       => __( 'Recommended placements', 'convertrack-click-conversion-analytics' ),
+					'kwFaq'              => __( 'Suggested FAQ questions', 'convertrack-click-conversion-analytics' ),
+					'kwAnchors'          => __( 'Suggested internal link anchor texts', 'convertrack-click-conversion-analytics' ),
+					'kwTitleMeta'        => __( 'Current SEO title & description', 'convertrack-click-conversion-analytics' ),
+					'kwAreas'            => __( 'Content area coverage', 'convertrack-click-conversion-analytics' ),
+					'kwEditPage'         => __( 'Edit page', 'convertrack-click-conversion-analytics' ),
+					'kwDetailFailed'     => __( 'Could not load the page detail:', 'convertrack-click-conversion-analytics' ),
+					'kwTruncated'        => __( 'Row cap reached — the least-clicked queries were skipped.', 'convertrack-click-conversion-analytics' ),
+					'kwCustomHint'       => __( 'Pick both dates, then press "Sync range" to pull that period from Search Console.', 'convertrack-click-conversion-analytics' ),
+					'kwAreaSeoTitle'     => __( 'SEO title', 'convertrack-click-conversion-analytics' ),
+					'kwAreaMetaDescription' => __( 'Meta description', 'convertrack-click-conversion-analytics' ),
+					'kwAreaH1'           => __( 'H1 heading', 'convertrack-click-conversion-analytics' ),
+					'kwAreaHeadings'     => __( 'H2/H3 headings', 'convertrack-click-conversion-analytics' ),
+					'kwAreaFirstParagraph' => __( 'First paragraph', 'convertrack-click-conversion-analytics' ),
+					'kwAreaBody'         => __( 'Body content', 'convertrack-click-conversion-analytics' ),
+					'kwAreaImageAlts'    => __( 'Image alt text', 'convertrack-click-conversion-analytics' ),
+					'kwAreaAnchorTexts'  => __( 'Internal anchor text', 'convertrack-click-conversion-analytics' ),
+					'kwAreaUrlSlug'      => __( 'URL slug', 'convertrack-click-conversion-analytics' ),
+					'kwTypeBranded'      => __( 'Branded', 'convertrack-click-conversion-analytics' ),
+					'kwTypeNonBranded'   => __( 'Non-branded', 'convertrack-click-conversion-analytics' ),
+					'kwTypeService'      => __( 'Service', 'convertrack-click-conversion-analytics' ),
+					'kwTypeProduct'      => __( 'Product', 'convertrack-click-conversion-analytics' ),
+					'kwTypeLocation'     => __( 'Location', 'convertrack-click-conversion-analytics' ),
+					'kwTypeCommercial'   => __( 'Commercial', 'convertrack-click-conversion-analytics' ),
+					'kwTypeInformational' => __( 'Informational', 'convertrack-click-conversion-analytics' ),
+					'kwTypeTransactional' => __( 'Transactional', 'convertrack-click-conversion-analytics' ),
+					'kwTypeNavigational' => __( 'Navigational', 'convertrack-click-conversion-analytics' ),
+					'kwTypeQuestion'     => __( 'Question', 'convertrack-click-conversion-analytics' ),
+					'kwTypeLongTail'     => __( 'Long-tail', 'convertrack-click-conversion-analytics' ),
+					'kwTypeCompetitor'   => __( 'Competitor', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);
@@ -528,6 +667,14 @@ class Admin {
 
 	public function render_gsc() {
 		$this->render_view( 'gsc-index-monitor' );
+	}
+
+	public function render_gsc_keywords() {
+		$this->render_view( 'gsc-keywords' );
+	}
+
+	public function render_404_monitor() {
+		$this->render_view( '404-monitor' );
 	}
 
 	public function render_settings() {

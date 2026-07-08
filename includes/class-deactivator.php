@@ -17,6 +17,8 @@ class Deactivator {
 	public static function deactivate() {
 		Cron::unschedule();
 		\Convertrack\GSC\Cron::unschedule();
+		\Convertrack\GSC\Keywords_Cron::unschedule();
+		\Convertrack\NotFound\Cron::unschedule();
 		flush_rewrite_rules();
 	}
 }

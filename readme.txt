@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.3
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,6 +21,7 @@ Convertrack answers three questions about your site:
 5. **Which searches bring them in?** Optional search keyword tracking shows supported UTM terms, site searches, and visible search-referrer queries.
 
 6. **Are important URLs indexed?** The optional Google Index Monitor connects to Search Console, scans sitemaps, and checks URL indexing status in background batches.
+7. **Which 404s need redirects?** The optional 404 Monitor captures missing frontend URLs, recommends likely destinations, and creates internal 301 redirects only after approval or explicit high-confidence automation.
 
 **Built for large sites**
 
@@ -39,6 +40,8 @@ The only optional exception is **Visitor location** (off by default): when you t
 
 **Google Index Monitor** is optional and off until an administrator configures OAuth credentials and connects Google Search Console. When enabled, it sends configured site URLs and sitemap URLs to Google Search Console APIs for indexing inspection and sitemap submission. OAuth tokens are stored encrypted in this site's database, and queue/log data stays in separate `convertrack_gsc_*` tables.
 
+**404 Monitor** is optional and stores its data locally in separate `convertrack_404_*` tables. It records the requested 404 URL/path, referrer URL, a hashed user-agent value, timestamps, hit counts, recommendations, and internal redirect hit counts. It does not store IP addresses and does not contact third-party APIs for 404 monitoring. It detects common redirect plugins for visibility/conflict warnings but does not write to their tables or to `.htaccess`.
+
 **Updating**
 
 Installed from WordPress.org, Convertrack updates through your dashboard like any other plugin. The separately distributed self-hosted build can additionally update itself from its GitHub Releases.
@@ -55,6 +58,8 @@ The optional **Search keyword tracking** setting stores supported search terms l
 
 The optional **Google Index Monitor** feature contacts Google Search Console APIs only after an administrator connects it. It sends site URLs for indexing inspection and sitemap submission, and it does not run on frontend page loads.
 
+The optional **404 Monitor** feature runs locally. It stores requested missing URLs, referrers, hashed user-agent values, recommendation data, and internal redirect hit counts in this site's database. It does not store IP addresses and does not send 404 monitoring data to third-party services.
+
 == Installation ==
 
 1. Upload the `convertrack` folder to `/wp-content/plugins/`, or install the zip from the Plugins screen.
@@ -65,6 +70,8 @@ The optional **Google Index Monitor** feature contacts Google Search Console API
 For high-traffic sites: (1) disable WP-Cron and trigger `wp-cron.php` from a real system cron so rollups and cleanup run on schedule, and (2) run a persistent object cache (Redis or Memcached) — Convertrack then keeps its rate-limit counters and short stat caches in memory instead of the database.
 
 Optional: open **Convertrack -> Google Index Monitor** to configure Google OAuth, connect Search Console, scan the sitemap, and run indexing checks.
+
+Optional: open **Convertrack -> 404 Monitor** to capture frontend 404s, refresh valid URL candidates, review recommendations, approve internal 301 redirects, export CSVs, and configure retention or spike alerts.
 
 == Frequently Asked Questions ==
 
@@ -85,10 +92,28 @@ Not by default. The one optional exception is the **Visitor location** setting (
 
 The optional **Google Index Monitor** also contacts Google Search Console APIs, but only after an administrator configures and connects it. It sends site URLs for indexing inspection and sitemap submission; it does not run on frontend page loads.
 
+The optional **404 Monitor** does not contact external services for monitoring. It detects common redirect plugins and readable redirect tables for conflict visibility, but it does not modify third-party redirect rules or `.htaccess`.
+
 = How do I require visitor consent before tracking? =
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.2.0 =
+* Added GSC Keyword Insights & Content Optimization: pulls real Search Console query/page data through the existing Google connection (no reconnect needed) and turns it into on-page SEO recommendations.
+* Classifies each keyword by type and intent (branded, service, location, commercial, informational, transactional, question, long-tail, competitor, and more) using offline, filterable word lists.
+* Analyzes the matched page's content — SEO title, meta description, H1, headings, first paragraph, body, image alt text, internal anchors, and URL slug — and reports whether each keyword is present, partially matched, missing, needs improvement, or overused. Reads SEO title/description from Rank Math, Yoast, AIOSEO, and SEOPress where available.
+* Scores every keyword opportunity 0-100 (High / Medium / Low / Already optimized) from impressions, CTR gap vs. expected CTR for its position, ranking sweet spot, presence gaps, and intent.
+* Generates natural, anti-keyword-stuffing recommendations: improve title/meta on high-impression low-CTR queries, add missing keywords to content, promote body-only keywords into headings, answer question queries in an FAQ, and push page-2 rankings with supporting content and internal links.
+* New "Keyword Insights" dashboard with summary KPIs, branded vs non-branded split, top pages by opportunity, a sortable/filterable keyword table (type, intent, page, opportunity, presence, search, date range), CSV export, bulk re-analyze, and a per-page detail view with suggested placements, FAQ questions, and anchor texts.
+* Background sync (daily/weekly/manual) and content analysis run on Action Scheduler with a WP-Cron fallback, using cached data, batching, row caps, and proper indexing so the site is never slowed down. Content is re-analyzed automatically when a post is edited.
+
+= 2.1.0 =
+* Added 404 Monitor as an isolated module with separate settings, tables, REST/admin-post handlers, cron jobs, dashboard view, CSV export, and uninstall cleanup.
+* Captures real frontend 404 requests, normalizes ignored query parameters/patterns, and recommends destinations from WordPress content, public archives, taxonomies, and sitemap URLs.
+* Adds conservative redirect handling: internal 301 redirects are created only after administrator approval or explicit high-confidence automation, with loop, duplicate, same-site, and destination validation.
+* Shows read-only visibility/conflict warnings for common redirect tools such as Redirection, Rank Math, Yoast, SEOPress, and possible `.htaccess` rules without writing to third-party tables.
+* Adds retention cleanup, valid URL cache refresh, recommendation processing, redirect hit tracking, and optional 404 spike email notifications.
 
 = 2.0.3 =
 * New "Needs Indexing (all stuck pages)" status filter: one combined view of every page Google knows about but has not indexed (Not Indexed, Crawled and Discovered but not indexed). Also available in the CSV export.

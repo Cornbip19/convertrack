@@ -11,6 +11,7 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 - **Scales** — events are batched in the browser via `navigator.sendBeacon`, written in bulk, and rolled up into a compact daily-aggregates table by a background job so dashboards stay fast at any size.
 - **Privacy-friendly** — no IP addresses or personal data stored; Do Not Track supported; logged-in users / roles / URLs can be excluded.
 - **Google Index Monitor** - optional Search Console OAuth integration that scans sitemaps and checks URL indexing status in background batches.
+- **404 Monitor** - captures real frontend 404s, recommends likely destinations, and creates internal 301 redirects only after approval or explicit high-confidence automation.
 
 ## Architecture
 
@@ -26,14 +27,30 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 | Background jobs | `includes/class-cron.php` |
 | Admin dashboard | `includes/class-admin.php`, `admin/` |
 | Google Index Monitor | `includes/gsc/`, `admin/views/gsc-index-monitor.php` |
+| 404 Monitor | `includes/404-monitor/`, `admin/views/404-monitor.php` |
 | GitHub self-updater | `includes/class-updater.php` |
 
 Custom tables store raw `events`, live `sessions`, and pre-aggregated rollups for pages, sources, countries, and search keywords.
 Google Index Monitor uses separate `convertrack_gsc_*` options and tables so analytics data and tracking behavior stay isolated.
+404 Monitor uses separate `convertrack_404_*` options and tables for detected 404s, internal redirects, cached valid URLs, and module logs.
 
 ## Google Index Monitor
 
 Open **Convertrack -> Google Index Monitor** to add a Google OAuth Client ID/secret, Search Console property URL, sitemap URL, quota limit, batch size, and selected post types. The feature is disabled until configured and connected. It uses the URL Inspection API for normal URLs, sitemap resubmission for normal WordPress pages, and only calls the Google Indexing API for URLs explicitly marked eligible by code.
+
+## Keyword Insights
+
+Open **Convertrack -> Keyword Insights** to turn real Search Console query data into on-page SEO recommendations. It reuses the Google Index Monitor OAuth connection and property (the `webmasters` scope already grants Search Analytics access, so no reconnect is required) and syncs query/page performance rows in the background on Action Scheduler with a WP-Cron fallback.
+
+Each keyword is matched to the page receiving its impressions, classified by type and intent from offline filterable word lists, and checked against the page content — SEO title, meta description, H1, headings, first paragraph, body, image alt text, internal anchors, and URL slug — with SEO title/description read from Rank Math, Yoast, AIOSEO, or SEOPress when present. Every keyword gets a 0-100 opportunity score and natural, anti-keyword-stuffing recommendations (improve title/meta, add missing keywords, promote body-only keywords into headings, answer question queries in an FAQ, push page-2 rankings with internal links). The dashboard offers summary KPIs, a sortable/filterable keyword table with CSV export, bulk re-analyze, and a per-page detail view. Content is re-analyzed automatically when a post is edited. The feature is disabled until enabled and only reads existing published content — it never writes to posts or third-party SEO tables.
+
+## 404 Monitor
+
+Open **Convertrack -> 404 Monitor** to capture frontend 404 requests, refresh valid URL candidates from WordPress objects and sitemaps, and review redirect recommendations. The default mode is recommendation/manual approval; automatic internal 301 redirects are disabled unless the administrator opts into high-confidence automation.
+
+The module does not write to Redirection, Rank Math, Yoast, SEOPress, or `.htaccess`. When those tools are detected, Convertrack shows read-only visibility where safely readable and blocks duplicate internal redirects for sources already handled elsewhere.
+
+404 Monitor stores the requested URL/path, referrer URL, a hashed user-agent value, timestamps, hit counts, recommendations, and internal redirect hit counts in this site's database. It does not store IP addresses and does not contact third-party APIs for 404 monitoring.
 
 ## Self-updating from GitHub
 

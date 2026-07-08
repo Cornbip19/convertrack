@@ -3,7 +3,7 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           2.0.3
+ * Version:           2.2.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Author:            Cornbip19
@@ -37,7 +37,7 @@ if ( isset( $GLOBALS['wp_version'] ) && version_compare( $GLOBALS['wp_version'],
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '2.0.3' );
+define( 'CONVERTRACK_VERSION', '2.2.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );
@@ -70,6 +70,32 @@ require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-processor.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-cron.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-rest-controller.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-admin.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-settings.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-text.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-word-lists.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-seo-meta.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-fingerprint.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-classifier.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-presence.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-scorer.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-recommendations.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-database.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-sync.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-analyzer.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-cron.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-rest-controller.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-keywords-admin.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-settings.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-database.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-logger.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-compatibility.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-matcher.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-sitemap-source.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-redirector.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-detector.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-cron.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-rest-controller.php';
+require_once CONVERTRACK_DIR . 'includes/404-monitor/class-notfound-admin.php';
 
 // The GitHub self-updater ships only in the self-hosted build. The
 // WordPress.org build omits this file so the directory handles all updates

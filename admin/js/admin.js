@@ -239,6 +239,17 @@
 		return String.fromCodePoint( 0x1F1E6 + ( code.charCodeAt( 0 ) - 65 ), 0x1F1E6 + ( code.charCodeAt( 1 ) - 65 ) );
 	}
 
+	function shortDate( value ) {
+		if ( ! value ) {
+			return I18N.never || 'Never';
+		}
+		return String( value ).replace( 'T', ' ' );
+	}
+
+	function statusClass( value ) {
+		return String( value || 'unknown' ).toLowerCase().replace( /[^a-z0-9_-]+/g, '_' );
+	}
+
 	/* Rendering ----------------------------------------------------------- */
 
 	function renderCards( totals ) {
@@ -256,6 +267,121 @@
 		[ 'pageviews', 'clicks', 'conversions', 'unique_visitors', 'conversion_rate', 'click_through' ].forEach( function ( k ) {
 			setDelta( k, cmp[ k ] );
 		} );
+	}
+
+	function healthCard( item ) {
+		var tag = item.href ? 'a' : 'div';
+		var card = el( tag, 'cvtrk-health-card is-' + ( item.tone || 'neutral' ) );
+		if ( item.href ) {
+			card.href = item.href;
+		}
+		var icon = el( 'span', 'cvtrk-health-icon' );
+		icon.appendChild( svgIcon( item.icon || 'shield', 'cvtrk-icon' ) );
+		card.appendChild( icon );
+
+		var body = el( 'span', 'cvtrk-health-body' );
+		body.appendChild( el( 'span', 'cvtrk-health-label', item.label ) );
+		body.appendChild( el( 'span', 'cvtrk-health-value', item.value ) );
+		if ( item.meta ) {
+			body.appendChild( el( 'span', 'cvtrk-health-meta', item.meta ) );
+		}
+		card.appendChild( body );
+		return card;
+	}
+
+	function renderOverviewHealth( stats, notFound, gsc ) {
+		var box = attr( 'overview-health' );
+		if ( ! box ) {
+			return;
+		}
+
+		var totals = stats && stats.totals ? stats.totals : {};
+		var active = Number( stats && stats.active ) || 0;
+		var pageviews = Number( totals.pageviews ) || 0;
+		var clicks = Number( totals.clicks ) || 0;
+		var conversions = Number( totals.conversions ) || 0;
+		var total404 = Number( notFound && notFound.total ) || 0;
+		var unresolved = Number( notFound && notFound.unresolved ) || 0;
+		var recommended = Number( notFound && notFound.recommended ) || 0;
+		var redirected = Number( notFound && notFound.redirected ) || 0;
+		var redirectHits = Number( notFound && notFound.redirect_hits ) || 0;
+		var gscTotal = Number( gsc && gsc.total ) || 0;
+		var gscIndexed = Number( gsc && gsc.indexed ) || 0;
+		var gscIssues = ( Number( gsc && gsc.not_indexed ) || 0 ) + ( Number( gsc && gsc.errors ) || 0 ) +
+			( Number( gsc && gsc.blocked_by_robots ) || 0 ) + ( Number( gsc && gsc.noindex_detected ) || 0 );
+		var gscReady = !! ( gsc && gsc.settings_ready && gsc.credentials && gsc.credentials.connected );
+		var pct = gscTotal > 0 ? Math.round( ( gscIndexed / gscTotal ) * 100 ) : 0;
+		var lastScan = ( gsc && gsc.last_sync_time ) || ( notFound && notFound.last_sitemap_refresh ) || '';
+		var health = C.health || {};
+
+		clear( box );
+		var grid = el( 'div', 'cvtrk-health-grid' );
+		var cards = [
+			{
+				label: I18N.analyticsActivity || 'Analytics activity',
+				value: pageviews + clicks > 0 ? ( I18N.trackingActive || 'Tracking active' ) : ( I18N.noActivityYet || 'No activity yet' ),
+				meta: num( pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ) + ' / ' + num( clicks ) + ' ' + ( I18N.clicks || 'Clicks' ) + ' / ' + num( conversions ) + ' ' + ( I18N.conversions || 'Conversions' ),
+				tone: pageviews + clicks > 0 ? 'green' : 'neutral',
+				icon: 'visit',
+				href: C.adminUrls && C.adminUrls.overview
+			},
+			{
+				label: I18N.total404s || 'Total 404 URLs',
+				value: notFound ? num( total404 ) : I18N.loading || 'Loading...',
+				meta: notFound ? num( unresolved ) + ' unresolved' : '',
+				tone: unresolved > 0 ? 'amber' : ( total404 > 0 ? 'neutral' : 'green' ),
+				icon: 'warning',
+				href: C.adminUrls && C.adminUrls.notFound
+			},
+			{
+				label: I18N.activeRedirects || 'Active redirects',
+				value: notFound ? num( redirected ) : I18N.loading || 'Loading...',
+				meta: notFound ? num( redirectHits ) + ' redirect hits' : '',
+				tone: redirected > 0 ? 'green' : 'neutral',
+				icon: 'update',
+				href: C.adminUrls && C.adminUrls.notFound
+			},
+			{
+				label: I18N.pendingRecommendations || 'Pending recommendations',
+				value: notFound ? num( recommended ) : I18N.loading || 'Loading...',
+				meta: notFound ? 'Manual review queue' : '',
+				tone: recommended > 0 ? 'amber' : 'green',
+				icon: 'search',
+				href: C.adminUrls && C.adminUrls.notFound
+			},
+			{
+				label: I18N.sitemapStatus || 'Sitemap status',
+				value: ! gsc ? ( I18N.loading || 'Loading...' ) : ( gscReady ? ( gscTotal > 0 ? pct + '% indexed' : I18N.connected || 'Connected' ) : I18N.setupNeeded || 'Setup needed' ),
+				meta: ! gsc ? '' : ( gscReady ? num( gscTotal ) + ' URLs / ' + num( gscIssues ) + ' issues' : I18N.notConnected || 'Not connected' ),
+				tone: ! gsc ? 'neutral' : ( ! gscReady || gscIssues > 0 ? 'amber' : 'green' ),
+				icon: 'indexed',
+				href: C.adminUrls && C.adminUrls.gsc
+			},
+			{
+				label: I18N.lastScan || 'Last scan',
+				value: shortDate( lastScan ),
+				meta: gsc && gsc.next_scheduled_check ? 'Next: ' + shortDate( gsc.next_scheduled_check ) : '',
+				tone: lastScan ? 'green' : 'neutral',
+				icon: 'calendar'
+			},
+			{
+				label: I18N.pluginHealth || 'Plugin health',
+				value: I18N.operational || 'Operational',
+				meta: 'Convertrack ' + ( C.version || '' ) + ' / WP ' + ( health.wpVersion || '-' ) + ' / PHP ' + ( health.phpVersion || '-' ),
+				tone: 'green',
+				icon: 'shield',
+				href: C.adminUrls && C.adminUrls.settings
+			}
+		];
+
+		if ( active > 0 ) {
+			cards[ 0 ].meta += ' / ' + num( active ) + ' live';
+		}
+
+		cards.forEach( function ( item ) {
+			grid.appendChild( healthCard( item ) );
+		} );
+		box.appendChild( grid );
 	}
 
 	function set( key, value ) {
@@ -1671,6 +1797,13 @@
 					setLastUpdated();
 					setLive( data.active );
 					toggleConvHint( data.totals );
+					renderOverviewHealth( data, null, null );
+					Promise.all( [
+						api( '/404/summary' ).catch( function () { return null; } ),
+						api( '/gsc/summary' ).catch( function () { return null; } )
+					] ).then( function ( moduleData ) {
+						renderOverviewHealth( data, moduleData[ 0 ], moduleData[ 1 ] );
+					} );
 				} )
 				.catch( function () {} );
 		}
@@ -2262,7 +2395,9 @@
 			rows.forEach( function ( row ) {
 				var tr = el( 'tr' );
 				tr.appendChild( el( 'td', null, dateText( row.created_at ) ) );
-				tr.appendChild( el( 'td', null, statusText( row.level ) ) );
+				var levelCell = el( 'td' );
+				levelCell.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.level ), statusText( row.level ) ) );
+				tr.appendChild( levelCell );
 				tr.appendChild( el( 'td', null, row.source || '-' ) );
 				var msg = el( 'td', null, row.message || '-' );
 				var ctx = null;
@@ -2603,6 +2738,1467 @@
 		reloadAll();
 	}
 
+	function init404Monitor() {
+		var root = document.getElementById( 'convertrack-404-monitor' );
+		if ( ! root ) {
+			return;
+		}
+
+		var state = {
+			page: 1,
+			pages: 1,
+			lastRows: []
+		};
+		var statusSel = attr( '404-status' );
+		var postTypeSel = attr( '404-post-type' );
+		var confidenceMin = attr( '404-confidence-min' );
+		var confidenceMax = attr( '404-confidence-max' );
+		var detectedFrom = attr( '404-detected-from' );
+		var detectedTo = attr( '404-detected-to' );
+		var searchInput = attr( '404-search' );
+		var progressBox = attr( '404-progress' );
+		var exportLink = attr( '404-export' );
+		var threshold = Number( root.getAttribute( 'data-404-threshold' ) ) || 90;
+
+		function statusText( status ) {
+			status = String( status || '' );
+			var map = {
+				new: 'New',
+				recommended: 'Recommended',
+				auto_redirected: 'Auto redirected',
+				approved: 'Approved',
+				ignored: 'Ignored',
+				manual_review: 'Manual review',
+				deleted: 'Deleted',
+				active: 'Active',
+				paused: 'Paused',
+				disabled: 'Disabled'
+			};
+			return map[ status ] || status.replace( /_/g, ' ' );
+		}
+
+		function dateText( value ) {
+			if ( ! value ) {
+				return '-';
+			}
+			return String( value ).replace( 'T', ' ' );
+		}
+
+		function setProgress( text, isError ) {
+			if ( ! progressBox ) {
+				return;
+			}
+			if ( ! text ) {
+				progressBox.hidden = true;
+				return;
+			}
+			progressBox.hidden = false;
+			progressBox.textContent = text;
+			progressBox.style.color = isError ? '#b84a62' : '';
+		}
+
+		function appendParam( parts, key, value ) {
+			if ( value !== undefined && value !== null && String( value ) !== '' ) {
+				parts.push( encodeURIComponent( key ) + '=' + encodeURIComponent( value ) );
+			}
+		}
+
+		function query() {
+			var parts = [];
+			appendParam( parts, 'page', state.page );
+			appendParam( parts, 'per_page', 25 );
+			appendParam( parts, 'status', statusSel ? statusSel.value : 'all' );
+			appendParam( parts, 'post_type', postTypeSel ? postTypeSel.value : 'all' );
+			appendParam( parts, 'confidence_min', confidenceMin ? confidenceMin.value : '' );
+			appendParam( parts, 'confidence_max', confidenceMax ? confidenceMax.value : '' );
+			appendParam( parts, 'detected_from', detectedFrom ? detectedFrom.value : '' );
+			appendParam( parts, 'detected_to', detectedTo ? detectedTo.value : '' );
+			appendParam( parts, 'search', searchInput ? searchInput.value : '' );
+			return '?' + parts.join( '&' );
+		}
+
+		function updateExportLink() {
+			if ( ! exportLink || ! C.notFoundExportUrl ) {
+				return;
+			}
+			var q = query().replace( /^\?/, '' ).replace( /(^|&)page=[^&]*/g, '' ).replace( /(^|&)per_page=[^&]*/g, '' );
+			exportLink.href = C.notFoundExportUrl + '&_wpnonce=' + encodeURIComponent( C.notFoundExportNonce || '' ) + ( q ? '&' + q.replace( /^&/, '' ) : '' );
+		}
+
+		function kpi( value, label, icon ) {
+			var item = el( 'div', 'cvtrk-kpi' );
+			var iconWrap = el( 'span', 'cvtrk-kpi-icon' );
+			iconWrap.appendChild( svgIcon( icon || 'warning', 'cvtrk-icon' ) );
+			var body = el( 'span', 'cvtrk-kpi-body' );
+			body.appendChild( el( 'span', 'cvtrk-kpi-value', value ) );
+			body.appendChild( el( 'span', 'cvtrk-kpi-label', label ) );
+			item.appendChild( iconWrap );
+			item.appendChild( body );
+			return item;
+		}
+
+		function renderSummary( data ) {
+			var box = attr( '404-summary' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+
+			var grid = el( 'div', 'cvtrk-kpis cvtrk-404-kpis' );
+			grid.appendChild( kpi( num( data.total ), 'Total 404s', 'warning' ) );
+			grid.appendChild( kpi( num( data.unresolved ), 'Unresolved', 'clock' ) );
+			grid.appendChild( kpi( num( data.recommended ), 'Recommended', 'search' ) );
+			grid.appendChild( kpi( num( data.redirected ), 'Redirected', 'update' ) );
+			grid.appendChild( kpi( num( data.ignored ), 'Ignored', 'hidden' ) );
+			grid.appendChild( kpi( num( data.redirect_hits ), 'Redirect hits', 'click' ) );
+			box.appendChild( grid );
+
+			var meta = el( 'div', 'cvtrk-404-meta' );
+			var mode = data.settings && data.settings.mode ? data.settings.mode : '';
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Mode: ' + statusText( mode ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Valid URLs: ' + num( data.valid_url_count ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Recent hits: ' + num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
+			if ( data.last_sitemap_refresh ) {
+				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'URL cache: ' + dateText( data.last_sitemap_refresh ) ) );
+			}
+			if ( data.compatibility && data.compatibility.tools && data.compatibility.tools.length ) {
+				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', 'Redirect tool detected' ) );
+			}
+			box.appendChild( meta );
+		}
+
+		function loadSummary() {
+			api( '/404/summary' )
+				.then( renderSummary )
+				.catch( function ( err ) {
+					var box = attr( '404-summary' );
+					if ( box ) {
+						empty( box, ( err && err.message ) || 'Could not load 404 summary.' );
+					}
+				} );
+		}
+
+		function checkboxCell( id ) {
+			var td = el( 'td' );
+			var input = document.createElement( 'input' );
+			input.type = 'checkbox';
+			input.className = 'cvtrk-404-select';
+			input.value = String( id );
+			td.appendChild( input );
+			return td;
+		}
+
+		function eventActionsCell( row ) {
+			var td = el( 'td', 'cvtrk-404-actions' );
+			function button( action, text ) {
+				var b = el( 'button', 'button button-small', text );
+				b.type = 'button';
+				b.setAttribute( 'data-404-action', action );
+				b.setAttribute( 'data-404-id', row.id );
+				b.setAttribute( 'data-404-destination', row.suggested_url || '' );
+				return b;
+			}
+			td.appendChild( button( 'approve', 'Approve' ) );
+			td.appendChild( button( 'edit', 'Edit' ) );
+			td.appendChild( button( 'ignore', 'Ignore' ) );
+			td.appendChild( button( 'delete', 'Delete' ) );
+			if ( row.source_full_url ) {
+				var source = el( 'a', 'button button-small', 'Open source' );
+				source.href = row.source_full_url;
+				source.target = '_blank';
+				source.rel = 'noopener noreferrer';
+				td.appendChild( source );
+			}
+			if ( row.suggested_url ) {
+				var dest = el( 'a', 'button button-small', 'Open destination' );
+				dest.href = row.suggested_url;
+				dest.target = '_blank';
+				dest.rel = 'noopener noreferrer';
+				td.appendChild( dest );
+			}
+			return td;
+		}
+
+		function renderEvents( data ) {
+			var box = attr( '404-events' );
+			if ( ! box ) {
+				return;
+			}
+			state.pages = Number( data.pages ) || 1;
+			state.lastRows = data.rows || [];
+			updateExportLink();
+			if ( ! state.lastRows.length ) {
+				empty( box, 'No 404 rows match the current filters.' );
+				updatePagination();
+				return;
+			}
+
+			clear( box );
+			var wrap = table( [
+				{ label: '' },
+				{ label: 'Source URL' },
+				{ label: 'Referrer' },
+				{ label: 'Detected' },
+				{ label: 'Hits', num: true },
+				{ label: 'Suggestion' },
+				{ label: 'Confidence', num: true },
+				{ label: 'Status' },
+				{ label: 'Actions' }
+			] );
+			var tbody = wrap.querySelector( 'tbody' );
+			state.lastRows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( checkboxCell( row.id ) );
+				tr.appendChild( labelCell( row.url || '-', row.source_full_url || '', row.source_full_url || '' ) );
+				tr.appendChild( labelCell( row.referrer_url || '-', '', row.referrer_url || '' ) );
+				tr.appendChild( labelCell( dateText( row.last_detected_at ), 'First: ' + dateText( row.first_detected_at ) ) );
+				tr.appendChild( numCell( row.hit_count ) );
+				tr.appendChild( labelCell( row.suggested_url || '-', row.match_reason || '', row.suggested_url || '' ) );
+				tr.appendChild( numCell( row.confidence ) );
+				var statusCell = el( 'td' );
+				statusCell.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ), statusText( row.status ) ) );
+				tr.appendChild( statusCell );
+				tr.appendChild( eventActionsCell( row ) );
+				tbody.appendChild( tr );
+			} );
+			box.appendChild( wrap );
+			updatePagination();
+		}
+
+		function loadEvents() {
+			api( '/404/events' + query() )
+				.then( renderEvents )
+				.catch( function ( err ) {
+					var box = attr( '404-events' );
+					if ( box ) {
+						empty( box, ( err && err.message ) || 'Could not load 404 events.' );
+					}
+				} );
+		}
+
+		function updatePagination() {
+			var pageEl = attr( '404-page' );
+			var prev = attr( '404-prev' );
+			var next = attr( '404-next' );
+			if ( pageEl ) {
+				pageEl.textContent = 'Page ' + state.page + ' / ' + state.pages;
+			}
+			if ( prev ) {
+				prev.disabled = state.page <= 1;
+			}
+			if ( next ) {
+				next.disabled = state.page >= state.pages;
+			}
+		}
+
+		function renderRedirects( data ) {
+			var box = attr( '404-redirects' );
+			if ( ! box ) {
+				return;
+			}
+			var rows = ( data && data.rows ) || [];
+			if ( ! rows.length ) {
+				empty( box, 'No internal or readable external redirects found yet.' );
+				return;
+			}
+			clear( box );
+			var wrap = table( [
+				{ label: 'Source' },
+				{ label: 'Destination' },
+				{ label: 'Provider' },
+				{ label: 'Status' },
+				{ label: 'Last hit' },
+				{ label: 'Hits', num: true },
+				{ label: 'Actions' }
+			] );
+			var tbody = wrap.querySelector( 'tbody' );
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				var provider = row.provider || row.source || 'internal';
+				tr.appendChild( labelCell( row.source_url || '-', '', row.source_url && /^https?:/.test( row.source_url ) ? row.source_url : '' ) );
+				tr.appendChild( labelCell( row.destination_url || '-', '', row.destination_url || '' ) );
+				tr.appendChild( el( 'td', null, provider ) );
+				var redirectStatus = el( 'td' );
+				redirectStatus.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ), statusText( row.status ) + ' / ' + ( row.redirect_type || 301 ) ) );
+				tr.appendChild( redirectStatus );
+				tr.appendChild( el( 'td', null, dateText( row.last_hit_at ) ) );
+				tr.appendChild( numCell( row.hit_count ) );
+				var actions = el( 'td', 'cvtrk-404-actions' );
+				if ( row.external ) {
+					actions.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Read-only' ) );
+				} else {
+					[ 'active', 'paused', 'disabled' ].forEach( function ( status ) {
+						var b = el( 'button', 'button button-small', statusText( status ) );
+						b.type = 'button';
+						b.disabled = row.status === status;
+						b.setAttribute( 'data-404-redirect-action', 'status' );
+						b.setAttribute( 'data-404-redirect-id', row.id );
+						b.setAttribute( 'data-404-redirect-status', status );
+						actions.appendChild( b );
+					} );
+					var del = el( 'button', 'button button-small', 'Delete' );
+					del.type = 'button';
+					del.setAttribute( 'data-404-redirect-action', 'delete' );
+					del.setAttribute( 'data-404-redirect-id', row.id );
+					actions.appendChild( del );
+				}
+				tr.appendChild( actions );
+				tbody.appendChild( tr );
+			} );
+			box.appendChild( wrap );
+		}
+
+		function loadRedirects() {
+			api( '/404/redirects?limit=100' )
+				.then( renderRedirects )
+				.catch( function ( err ) {
+					var box = attr( '404-redirects' );
+					if ( box ) {
+						empty( box, ( err && err.message ) || 'Could not load redirects.' );
+					}
+				} );
+		}
+
+		function renderLogs( data ) {
+			var box = attr( '404-logs' );
+			if ( ! box ) {
+				return;
+			}
+			var rows = ( data && data.rows ) || [];
+			if ( ! rows.length ) {
+				empty( box, 'No 404 Monitor log entries yet.' );
+				return;
+			}
+			clear( box );
+			var wrap = table( [
+				{ label: 'Time' },
+				{ label: 'Level' },
+				{ label: 'Source' },
+				{ label: 'Message' },
+				{ label: 'Context' }
+			] );
+			var tbody = wrap.querySelector( 'tbody' );
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( el( 'td', null, dateText( row.created_at ) ) );
+				var levelCell = el( 'td' );
+				levelCell.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.level ), row.level || '' ) );
+				tr.appendChild( levelCell );
+				tr.appendChild( el( 'td', null, row.source || '' ) );
+				tr.appendChild( labelCell( row.message || '' ) );
+				tr.appendChild( labelCell( row.context || '' ) );
+				tbody.appendChild( tr );
+			} );
+			box.appendChild( wrap );
+		}
+
+		function loadLogs() {
+			api( '/404/logs?limit=50' )
+				.then( renderLogs )
+				.catch( function ( err ) {
+					var box = attr( '404-logs' );
+					if ( box ) {
+						empty( box, ( err && err.message ) || 'Could not load 404 logs.' );
+					}
+				} );
+		}
+
+		function reloadAll() {
+			loadSummary();
+			loadEvents();
+			loadRedirects();
+			loadLogs();
+		}
+
+		function selectedIds() {
+			var box = attr( '404-events' );
+			if ( ! box ) {
+				return [];
+			}
+			return Array.prototype.slice.call( box.querySelectorAll( '.cvtrk-404-select:checked' ) ).map( function ( input ) {
+				return Number( input.value ) || 0;
+			} ).filter( Boolean );
+		}
+
+		var eventBox = attr( '404-events' );
+		if ( eventBox ) {
+			eventBox.addEventListener( 'click', function ( e ) {
+				var btn = e.target && e.target.closest ? e.target.closest( '[data-404-action]' ) : null;
+				if ( ! btn ) {
+					return;
+				}
+				var action = btn.getAttribute( 'data-404-action' );
+				var id = Number( btn.getAttribute( 'data-404-id' ) ) || 0;
+				var destination = btn.getAttribute( 'data-404-destination' ) || '';
+				var body = { id: id };
+
+				if ( 'approve' === action && ! destination ) {
+					destination = window.prompt( 'Destination URL' ) || '';
+				}
+				if ( 'edit' === action ) {
+					destination = window.prompt( 'Destination URL', destination ) || '';
+					if ( ! destination ) {
+						return;
+					}
+				}
+				if ( 'delete' === action && ! window.confirm( 'Delete this 404 row?' ) ) {
+					return;
+				}
+				if ( destination ) {
+					body.destination = destination;
+				}
+				postApi( '/404/' + action, body )
+					.then( function () {
+						setProgress( '404 row updated.' );
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						setProgress( ( err && err.message ) || '404 action failed.', true );
+					} );
+			} );
+		}
+
+		var redirectBox = attr( '404-redirects' );
+		if ( redirectBox ) {
+			redirectBox.addEventListener( 'click', function ( e ) {
+				var btn = e.target && e.target.closest ? e.target.closest( '[data-404-redirect-action]' ) : null;
+				if ( ! btn ) {
+					return;
+				}
+				var action = btn.getAttribute( 'data-404-redirect-action' );
+				var id = Number( btn.getAttribute( 'data-404-redirect-id' ) ) || 0;
+				var path = 'delete' === action ? '/404/redirect-delete' : '/404/redirect-status';
+				var body = { id: id };
+				if ( 'status' === action ) {
+					body.status = btn.getAttribute( 'data-404-redirect-status' );
+				} else if ( ! window.confirm( 'Delete this internal redirect?' ) ) {
+					return;
+				}
+				postApi( path, body )
+					.then( function () {
+						setProgress( 'Redirect updated.' );
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						setProgress( ( err && err.message ) || 'Redirect action failed.', true );
+					} );
+			} );
+		}
+
+		function resetPageAndLoad() {
+			state.page = 1;
+			loadEvents();
+		}
+		[ statusSel, postTypeSel, confidenceMin, confidenceMax, detectedFrom, detectedTo ].forEach( function ( input ) {
+			if ( input ) {
+				input.addEventListener( 'change', resetPageAndLoad );
+			}
+		} );
+		if ( searchInput ) {
+			var searchTimer = null;
+			searchInput.addEventListener( 'input', function () {
+				window.clearTimeout( searchTimer );
+				searchTimer = window.setTimeout( resetPageAndLoad, 250 );
+			} );
+		}
+
+		var prev = attr( '404-prev' );
+		var next = attr( '404-next' );
+		if ( prev ) {
+			prev.addEventListener( 'click', function () {
+				state.page = Math.max( 1, state.page - 1 );
+				loadEvents();
+			} );
+		}
+		if ( next ) {
+			next.addEventListener( 'click', function () {
+				state.page = Math.min( state.pages, state.page + 1 );
+				loadEvents();
+			} );
+		}
+
+		var refresh = attr( '404-refresh' );
+		if ( refresh ) {
+			refresh.addEventListener( 'click', function () {
+				refresh.disabled = true;
+				setProgress( 'Refreshing valid URL cache...' );
+				postApi( '/404/refresh', {} )
+					.then( function ( data ) {
+						setProgress( 'Valid URL cache refreshed. Active candidates: ' + num( data.total ) + '.' );
+						refresh.disabled = false;
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						refresh.disabled = false;
+						setProgress( ( err && err.message ) || 'URL refresh failed.', true );
+						loadLogs();
+					} );
+			} );
+		}
+
+		var process = attr( '404-process' );
+		if ( process ) {
+			process.addEventListener( 'click', function () {
+				process.disabled = true;
+				setProgress( 'Processing recommendations...' );
+				postApi( '/404/process', { limit: 50 } )
+					.then( function ( data ) {
+						setProgress( 'Processed ' + num( data.processed ) + ' rows. Auto-created redirects: ' + num( data.auto_created ) + '.' );
+						process.disabled = false;
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						process.disabled = false;
+						setProgress( ( err && err.message ) || 'Recommendation processing failed.', true );
+						loadLogs();
+					} );
+			} );
+		}
+
+		var bulkRun = attr( '404-bulk-run' );
+		var bulkAction = attr( '404-bulk-action' );
+		if ( bulkRun && bulkAction ) {
+			bulkRun.addEventListener( 'click', function () {
+				var action = bulkAction.value;
+				if ( ! action ) {
+					return;
+				}
+				var body = { action: action, ids: selectedIds(), threshold: threshold };
+				if ( 'approve_high_confidence' !== action && ! body.ids.length ) {
+					setProgress( 'Choose at least one row first.', true );
+					return;
+				}
+				bulkRun.disabled = true;
+				postApi( '/404/bulk', body )
+					.then( function ( data ) {
+						setProgress( 'Bulk action updated ' + num( data.updated ) + ' rows' + ( Number( data.errors ) ? ' with ' + num( data.errors ) + ' errors.' : '.' ) );
+						bulkRun.disabled = false;
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						bulkRun.disabled = false;
+						setProgress( ( err && err.message ) || 'Bulk action failed.', true );
+					} );
+			} );
+		}
+
+		reloadAll();
+	}
+
+	function initGscKeywords() {
+		var root = document.getElementById( 'convertrack-gsc-keywords' );
+		if ( ! root ) {
+			return;
+		}
+
+		var state = {
+			page: 1,
+			pages: 1,
+			perPage: 25,
+			orderby: 'opportunity_score',
+			order: 'desc',
+			range: root.getAttribute( 'data-kw-default-range' ) || '28d',
+			lastRows: [],
+			statusTimer: null
+		};
+
+		var rangeSel = attr( 'kw-range' );
+		var customDates = attr( 'kw-custom-dates' );
+		var dateFrom = attr( 'kw-date-from' );
+		var dateTo = attr( 'kw-date-to' );
+		var customSync = attr( 'kw-custom-sync' );
+		var typeSel = attr( 'kw-type' );
+		var pageSel = attr( 'kw-page-filter' );
+		var oppSel = attr( 'kw-opportunity' );
+		var presenceSel = attr( 'kw-presence' );
+		var searchInput = attr( 'kw-search' );
+		var progressBox = attr( 'kw-progress' );
+		var exportLink = attr( 'kw-export' );
+		var tableBox = attr( 'kw-table' );
+		var detailCard = attr( 'kw-detail' );
+		var toolsStatus = attr( 'kw-tools-status' );
+
+		var typeLabels = {
+			branded: I18N.kwTypeBranded || 'Branded',
+			non_branded: I18N.kwTypeNonBranded || 'Non-branded',
+			service: I18N.kwTypeService || 'Service',
+			product: I18N.kwTypeProduct || 'Product',
+			location: I18N.kwTypeLocation || 'Location',
+			commercial: I18N.kwTypeCommercial || 'Commercial',
+			informational: I18N.kwTypeInformational || 'Informational',
+			transactional: I18N.kwTypeTransactional || 'Transactional',
+			navigational: I18N.kwTypeNavigational || 'Navigational',
+			question: I18N.kwTypeQuestion || 'Question',
+			long_tail: I18N.kwTypeLongTail || 'Long-tail',
+			competitor: I18N.kwTypeCompetitor || 'Competitor'
+		};
+		var presenceLabels = {
+			present: I18N.kwPresent || 'Present',
+			partial: I18N.kwPartial || 'Partial',
+			missing: I18N.kwMissing || 'Missing',
+			overused: I18N.kwOverused || 'Overused',
+			needs_improvement: I18N.kwNeedsImprovement || 'Needs improvement',
+			unknown: I18N.kwUnknown || 'Not analyzable'
+		};
+		var presenceTones = {
+			present: 'cvtrk-badge-green',
+			partial: 'cvtrk-badge-amber',
+			missing: 'cvtrk-badge-red',
+			overused: 'cvtrk-badge-amber',
+			needs_improvement: 'cvtrk-badge-amber',
+			unknown: 'cvtrk-badge-gray'
+		};
+		var levelLabels = {
+			high: I18N.kwOppHigh || 'High',
+			medium: I18N.kwOppMedium || 'Medium',
+			low: I18N.kwOppLow || 'Low',
+			optimized: I18N.kwOppOptimized || 'Optimized'
+		};
+		var levelTones = {
+			high: 'cvtrk-badge-red',
+			medium: 'cvtrk-badge-amber',
+			low: 'cvtrk-badge-gray',
+			optimized: 'cvtrk-badge-green'
+		};
+		var areaLabels = {
+			seo_title: I18N.kwAreaSeoTitle || 'SEO title',
+			meta_description: I18N.kwAreaMetaDescription || 'Meta description',
+			h1: I18N.kwAreaH1 || 'H1 heading',
+			headings: I18N.kwAreaHeadings || 'H2/H3 headings',
+			first_paragraph: I18N.kwAreaFirstParagraph || 'First paragraph',
+			body: I18N.kwAreaBody || 'Body content',
+			image_alts: I18N.kwAreaImageAlts || 'Image alt text',
+			anchor_texts: I18N.kwAreaAnchorTexts || 'Internal anchor text',
+			url_slug: I18N.kwAreaUrlSlug || 'URL slug'
+		};
+
+		function pct( fraction ) {
+			return ( ( Number( fraction ) || 0 ) * 100 ).toFixed( 1 ) + '%';
+		}
+
+		function setProgress( text, isError ) {
+			if ( ! progressBox ) {
+				return;
+			}
+			if ( ! text ) {
+				progressBox.hidden = true;
+				return;
+			}
+			progressBox.hidden = false;
+			progressBox.textContent = text;
+			progressBox.style.color = isError ? '#b84a62' : '';
+		}
+
+		function appendParam( parts, key, value ) {
+			if ( value !== undefined && value !== null && String( value ) !== '' ) {
+				parts.push( encodeURIComponent( key ) + '=' + encodeURIComponent( value ) );
+			}
+		}
+
+		function query() {
+			var parts = [];
+			appendParam( parts, 'page', state.page );
+			appendParam( parts, 'per_page', state.perPage );
+			appendParam( parts, 'range', state.range );
+			appendParam( parts, 'search', searchInput ? searchInput.value : '' );
+			appendParam( parts, 'label', typeSel && typeSel.value !== 'all' ? typeSel.value : '' );
+			appendParam( parts, 'post_id', pageSel && pageSel.value !== '0' ? pageSel.value : '' );
+			appendParam( parts, 'opportunity', oppSel && oppSel.value !== 'all' ? oppSel.value : '' );
+			appendParam( parts, 'presence', presenceSel && presenceSel.value !== 'all' ? presenceSel.value : '' );
+			appendParam( parts, 'orderby', state.orderby );
+			appendParam( parts, 'order', state.order );
+			return '?' + parts.join( '&' );
+		}
+
+		function updateExportLink() {
+			if ( ! exportLink || ! C.gscKeywordsExportUrl ) {
+				return;
+			}
+			var q = query().replace( /^\?/, '' ).replace( /(^|&)page=[^&]*/g, '' ).replace( /(^|&)per_page=[^&]*/g, '' );
+			exportLink.href = C.gscKeywordsExportUrl + '&_wpnonce=' + encodeURIComponent( C.gscKeywordsExportNonce || '' ) + ( q ? '&' + q.replace( /^&/, '' ) : '' );
+		}
+
+		function kpi( value, label, icon, modifier ) {
+			var item = el( 'div', 'cvtrk-kpi' + ( modifier ? ' ' + modifier : '' ) );
+			var iconWrap = el( 'span', 'cvtrk-kpi-icon' );
+			iconWrap.appendChild( svgIcon( icon || 'search', 'cvtrk-icon' ) );
+			var body = el( 'span', 'cvtrk-kpi-body' );
+			body.appendChild( el( 'span', 'cvtrk-kpi-value', value ) );
+			body.appendChild( el( 'span', 'cvtrk-kpi-label', label ) );
+			item.appendChild( iconWrap );
+			item.appendChild( body );
+			return item;
+		}
+
+		function renderSummary( data ) {
+			var box = attr( 'kw-summary' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+
+			if ( ! data.connected ) {
+				empty( box, I18N.kwNotConnected || 'Connect Google Search Console first.' );
+				return;
+			}
+			if ( ! data.enabled ) {
+				empty( box, I18N.kwDisabled || 'Enable Keyword Insights in the settings below.' );
+				return;
+			}
+			if ( ! data.has_data ) {
+				var cta = el( 'div', 'cvtrk-empty' );
+				cta.appendChild( svgIcon( 'search', 'cvtrk-empty-icon' ) );
+				cta.appendChild( el( 'p', null, I18N.kwNeverSynced || 'No keyword data yet.' ) );
+				var btn = el( 'button', 'button button-primary', I18N.kwSyncFirst || 'Sync now' );
+				btn.type = 'button';
+				btn.addEventListener( 'click', function () {
+					startSync( {} );
+				} );
+				cta.appendChild( btn );
+				box.appendChild( cta );
+				return;
+			}
+
+			var grid = el( 'div', 'cvtrk-kpis cvtrk-kw-kpis' );
+			grid.appendChild( kpi( num( data.total_keywords ), I18N.kwTotalKeywords || 'Tracked keywords', 'search' ) );
+			grid.appendChild( kpi( num( data.high_opportunity ), I18N.kwHighOpportunity || 'High opportunity', 'click', 'is-accent' ) );
+			grid.appendChild( kpi( num( data.pages_missing ), I18N.kwPagesMissing || 'Pages with missing keywords', 'warning' ) );
+			grid.appendChild( kpi( num( data.page_two ), I18N.kwPageTwo || 'Page-2 rankings (11-20)', 'rate', 'is-amber' ) );
+			grid.appendChild( kpi( num( data.low_ctr ), I18N.kwLowCtr || 'High impressions, low CTR', 'visibility' ) );
+			box.appendChild( grid );
+
+			var meta = el( 'div', 'cvtrk-kw-meta' );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.kwLastSync || 'Last keyword sync' ) + ': ' + shortDate( data.last_synced_at ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.kwLastAnalysis || 'Last content analysis' ) + ': ' + shortDate( data.last_analyzed_at ) ) );
+			if ( Number( data.pending_analysis ) > 0 ) {
+				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', ( I18N.kwPendingAnalysis || 'Keywords awaiting analysis' ) + ': ' + num( data.pending_analysis ) ) );
+			}
+			var lastSync = data.last_sync && data.last_sync[ state.range ];
+			if ( lastSync && lastSync.truncated ) {
+				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', I18N.kwTruncated || 'Row cap reached.' ) );
+			}
+			box.appendChild( meta );
+
+			if ( data.last_error && data.last_error.message ) {
+				setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + data.last_error.message, true );
+			}
+			if ( data.sync && data.sync.running ) {
+				beginPolling();
+			}
+		}
+
+		function renderBranded( data ) {
+			var box = attr( 'kw-branded' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+
+			var branded = Number( data.branded ) || 0;
+			var non = Number( data.non_branded ) || 0;
+			var total = branded + non;
+			if ( ! total ) {
+				empty( box );
+				return;
+			}
+
+			var bar = el( 'div', 'cvtrk-split-bar' );
+			var segA = el( 'span', 'cvtrk-split-seg is-a' );
+			segA.style.width = ( ( branded / total ) * 100 ) + '%';
+			var segB = el( 'span', 'cvtrk-split-seg is-b' );
+			segB.style.width = ( ( non / total ) * 100 ) + '%';
+			bar.appendChild( segA );
+			bar.appendChild( segB );
+			box.appendChild( bar );
+
+			var legend = el( 'div', 'cvtrk-split-legend' );
+			var itemA = el( 'span', 'cvtrk-split-item' );
+			itemA.appendChild( el( 'span', 'cvtrk-split-swatch is-a' ) );
+			itemA.appendChild( el( 'span', null, ( I18N.kwBranded || 'Branded' ) + ': ' + num( branded ) + ' (' + Math.round( ( branded / total ) * 100 ) + '%)' ) );
+			var itemB = el( 'span', 'cvtrk-split-item' );
+			itemB.appendChild( el( 'span', 'cvtrk-split-swatch is-b' ) );
+			itemB.appendChild( el( 'span', null, ( I18N.kwNonBranded || 'Non-branded' ) + ': ' + num( non ) + ' (' + Math.round( ( non / total ) * 100 ) + '%)' ) );
+			legend.appendChild( itemA );
+			legend.appendChild( itemB );
+			box.appendChild( legend );
+		}
+
+		function renderTopPages( rows ) {
+			var box = attr( 'kw-top-pages' );
+			if ( ! box ) {
+				return;
+			}
+			clear( box );
+			rows = ( rows || [] ).filter( function ( row ) {
+				return Number( row.keywords ) > 0;
+			} );
+			if ( ! rows.length ) {
+				empty( box );
+				return;
+			}
+
+			var wrap = table( [
+				{ label: I18N.page || 'Page' },
+				{ label: I18N.kwRowsLabel || 'keywords', num: true },
+				{ label: I18N.kwOpportunity || 'Opportunity', num: true },
+				{ label: '' }
+			] );
+			var tbody = wrap.querySelector( 'tbody' );
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, row.page_url ) );
+				tr.appendChild( numCell( row.keywords ) );
+				tr.appendChild( textNumCell( String( Math.round( row.opportunity_score ) ) ) );
+				var td = el( 'td', 'cvtrk-kw-actions' );
+				if ( row.post_id ) {
+					var btn = el( 'button', 'button button-small', I18N.kwDetails || 'Details' );
+					btn.type = 'button';
+					btn.setAttribute( 'data-kw-action', 'details' );
+					btn.setAttribute( 'data-kw-post', row.post_id );
+					td.appendChild( btn );
+				}
+				tr.appendChild( td );
+				tbody.appendChild( tr );
+			} );
+			box.appendChild( wrap );
+		}
+
+		function loadSummary() {
+			api( '/gsc/keywords/summary?range=' + encodeURIComponent( state.range ) )
+				.then( function ( data ) {
+					renderSummary( data );
+					renderBranded( data );
+					renderTopPages( data.top_pages || [] );
+				} )
+				.catch( function ( err ) {
+					var box = attr( 'kw-summary' );
+					if ( box ) {
+						empty( box, ( err && err.message ) || 'Could not load keyword summary.' );
+					}
+				} );
+		}
+
+		function sortableTable( headers ) {
+			var wrap = el( 'div', 'cvtrk-table-wrap' );
+			var t = el( 'table', 'cvtrk-table' );
+			var thead = el( 'thead' );
+			var tr = el( 'tr' );
+			headers.forEach( function ( h ) {
+				var cls = h.num ? 'cvtrk-num' : '';
+				if ( h.sort ) {
+					cls += ' cvtrk-sortable';
+					if ( state.orderby === h.sort ) {
+						cls += state.order === 'asc' ? ' is-sorted-asc' : ' is-sorted-desc';
+					}
+				}
+				var th = el( 'th', cls.trim() || null, h.label );
+				if ( h.sort ) {
+					th.addEventListener( 'click', function () {
+						if ( state.orderby === h.sort ) {
+							state.order = state.order === 'asc' ? 'desc' : 'asc';
+						} else {
+							state.orderby = h.sort;
+							state.order = 'desc';
+						}
+						state.page = 1;
+						loadKeywords();
+						updateExportLink();
+					} );
+				}
+				tr.appendChild( th );
+			} );
+			thead.appendChild( tr );
+			t.appendChild( thead );
+			t.appendChild( el( 'tbody' ) );
+			wrap.appendChild( t );
+			return wrap;
+		}
+
+		function checkboxCell( id ) {
+			var td = el( 'td' );
+			var input = document.createElement( 'input' );
+			input.type = 'checkbox';
+			input.className = 'cvtrk-kw-select';
+			input.value = String( id );
+			td.appendChild( input );
+			return td;
+		}
+
+		function typeBadgesCell( labels ) {
+			var td = el( 'td' );
+			var group = el( 'span', 'cvtrk-badge-group' );
+			var shown = ( labels || [] ).slice( 0, 3 );
+			shown.forEach( function ( slug ) {
+				group.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', typeLabels[ slug ] || slug ) );
+			} );
+			if ( ( labels || [] ).length > 3 ) {
+				var more = el( 'span', 'cvtrk-badge cvtrk-badge-gray', '+' + ( labels.length - 3 ) );
+				more.title = labels.slice( 3 ).map( function ( slug ) {
+					return typeLabels[ slug ] || slug;
+				} ).join( ', ' );
+				group.appendChild( more );
+			}
+			td.appendChild( group );
+			return td;
+		}
+
+		function presenceCell( status, analyzed ) {
+			var td = el( 'td' );
+			if ( ! analyzed ) {
+				td.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', I18N.kwQueuedForAnalysis || 'Queued for analysis' ) );
+				return td;
+			}
+			td.appendChild( el( 'span', 'cvtrk-badge ' + ( presenceTones[ status ] || 'cvtrk-badge-gray' ), presenceLabels[ status ] || status ) );
+			return td;
+		}
+
+		function opportunityCell( score, level, analyzed ) {
+			var td = el( 'td', 'cvtrk-num' );
+			if ( ! analyzed ) {
+				td.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', '—' ) );
+				return td;
+			}
+			var badge = el( 'span', 'cvtrk-badge cvtrk-score-pill ' + ( levelTones[ level ] || 'cvtrk-badge-gray' ) );
+			badge.appendChild( el( 'b', null, String( Math.round( Number( score ) || 0 ) ) ) );
+			if ( level ) {
+				badge.appendChild( document.createTextNode( ' ' + ( levelLabels[ level ] || level ) ) );
+			}
+			td.appendChild( badge );
+			return td;
+		}
+
+		function renderKeywords( data ) {
+			if ( ! tableBox ) {
+				return;
+			}
+			clear( tableBox );
+			state.pages = Number( data.pages ) || 1;
+			state.lastRows = data.rows || [];
+
+			if ( ! state.lastRows.length ) {
+				empty( tableBox, I18N.kwNoResults || 'No keywords match the current filters.' );
+				updatePagination();
+				return;
+			}
+
+			var wrap = sortableTable( [
+				{ label: '' },
+				{ label: I18N.kwKeyword || 'Keyword', sort: 'query' },
+				{ label: I18N.page || 'Page' },
+				{ label: I18N.kwTypes || 'Type' },
+				{ label: I18N.clicks || 'Clicks', num: true, sort: 'clicks' },
+				{ label: I18N.kwImpressions || 'Impressions', num: true, sort: 'impressions' },
+				{ label: I18N.kwCtrShort || 'CTR', num: true, sort: 'ctr' },
+				{ label: I18N.kwPosition || 'Position', num: true, sort: 'position' },
+				{ label: I18N.kwPresence || 'Presence' },
+				{ label: I18N.kwOpportunity || 'Opportunity', num: true, sort: 'opportunity_score' },
+				{ label: I18N.kwAction || 'Recommended action' },
+				{ label: I18N.actions || 'Actions' }
+			] );
+			var tbody = wrap.querySelector( 'tbody' );
+
+			state.lastRows.forEach( function ( row ) {
+				var analyzed = row.analysis_state === 'done';
+				var tr = el( 'tr' );
+				tr.appendChild( checkboxCell( row.id ) );
+				tr.appendChild( labelCell( row.query ) );
+				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, row.page_url ) );
+				tr.appendChild( analyzed ? typeBadgesCell( row.labels ) : el( 'td', null, '—' ) );
+				tr.appendChild( numCell( row.clicks ) );
+				tr.appendChild( numCell( row.impressions ) );
+				tr.appendChild( textNumCell( pct( row.ctr ) ) );
+				tr.appendChild( textNumCell( ( Number( row.position ) || 0 ).toFixed( 1 ) ) );
+				tr.appendChild( presenceCell( row.presence_status, analyzed ) );
+				tr.appendChild( opportunityCell( row.opportunity_score, row.opportunity_level, analyzed ) );
+				tr.appendChild( labelCell( row.primary_recommendation ? row.primary_recommendation.message : '—' ) );
+
+				var actions = el( 'td', 'cvtrk-kw-actions' );
+				if ( row.post_id ) {
+					var details = el( 'button', 'button button-small', I18N.kwDetails || 'Details' );
+					details.type = 'button';
+					details.setAttribute( 'data-kw-action', 'details' );
+					details.setAttribute( 'data-kw-post', row.post_id );
+					actions.appendChild( details );
+				}
+				var reanalyze = el( 'button', 'button button-small', I18N.kwReanalyze || 'Re-analyze' );
+				reanalyze.type = 'button';
+				reanalyze.setAttribute( 'data-kw-action', 'reanalyze' );
+				reanalyze.setAttribute( 'data-kw-id', row.id );
+				actions.appendChild( reanalyze );
+				tr.appendChild( actions );
+
+				tbody.appendChild( tr );
+			} );
+
+			tableBox.appendChild( wrap );
+			updatePagination();
+		}
+
+		function loadKeywords() {
+			api( '/gsc/keywords' + query() )
+				.then( renderKeywords )
+				.catch( function ( err ) {
+					if ( tableBox ) {
+						empty( tableBox, ( err && err.message ) || 'Could not load keywords.' );
+					}
+				} );
+		}
+
+		function updatePagination() {
+			var prev = attr( 'kw-prev' );
+			var next = attr( 'kw-next' );
+			var label = attr( 'kw-page' );
+			if ( label ) {
+				label.textContent = state.page + ' / ' + state.pages;
+			}
+			if ( prev ) {
+				prev.disabled = state.page <= 1;
+			}
+			if ( next ) {
+				next.disabled = state.page >= state.pages;
+			}
+		}
+
+		function selectedIds() {
+			var ids = [];
+			root.querySelectorAll( '.cvtrk-kw-select:checked' ).forEach( function ( input ) {
+				ids.push( Number( input.value ) );
+			} );
+			return ids;
+		}
+
+		function loadPageFilter() {
+			if ( ! pageSel ) {
+				return;
+			}
+			api( '/gsc/keywords/pages?range=' + encodeURIComponent( state.range ) + '&limit=100' )
+				.then( function ( data ) {
+					var current = pageSel.value;
+					while ( pageSel.options.length > 1 ) {
+						pageSel.remove( 1 );
+					}
+					( data.rows || [] ).forEach( function ( row ) {
+						if ( ! row.post_id ) {
+							return;
+						}
+						var option = document.createElement( 'option' );
+						option.value = String( row.post_id );
+						option.textContent = ( row.post_title || row.page_url ) + ' (' + num( row.keywords ) + ')';
+						pageSel.appendChild( option );
+					} );
+					pageSel.value = current;
+					if ( pageSel.selectedIndex < 0 ) {
+						pageSel.value = '0';
+					}
+				} )
+				.catch( function () {} );
+		}
+
+		/* Page detail --------------------------------------------------------- */
+
+		function badgeList( parent, items, tone ) {
+			var group = el( 'div', 'cvtrk-badge-group' );
+			items.forEach( function ( item ) {
+				var badge = el( 'span', 'cvtrk-badge ' + tone, item.query );
+				badge.title = num( item.impressions ) + ' impressions · ' + num( item.clicks ) + ' clicks · pos ' + ( Number( item.position ) || 0 ).toFixed( 1 );
+				group.appendChild( badge );
+			} );
+			parent.appendChild( group );
+		}
+
+		function detailSection( parent, title ) {
+			var section = el( 'div', 'cvtrk-kw-detail-section' );
+			section.appendChild( el( 'h3', 'cvtrk-gsc-group-title', title ) );
+			parent.appendChild( section );
+			return section;
+		}
+
+		function renderDetail( data ) {
+			var body = attr( 'kw-detail-body' );
+			var title = attr( 'kw-detail-title' );
+			var sub = attr( 'kw-detail-sub' );
+			if ( ! body ) {
+				return;
+			}
+			clear( body );
+			if ( title ) {
+				title.textContent = data.page.post_title || data.page.page_url;
+			}
+			if ( sub ) {
+				sub.textContent = data.page.page_url;
+			}
+
+			var totals = data.totals || {};
+			var grid = el( 'div', 'cvtrk-kpis cvtrk-kw-kpis' );
+			grid.appendChild( kpi( num( totals.keywords ), I18N.kwTotalKeywords || 'Tracked keywords', 'search' ) );
+			grid.appendChild( kpi( num( totals.clicks ), I18N.clicks || 'Clicks', 'click' ) );
+			grid.appendChild( kpi( num( totals.impressions ), I18N.kwImpressions || 'Impressions', 'visibility' ) );
+			grid.appendChild( kpi( ( Number( totals.avg_position ) || 0 ).toFixed( 1 ), I18N.kwPosition || 'Position', 'rate' ) );
+			grid.appendChild( kpi( num( totals.missing ), I18N.kwMissingGroup || 'Missing from page', 'warning', 'is-amber' ) );
+			body.appendChild( grid );
+
+			if ( data.page.edit_link ) {
+				var editWrap = el( 'p' );
+				var edit = el( 'a', 'button', I18N.kwEditPage || 'Edit page' );
+				edit.href = data.page.edit_link;
+				edit.target = '_blank';
+				edit.rel = 'noopener noreferrer';
+				editWrap.appendChild( edit );
+				body.appendChild( editWrap );
+			}
+
+			var groups = el( 'div', 'cvtrk-gsc-groups' );
+			var groupDefs = [
+				{ key: 'present', tone: 'is-good', badge: 'cvtrk-badge-green', label: I18N.kwIncluded || 'Included on page' },
+				{ key: 'partial', tone: 'is-warn', badge: 'cvtrk-badge-amber', label: I18N.kwPartialGroup || 'Partially covered' },
+				{ key: 'missing', tone: 'is-bad', badge: 'cvtrk-badge-red', label: I18N.kwMissingGroup || 'Missing from page' }
+			];
+			groupDefs.forEach( function ( def ) {
+				var items = ( data.groups && data.groups[ def.key ] ) || [];
+				var section = el( 'div', 'cvtrk-gsc-group ' + def.tone );
+				section.appendChild( el( 'h3', 'cvtrk-gsc-group-title', def.label + ' (' + items.length + ')' ) );
+				if ( items.length ) {
+					badgeList( section, items.slice( 0, 30 ), def.badge );
+				} else {
+					section.appendChild( el( 'p', 'cvtrk-sub', I18N.noData || 'None.' ) );
+				}
+				groups.appendChild( section );
+			} );
+			body.appendChild( groups );
+
+			if ( data.recommendations && data.recommendations.length ) {
+				var recSection = detailSection( body, I18N.kwPageRecs || 'Recommended actions for this page' );
+				var recList = el( 'ol', 'cvtrk-kw-list' );
+				data.recommendations.forEach( function ( rec ) {
+					var li = el( 'li', null, rec.message );
+					if ( rec.keywords && rec.keywords.length ) {
+						li.appendChild( el( 'span', 'cvtrk-sub', ' — ' + rec.keywords.join( ', ' ) ) );
+					}
+					recList.appendChild( li );
+				} );
+				recSection.appendChild( recList );
+			}
+
+			if ( data.placements && data.placements.length ) {
+				var placeSection = detailSection( body, I18N.kwPlacements || 'Recommended placements' );
+				var wrap = table( [
+					{ label: I18N.kwKeyword || 'Keyword' },
+					{ label: I18N.kwAreas || 'Content area coverage' }
+				] );
+				var tbody = wrap.querySelector( 'tbody' );
+				data.placements.forEach( function ( item ) {
+					var tr = el( 'tr' );
+					tr.appendChild( labelCell( item.query ) );
+					var td = el( 'td' );
+					var group = el( 'span', 'cvtrk-badge-group' );
+					item.areas.forEach( function ( area ) {
+						group.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', areaLabels[ area ] || area ) );
+					} );
+					td.appendChild( group );
+					tr.appendChild( td );
+					tbody.appendChild( tr );
+				} );
+				placeSection.appendChild( wrap );
+			}
+
+			if ( data.faq && data.faq.length ) {
+				var faqSection = detailSection( body, I18N.kwFaq || 'Suggested FAQ questions' );
+				var faqList = el( 'ul', 'cvtrk-kw-list' );
+				data.faq.forEach( function ( q ) {
+					faqList.appendChild( el( 'li', null, q ) );
+				} );
+				faqSection.appendChild( faqList );
+			}
+
+			if ( data.anchors && data.anchors.length ) {
+				var anchorSection = detailSection( body, I18N.kwAnchors || 'Suggested internal link anchor texts' );
+				var anchorList = el( 'ul', 'cvtrk-kw-list' );
+				data.anchors.forEach( function ( a ) {
+					anchorList.appendChild( el( 'li', null, a ) );
+				} );
+				anchorSection.appendChild( anchorList );
+			}
+
+			if ( data.title_meta ) {
+				var tmSection = detailSection( body, I18N.kwTitleMeta || 'Current SEO title & description' );
+				tmSection.appendChild( el( 'p', 'cvtrk-strong', data.title_meta.title || '—' ) );
+				tmSection.appendChild( el( 'p', 'cvtrk-sub', data.title_meta.description || '—' ) );
+			}
+
+			if ( data.areas_summary && data.areas_summary.length ) {
+				var areaSection = detailSection( body, I18N.kwAreas || 'Content area coverage' );
+				var areaGroup = el( 'div', 'cvtrk-badge-group' );
+				data.areas_summary.forEach( function ( area ) {
+					var total = area.present + area.partial + area.missing;
+					if ( ! total ) {
+						return;
+					}
+					var tone = area.present > 0 ? 'cvtrk-badge-green' : ( area.partial > 0 ? 'cvtrk-badge-amber' : 'cvtrk-badge-red' );
+					areaGroup.appendChild( el( 'span', 'cvtrk-badge ' + tone, ( areaLabels[ area.area ] || area.area ) + ': ' + area.present + '/' + total ) );
+				} );
+				areaSection.appendChild( areaGroup );
+			}
+		}
+
+		function openDetail( postId ) {
+			if ( ! detailCard || ! postId ) {
+				return;
+			}
+			detailCard.hidden = false;
+			var body = attr( 'kw-detail-body' );
+			if ( body ) {
+				clear( body );
+				body.appendChild( el( 'p', 'cvtrk-skeleton', I18N.loading || 'Loading…' ) );
+			}
+			api( '/gsc/keywords/page?post_id=' + encodeURIComponent( postId ) + '&range=' + encodeURIComponent( state.range ) )
+				.then( function ( data ) {
+					renderDetail( data );
+					detailCard.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+					if ( window.history && history.replaceState ) {
+						history.replaceState( null, '', '#kw-page-' + postId );
+					}
+				} )
+				.catch( function ( err ) {
+					var box = attr( 'kw-detail-body' );
+					if ( box ) {
+						empty( box, ( I18N.kwDetailFailed || 'Could not load the page detail:' ) + ' ' + ( ( err && err.message ) || '' ) );
+					}
+				} );
+		}
+
+		function closeDetail() {
+			if ( detailCard ) {
+				detailCard.hidden = true;
+			}
+			if ( window.history && history.replaceState ) {
+				history.replaceState( null, '', location.pathname + location.search );
+			}
+		}
+
+		/* Sync + analysis ------------------------------------------------------ */
+
+		function setSyncButtons( disabled ) {
+			[ attr( 'kw-sync' ), attr( 'kw-sync-now' ), customSync ].forEach( function ( btn ) {
+				if ( btn ) {
+					btn.disabled = disabled;
+				}
+			} );
+		}
+
+		function startSync( body ) {
+			setSyncButtons( true );
+			setProgress( I18N.kwSyncQueued || 'Keyword sync started…' );
+			postApi( '/gsc/keywords/sync', body || {} )
+				.then( function () {
+					beginPolling();
+				} )
+				.catch( function ( err ) {
+					setSyncButtons( false );
+					setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+				} );
+		}
+
+		function beginPolling() {
+			if ( state.statusTimer ) {
+				return;
+			}
+			setSyncButtons( true );
+			state.statusTimer = window.setInterval( function () {
+				api( '/gsc/keywords/status' )
+					.then( function ( data ) {
+						var sync = data.sync || {};
+						if ( sync.running ) {
+							var progress = sync.progress || {};
+							setProgress( ( I18N.kwSyncRunning || 'Syncing keyword data from Search Console…' ) + ' ' + num( progress.rows_stored ) + ' ' + ( I18N.kwRowsLabel || 'keywords' ) + ' (' + ( progress.percent || 0 ) + '%)' );
+							return;
+						}
+
+						window.clearInterval( state.statusTimer );
+						state.statusTimer = null;
+						setSyncButtons( false );
+
+						if ( sync.status === 'failed' && sync.last_error ) {
+							setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + sync.last_error.message, true );
+						} else {
+							setProgress( I18N.kwSyncDone || 'Keyword sync complete.' );
+						}
+						reloadAll();
+					} )
+					.catch( function () {} );
+			}, 4000 );
+		}
+
+		function reloadAll() {
+			loadSummary();
+			loadKeywords();
+			loadPageFilter();
+			updateExportLink();
+		}
+
+		/* Events --------------------------------------------------------------- */
+
+		if ( rangeSel ) {
+			rangeSel.addEventListener( 'change', function () {
+				state.range = rangeSel.value;
+				state.page = 1;
+				var isCustom = state.range === 'custom';
+				if ( customDates ) {
+					customDates.hidden = ! isCustom;
+				}
+				if ( isCustom ) {
+					setProgress( I18N.kwCustomHint || 'Pick both dates, then press "Sync range".' );
+				} else {
+					setProgress( '' );
+				}
+				reloadAll();
+			} );
+		}
+
+		if ( customSync ) {
+			customSync.addEventListener( 'click', function () {
+				if ( ! dateFrom || ! dateTo || ! dateFrom.value || ! dateTo.value ) {
+					setProgress( I18N.kwCustomHint || 'Pick both dates first.', true );
+					return;
+				}
+				startSync( { date_from: dateFrom.value, date_to: dateTo.value } );
+			} );
+		}
+
+		[ typeSel, pageSel, oppSel, presenceSel ].forEach( function ( select ) {
+			if ( select ) {
+				select.addEventListener( 'change', function () {
+					state.page = 1;
+					loadKeywords();
+					updateExportLink();
+				} );
+			}
+		} );
+
+		if ( searchInput ) {
+			var searchTimer = null;
+			searchInput.addEventListener( 'input', function () {
+				window.clearTimeout( searchTimer );
+				searchTimer = window.setTimeout( function () {
+					state.page = 1;
+					loadKeywords();
+					updateExportLink();
+				}, 250 );
+			} );
+		}
+
+		var prevBtn = attr( 'kw-prev' );
+		var nextBtn = attr( 'kw-next' );
+		if ( prevBtn ) {
+			prevBtn.addEventListener( 'click', function () {
+				if ( state.page > 1 ) {
+					state.page--;
+					loadKeywords();
+				}
+			} );
+		}
+		if ( nextBtn ) {
+			nextBtn.addEventListener( 'click', function () {
+				if ( state.page < state.pages ) {
+					state.page++;
+					loadKeywords();
+				}
+			} );
+		}
+
+		[ attr( 'kw-sync' ), attr( 'kw-sync-now' ) ].forEach( function ( btn ) {
+			if ( btn ) {
+				btn.addEventListener( 'click', function () {
+					startSync( {} );
+				} );
+			}
+		} );
+
+		var reanalyzeAll = attr( 'kw-reanalyze-all' );
+		if ( reanalyzeAll ) {
+			reanalyzeAll.addEventListener( 'click', function () {
+				reanalyzeAll.disabled = true;
+				postApi( '/gsc/keywords/analyze', {} )
+					.then( function ( data ) {
+						reanalyzeAll.disabled = false;
+						if ( toolsStatus ) {
+							toolsStatus.hidden = false;
+							toolsStatus.textContent = ( I18N.kwAnalyzeQueued || 'Re-analysis queued for' ) + ' ' + num( data.queued ) + ' ' + ( I18N.kwRowsLabel || 'keywords' ) + '.';
+						}
+					} )
+					.catch( function ( err ) {
+						reanalyzeAll.disabled = false;
+						setProgress( ( err && err.message ) || 'Re-analysis failed.', true );
+					} );
+			} );
+		}
+
+		var bulkBtn = attr( 'kw-bulk-reanalyze' );
+		if ( bulkBtn ) {
+			bulkBtn.addEventListener( 'click', function () {
+				var ids = selectedIds();
+				if ( ! ids.length ) {
+					setProgress( I18N.kwSelectRows || 'Choose at least one keyword first.', true );
+					return;
+				}
+				bulkBtn.disabled = true;
+				postApi( '/gsc/keywords/bulk', { action: 'reanalyze', ids: ids } )
+					.then( function ( data ) {
+						bulkBtn.disabled = false;
+						setProgress( ( I18N.kwBulkQueued || 'Queued for re-analysis:' ) + ' ' + num( data.updated ) );
+						window.setTimeout( loadKeywords, 1500 );
+					} )
+					.catch( function ( err ) {
+						bulkBtn.disabled = false;
+						setProgress( ( err && err.message ) || 'Bulk action failed.', true );
+					} );
+			} );
+		}
+
+		root.addEventListener( 'click', function ( event ) {
+			var target = event.target.closest ? event.target.closest( '[data-kw-action]' ) : null;
+			if ( ! target ) {
+				return;
+			}
+			var action = target.getAttribute( 'data-kw-action' );
+			if ( action === 'details' ) {
+				openDetail( Number( target.getAttribute( 'data-kw-post' ) ) );
+			} else if ( action === 'reanalyze' ) {
+				target.disabled = true;
+				postApi( '/gsc/keywords/bulk', { action: 'reanalyze', ids: [ Number( target.getAttribute( 'data-kw-id' ) ) ] } )
+					.then( function () {
+						target.disabled = false;
+						setProgress( ( I18N.kwBulkQueued || 'Queued for re-analysis:' ) + ' 1' );
+						window.setTimeout( loadKeywords, 1500 );
+					} )
+					.catch( function ( err ) {
+						target.disabled = false;
+						setProgress( ( err && err.message ) || 'Re-analysis failed.', true );
+					} );
+			}
+		} );
+
+		var backBtn = attr( 'kw-detail-back' );
+		if ( backBtn ) {
+			backBtn.addEventListener( 'click', closeDetail );
+		}
+
+		reloadAll();
+
+		// Resume progress polling after reloads and honor detail deep links.
+		api( '/gsc/keywords/status' )
+			.then( function ( data ) {
+				if ( data.sync && data.sync.running ) {
+					beginPolling();
+				}
+			} )
+			.catch( function () {} );
+
+		var hashMatch = /^#kw-page-(\d+)$/.exec( location.hash || '' );
+		if ( hashMatch ) {
+			openDetail( Number( hashMatch[ 1 ] ) );
+		}
+	}
+
 	/* Boot ---------------------------------------------------------------- */
 
 	initLive();
@@ -2619,4 +4215,6 @@
 		initFunnels();
 	}
 	initGsc();
+	init404Monitor();
+	initGscKeywords();
 } )();
