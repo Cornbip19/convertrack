@@ -640,6 +640,18 @@ class Admin {
 					'kwTypeQuestion'     => __( 'Question', 'convertrack-click-conversion-analytics' ),
 					'kwTypeLongTail'     => __( 'Long-tail', 'convertrack-click-conversion-analytics' ),
 					'kwTypeCompetitor'   => __( 'Competitor', 'convertrack-click-conversion-analytics' ),
+					'kwPromptEnableTitle'   => __( 'Turn on Keyword Insights', 'convertrack-click-conversion-analytics' ),
+					'kwPromptEnableBody'    => __( 'This feature is off. Enable it to pull your Search Console keywords and get on-page content recommendations — no need to open the settings below.', 'convertrack-click-conversion-analytics' ),
+					'kwPromptEnableBtn'     => __( 'Enable & sync now', 'convertrack-click-conversion-analytics' ),
+					'kwPromptDismiss'       => __( 'Not now', 'convertrack-click-conversion-analytics' ),
+					'kwPromptConnectTitle'  => __( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ),
+					'kwPromptConnectBody'   => __( 'Keyword Insights needs your Search Console connection to pull keyword data. Connect Google first, then enable this feature.', 'convertrack-click-conversion-analytics' ),
+					'kwPromptConnectBtn'    => __( 'Open Google Index Monitor', 'convertrack-click-conversion-analytics' ),
+					'kwPromptEnableAnyway'  => __( 'Enable anyway', 'convertrack-click-conversion-analytics' ),
+					'kwEnabling'            => __( 'Enabling…', 'convertrack-click-conversion-analytics' ),
+					'kwEnabledMsg'          => __( 'Keyword Insights enabled.', 'convertrack-click-conversion-analytics' ),
+					'kwEnableFailed'        => __( 'Could not enable Keyword Insights:', 'convertrack-click-conversion-analytics' ),
+					'kwClose'               => __( 'Close', 'convertrack-click-conversion-analytics' ),
 				),
 			)
 		);

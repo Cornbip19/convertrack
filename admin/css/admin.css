@@ -17,16 +17,18 @@
 	--cvtrk-bg: #f5f7fa;
 	--cvtrk-card: #fff;
 	--cvtrk-card-soft: #f8fbfc;
-	--cvtrk-border: #d9e3ea;
-	--cvtrk-border-strong: #bacbd6;
-	--cvtrk-ink: #10243a;
-	--cvtrk-secondary: #4f6578;
-	--cvtrk-muted: #6f8292;
-	--cvtrk-shadow-sm: 0 1px 2px rgba(11, 42, 74, 0.07);
-	--cvtrk-shadow: 0 12px 30px rgba(11, 42, 74, 0.09);
+	--cvtrk-border: #dde7ed;
+	--cvtrk-border-strong: #c5d3dc;
+	--cvtrk-ink: #13263a;
+	--cvtrk-secondary: #506779;
+	--cvtrk-muted: #778999;
+	--cvtrk-shadow-sm: 0 1px 2px rgba(11, 42, 74, 0.045);
+	--cvtrk-shadow: 0 10px 24px rgba(11, 42, 74, 0.075);
 	--cvtrk-radius: 8px;
 	--cvtrk-radius-sm: 6px;
 	color: var(--cvtrk-ink);
+	font-size: 13px;
+	line-height: 1.45;
 	margin-right: 20px;
 	width: auto;
 	max-width: none;
@@ -103,7 +105,8 @@
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 11px;
-	font-weight: 700;
+	font-weight: 500;
+	line-height: 1.2;
 	white-space: nowrap;
 }
 
@@ -111,7 +114,8 @@
 	margin: 0;
 	color: var(--cvtrk-muted);
 	font-size: 13px;
-	font-weight: 600;
+	font-weight: 400;
+	line-height: 1.45;
 }
 
 .cvtrk-header-status {
@@ -132,13 +136,14 @@
 	background: var(--cvtrk-teal-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 13px;
-	font-weight: 700;
+	font-weight: 500;
 	white-space: nowrap;
 }
 
 .cvtrk-live b {
 	color: var(--cvtrk-navy);
 	font-size: 16px;
+	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -178,7 +183,7 @@
 	border-radius: var(--cvtrk-radius) var(--cvtrk-radius) 0 0;
 	color: var(--cvtrk-secondary);
 	font-size: 13px;
-	font-weight: 750;
+	font-weight: 500;
 	text-decoration: none;
 	white-space: nowrap;
 	outline-offset: -2px;
@@ -197,6 +202,7 @@
 	border-bottom-color: var(--cvtrk-teal);
 	background: #fff;
 	color: var(--cvtrk-navy);
+	font-weight: 600;
 	box-shadow: 0 1px 0 #fff;
 }
 
@@ -240,7 +246,8 @@
 	gap: 7px;
 	color: var(--cvtrk-secondary);
 	font-size: 13px;
-	font-weight: 750;
+	font-weight: 500;
+	line-height: 1.35;
 }
 
 .cvtrk-mini-field {
@@ -252,6 +259,8 @@
 .cvtrk-mini-field span {
 	color: var(--cvtrk-muted);
 	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.3;
 	text-transform: uppercase;
 }
 
@@ -266,7 +275,7 @@
 	gap: 6px;
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 700;
+	font-weight: 400;
 }
 
 .cvtrk-export-group .cvtrk-field {
@@ -333,7 +342,9 @@
 	border-radius: var(--cvtrk-radius-sm);
 	background: #fff;
 	color: var(--cvtrk-navy);
-	font-weight: 750;
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 1.35;
 	box-shadow: none;
 	text-decoration: none;
 	white-space: nowrap;
@@ -361,8 +372,8 @@
 }
 
 .convertrack .button-small {
-	min-height: 30px;
-	padding: 2px 10px;
+	min-height: 28px;
+	padding: 2px 9px;
 	font-size: 12px;
 }
 
@@ -407,7 +418,7 @@
 	width: 100%;
 	max-width: 100%;
 	min-width: 0;
-	margin: 0 0 18px;
+	margin: 0 0 16px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: var(--cvtrk-radius);
 	background: var(--cvtrk-card);
@@ -424,7 +435,7 @@
 	width: 100%;
 	max-width: 100%;
 	min-width: 0;
-	padding: 16px 18px;
+	padding: 15px 18px;
 	border-bottom: 1px solid var(--cvtrk-border);
 	background: #fff;
 	border-radius: var(--cvtrk-radius) var(--cvtrk-radius) 0 0;
@@ -435,7 +446,7 @@
 	margin: 0;
 	color: var(--cvtrk-ink);
 	font-size: 14px;
-	font-weight: 800;
+	font-weight: 600;
 	line-height: 1.35;
 	letter-spacing: 0;
 	text-transform: none;
@@ -458,7 +469,8 @@
 	margin-top: 4px;
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: 400;
+	line-height: 1.45;
 }
 
 .cvtrk-card-body {
@@ -499,8 +511,8 @@
 	align-items: flex-start;
 	gap: 12px;
 	min-width: 0;
-	min-height: 104px;
-	padding: 16px;
+	min-height: 98px;
+	padding: 15px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: var(--cvtrk-radius);
 	background: #fff;
@@ -536,8 +548,8 @@
 
 .cvtrk-kpi-value {
 	color: var(--cvtrk-ink);
-	font-size: 25px;
-	font-weight: 800;
+	font-size: 24px;
+	font-weight: 600;
 	line-height: 1.12;
 	font-variant-numeric: tabular-nums;
 }
@@ -545,14 +557,15 @@
 .cvtrk-kpi-label {
 	color: var(--cvtrk-secondary);
 	font-size: 12px;
-	font-weight: 700;
+	font-weight: 500;
+	line-height: 1.35;
 }
 
 .cvtrk-kpi-delta {
 	min-height: 15px;
 	color: var(--cvtrk-muted);
 	font-size: 11px;
-	font-weight: 750;
+	font-weight: 500;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -626,13 +639,13 @@ a.cvtrk-health-card:focus {
 .cvtrk-health-label {
 	color: var(--cvtrk-secondary);
 	font-size: 12px;
-	font-weight: 750;
+	font-weight: 500;
 }
 
 .cvtrk-health-value {
 	color: var(--cvtrk-ink);
 	font-size: 17px;
-	font-weight: 800;
+	font-weight: 600;
 	line-height: 1.25;
 	overflow-wrap: anywhere;
 }
@@ -640,7 +653,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-health-meta {
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: 400;
 	line-height: 1.4;
 	overflow-wrap: anywhere;
 }
@@ -693,7 +706,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-chart-axis {
 	fill: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 650;
+	font-weight: 500;
 }
 
 .cvtrk-chart-axis.is-end {
@@ -714,7 +727,7 @@ a.cvtrk-health-card:focus {
 	gap: 7px;
 	color: var(--cvtrk-secondary);
 	font-size: 12px;
-	font-weight: 700;
+	font-weight: 500;
 }
 
 .cvtrk-legend-toggle {
@@ -877,7 +890,7 @@ a.cvtrk-health-card:focus {
 	z-index: 1;
 	color: var(--cvtrk-ink);
 	font-size: 24px;
-	font-weight: 800;
+	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -894,7 +907,7 @@ a.cvtrk-health-card:focus {
 	gap: 9px;
 	color: var(--cvtrk-secondary);
 	font-size: 13px;
-	font-weight: 700;
+	font-weight: 500;
 }
 
 .cvtrk-donut-label {
@@ -928,12 +941,13 @@ a.cvtrk-health-card:focus {
 	min-width: 100%;
 	border-collapse: collapse;
 	font-size: 13px;
+	line-height: 1.45;
 	font-variant-numeric: tabular-nums;
 }
 
 .cvtrk-table th,
 .cvtrk-table td {
-	padding: 10px 12px;
+	padding: 11px 12px;
 	border-bottom: 1px solid #edf2f4;
 	vertical-align: middle;
 }
@@ -942,7 +956,7 @@ a.cvtrk-health-card:focus {
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: 600;
 	text-align: left;
 	white-space: nowrap;
 }
@@ -979,14 +993,15 @@ a.cvtrk-health-card:focus {
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 11px;
-	font-weight: 800;
+	font-weight: 600;
 }
 
 .cvtrk-label {
 	display: block;
 	max-width: 420px;
 	color: var(--cvtrk-ink);
-	font-weight: 750;
+	font-weight: 500;
+	line-height: 1.35;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -999,6 +1014,7 @@ a.cvtrk-health-card:focus {
 	color: var(--cvtrk-muted);
 	font-family: Consolas, Monaco, monospace;
 	font-size: 11px;
+	line-height: 1.35;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -1017,8 +1033,8 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-strong {
 	color: var(--cvtrk-ink);
-	font-size: 15px;
-	font-weight: 800;
+	font-size: 14px;
+	font-weight: 600;
 }
 
 .cvtrk-meter {
@@ -1042,16 +1058,19 @@ a.cvtrk-health-card:focus {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	min-height: 22px;
-	padding: 2px 8px;
+	max-width: 100%;
+	min-height: 21px;
+	padding: 2px 7px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: 999px;
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 11px;
-	font-weight: 800;
-	line-height: 1.2;
-	white-space: nowrap;
+	font-weight: 500;
+	line-height: 1.25;
+	text-align: center;
+	white-space: normal;
+	overflow-wrap: anywhere;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1114,8 +1133,10 @@ a.cvtrk-health-card:focus {
 	display: grid;
 	justify-items: center;
 	gap: 8px;
-	padding: 34px 16px;
+	padding: 30px 16px;
 	color: var(--cvtrk-muted);
+	font-size: 13px;
+	line-height: 1.45;
 	text-align: center;
 }
 
@@ -1134,7 +1155,7 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-skeleton {
 	position: relative;
-	min-height: 46px;
+	min-height: 44px;
 	margin: 0;
 	border-radius: var(--cvtrk-radius);
 	background: linear-gradient(90deg, #f3f6f7, #e8eef1, #f3f6f7);
@@ -1156,11 +1177,12 @@ a.cvtrk-health-card:focus {
 	margin: 0 0 16px;
 	padding: 12px 14px;
 	border: 1px solid #b8d8d3;
-	border-left: 4px solid var(--cvtrk-teal);
+	border-left: 3px solid var(--cvtrk-teal);
 	border-radius: var(--cvtrk-radius);
 	background: #f8fcfb;
 	color: var(--cvtrk-ink);
 	font-size: 13px;
+	line-height: 1.45;
 }
 
 .cvtrk-notice {
@@ -1178,7 +1200,7 @@ a.cvtrk-health-card:focus {
 }
 
 .cvtrk-hint a {
-	font-weight: 800;
+	font-weight: 600;
 	white-space: nowrap;
 }
 
@@ -1252,7 +1274,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-timeline-title {
 	color: var(--cvtrk-ink);
 	font-size: 13px;
-	font-weight: 800;
+	font-weight: 600;
 	overflow-wrap: anywhere;
 }
 
@@ -1267,7 +1289,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-timeline-type {
 	color: var(--cvtrk-secondary);
 	font-size: 11px;
-	font-weight: 800;
+	font-weight: 500;
 	text-transform: uppercase;
 	white-space: nowrap;
 }
@@ -1288,7 +1310,7 @@ a.cvtrk-health-card:focus {
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-muted);
 	font-size: 11px;
-	font-weight: 700;
+	font-weight: 500;
 }
 
 /* Heatmaps */
@@ -1324,7 +1346,7 @@ a.cvtrk-health-card:focus {
 	background: transparent;
 	color: var(--cvtrk-secondary);
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: 500;
 	cursor: pointer;
 }
 
@@ -1337,6 +1359,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-segment.is-active {
 	background: var(--cvtrk-teal);
 	color: #fff;
+	font-weight: 600;
 	box-shadow: 0 1px 2px rgba(11, 42, 74, 0.16);
 }
 
@@ -1455,12 +1478,12 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-gsc-meta-label {
 	color: var(--cvtrk-muted);
-	font-weight: 700;
+	font-weight: 500;
 }
 
 .cvtrk-gsc-meta-value {
 	color: var(--cvtrk-ink);
-	font-weight: 800;
+	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
 
@@ -1504,14 +1527,14 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-gsc-donut-pct {
 	color: var(--cvtrk-ink);
-	font-size: 30px;
-	font-weight: 850;
+	font-size: 28px;
+	font-weight: 600;
 }
 
 .cvtrk-gsc-donut-cap {
 	color: var(--cvtrk-muted);
 	font-size: 11px;
-	font-weight: 800;
+	font-weight: 500;
 	text-transform: uppercase;
 }
 
@@ -1528,15 +1551,15 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-gsc-figure-value {
 	color: var(--cvtrk-ink);
-	font-size: 22px;
-	font-weight: 850;
+	font-size: 21px;
+	font-weight: 600;
 	font-variant-numeric: tabular-nums;
 }
 
 .cvtrk-gsc-figure-label {
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 700;
+	font-weight: 500;
 }
 
 .cvtrk-gsc-trend {
@@ -1554,7 +1577,7 @@ a.cvtrk-health-card:focus {
 	margin: 0 0 10px;
 	color: var(--cvtrk-ink);
 	font-size: 14px;
-	font-weight: 800;
+	font-weight: 600;
 }
 
 .cvtrk-gsc-trend-empty {
@@ -1585,7 +1608,7 @@ a.cvtrk-health-card:focus {
 	margin: 4px 0 0;
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 850;
+	font-weight: 600;
 	text-transform: uppercase;
 }
 
@@ -1615,7 +1638,7 @@ a.cvtrk-health-card:focus {
 	align-items: center;
 	gap: 12px;
 	width: 100%;
-	padding: 14px 16px;
+	padding: 13px 15px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: var(--cvtrk-radius);
 	background: #fff;
@@ -1629,7 +1652,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-gsc-stat:hover,
 .cvtrk-gsc-stat:focus-visible {
 	border-color: var(--cvtrk-border-strong);
-	box-shadow: var(--cvtrk-shadow);
+	box-shadow: 0 4px 14px rgba(11, 42, 74, 0.075);
 	outline: none;
 }
 
@@ -1667,8 +1690,8 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-gsc-stat-value {
 	color: var(--cvtrk-ink);
-	font-size: 22px;
-	font-weight: 850;
+	font-size: 21px;
+	font-weight: 600;
 	line-height: 1.05;
 	font-variant-numeric: tabular-nums;
 }
@@ -1676,7 +1699,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-gsc-stat-label {
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 700;
+	font-weight: 500;
 	overflow-wrap: anywhere;
 }
 
@@ -1688,7 +1711,7 @@ a.cvtrk-health-card:focus {
 	flex-wrap: wrap;
 	gap: 6px;
 	flex: 1 1 260px;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	min-width: 0;
 	max-width: 100%;
 }
@@ -1698,6 +1721,13 @@ a.cvtrk-health-card:focus {
 .cvtrk-kw-actions .button {
 	margin: 0;
 	white-space: nowrap;
+}
+
+.cvtrk-table td.cvtrk-gsc-actions,
+.cvtrk-table td.cvtrk-404-actions,
+.cvtrk-table td.cvtrk-kw-actions {
+	min-width: 190px;
+	white-space: normal;
 }
 
 .cvtrk-gsc-post-tabs {
@@ -1733,6 +1763,37 @@ a.cvtrk-health-card:focus {
 	min-width: 0;
 }
 
+.cvtrk-danger-text {
+	color: var(--cvtrk-red-dark) !important;
+}
+
+.cvtrk-stacked-field {
+	display: block;
+	margin-bottom: 8px;
+}
+
+.cvtrk-is-hidden {
+	display: none !important;
+}
+
+.cvtrk-inline-options {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+	max-width: 100%;
+}
+
+.cvtrk-inline-option {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 16px 8px 0;
+	color: var(--cvtrk-secondary);
+	font-weight: 400;
+	line-height: 1.35;
+}
+
 .cvtrk-gsc-log-detail {
 	margin-top: 4px;
 	color: var(--cvtrk-red-dark) !important;
@@ -1757,13 +1818,17 @@ a.cvtrk-health-card:focus {
 	border-top: 1px solid var(--cvtrk-border);
 }
 
+.cvtrk-progress-notice {
+	margin: 12px 0;
+}
+
 .cvtrk-check {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	margin: 0 14px 8px 0;
 	color: var(--cvtrk-secondary);
-	font-weight: 650;
+	font-weight: 400;
 }
 
 .cvtrk-tools {
@@ -1793,7 +1858,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-pagination span {
 	color: var(--cvtrk-muted);
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: 500;
 }
 
 /* WordPress form tables */
@@ -1808,12 +1873,14 @@ a.cvtrk-health-card:focus {
 	width: 230px;
 	padding: 15px 16px 15px 0;
 	color: var(--cvtrk-ink);
-	font-weight: 800;
+	font-weight: 600;
+	line-height: 1.4;
 }
 
 .convertrack .form-table td {
 	padding: 13px 0;
 	color: var(--cvtrk-secondary);
+	line-height: 1.45;
 }
 
 .convertrack .form-table tr + tr th,
@@ -2003,11 +2070,12 @@ a.cvtrk-health-card:focus {
 .cvtrk-badge-group {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px;
+	gap: 5px;
 }
 
 .cvtrk-score-pill b {
 	font-size: 12px;
+	font-weight: 600;
 	margin-right: 3px;
 }
 
@@ -2080,4 +2148,70 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-kw-list li {
 	margin-bottom: 6px;
+}
+
+/* Enable prompt modal */
+
+.cvtrk-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+
+.cvtrk-modal-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba( 11, 42, 74, 0.48 );
+}
+
+.cvtrk-modal-dialog {
+	position: relative;
+	width: 100%;
+	max-width: 460px;
+	padding: 26px;
+	background: var(--cvtrk-card, #fff);
+	border: 1px solid var(--cvtrk-border, #d9e3ea);
+	border-radius: var(--cvtrk-radius, 8px);
+	box-shadow: 0 18px 42px rgba(11, 42, 74, 0.18);
+	color: var(--cvtrk-ink, #10243a);
+	text-align: center;
+}
+
+.cvtrk-modal-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	margin-bottom: 12px;
+	padding: 11px;
+	border-radius: 50%;
+	background: var(--cvtrk-teal-soft, #e7f6f7);
+	color: var(--cvtrk-teal-dark, #087882);
+}
+
+.cvtrk-modal-dialog h2 {
+	margin: 0 0 8px;
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var(--cvtrk-ink, #10243a);
+}
+
+.cvtrk-modal-dialog p {
+	margin: 0;
+	color: var(--cvtrk-secondary, #4f6578);
+	line-height: 1.55;
+}
+
+.cvtrk-modal-actions {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	justify-content: center;
+	margin-top: 20px;
 }

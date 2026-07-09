@@ -108,7 +108,7 @@ class Collector {
 		}
 
 		$type = isset( $raw['t'] ) ? sanitize_key( $raw['t'] ) : 'click';
-		if ( ! in_array( $type, array( 'click', 'pageview', 'scroll' ), true ) ) {
+		if ( ! in_array( $type, array( 'click', 'heatmap_click', 'pageview', 'scroll' ), true ) ) {
 			return null;
 		}
 

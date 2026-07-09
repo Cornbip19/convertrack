@@ -112,7 +112,7 @@ if ( $cvtrk_updater ) {
 				<th scope="row"><?php esc_html_e( 'Exclude roles', 'convertrack-click-conversion-analytics' ); ?></th>
 				<td>
 					<?php foreach ( $roles as $role_key => $role ) : ?>
-						<label style="display:inline-block;margin-right:14px;">
+						<label class="cvtrk-inline-option">
 							<input type="checkbox" name="convertrack_settings[exclude_roles][]" value="<?php echo esc_attr( $role_key ); ?>" <?php checked( in_array( $role_key, (array) $s['exclude_roles'], true ) ); ?> />
 							<?php echo esc_html( translate_user_role( $role['name'] ) ); ?>
 						</label>

@@ -1373,7 +1373,7 @@ class Database {
 		$events  = self::events_table();
 		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
 
-		$click_where  = "event_type='click' AND post_id=%d AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)";
+		$click_where  = "event_type IN ('click','heatmap_click') AND post_id=%d AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)";
 		$click_params = array( $post_id, $start );
 		if ( 'all' !== $device ) {
 			$click_where   .= ' AND device_type=%s';
@@ -1400,7 +1400,7 @@ class Database {
 				        AVG(document_h) dh,
 				        AVG(scroll_x) sx,
 				        AVG(scroll_y) sy,
-				        MAX(CASE WHEN COALESCE(NULLIF(heatmap_selector,''), element_selector) <> '' THEN 1 ELSE 0 END) has_rel,
+				        MAX(CASE WHEN COALESCE(NULLIF(heatmap_selector,''), element_selector) <> '' AND (rel_x > 0 OR rel_y > 0) THEN 1 ELSE 0 END) has_rel,
 				        MAX(CASE WHEN viewport_w > 0 AND viewport_h > 0 AND document_w > 0 AND document_h > 0 THEN 1 ELSE 0 END) has_viewport,
 				        COUNT(*) w
 				 FROM $events
@@ -1490,12 +1490,16 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$pageviews = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='pageview' AND $metric_where", $metric_params ) );
 
-		$click_total_params = $metric_params;
+		$tracked_click_params = $metric_params;
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND $metric_where", $click_total_params ) );
+		$tracked_click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND $metric_where", $tracked_click_params ) );
+
+		$heatmap_click_params = $metric_params;
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$heatmap_click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type IN ('click','heatmap_click') AND $metric_where", $heatmap_click_params ) );
 
 		$element_params = array( $post_id, $start );
-		$element_where  = "event_type='click' AND post_id=%d AND created_at >= %s";
+		$element_where  = "event_type IN ('click','heatmap_click') AND post_id=%d AND created_at >= %s";
 		if ( 'all' !== $device ) {
 			$element_where   .= ' AND device_type=%s';
 			$element_params[] = $device;
@@ -1505,14 +1509,14 @@ class Database {
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$elements = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT element_selector,
+				"SELECT COALESCE(NULLIF(heatmap_selector,''), element_selector) element_selector,
 				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1) element_text,
 				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_href)),'|||',-1) element_href,
 				        COUNT(*) clicks,
-				        SUM(is_conversion) conversions
+				        SUM(CASE WHEN event_type='click' THEN is_conversion ELSE 0 END) conversions
 				 FROM $events
 				 WHERE $element_where
-				 GROUP BY element_selector
+				 GROUP BY COALESCE(NULLIF(heatmap_selector,''), element_selector)
 				 ORDER BY clicks DESC LIMIT %d",
 				$element_params
 			),
@@ -1541,7 +1545,9 @@ class Database {
 			'elements'       => $element_rows,
 			'search_terms'   => self::top_search_terms( $days, 10, $post_id, $device ),
 			'pageviews'      => $pageviews,
-			'clicks'         => $click_total,
+			'clicks'         => $heatmap_click_total,
+			'heatmap_clicks' => $heatmap_click_total,
+			'tracked_clicks' => $tracked_click_total,
 			'scroll_samples' => $total_scroll,
 			'device'         => $device,
 		);

@@ -109,7 +109,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 				<button type="button" class="button" data-cvtrk="gsc-copy-redirect"><?php esc_html_e( 'Copy', 'convertrack-click-conversion-analytics' ); ?></button>
 			</p>
 			<?php if ( 0 === strpos( (string) $cvtrk_redirect_uri, 'http://' ) && false === strpos( (string) $cvtrk_redirect_uri, '://localhost' ) && false === strpos( (string) $cvtrk_redirect_uri, '://127.0.0.1' ) ) : ?>
-				<p class="description" style="color:#b84a62;">
+				<p class="description cvtrk-danger-text">
 					<?php esc_html_e( 'Google requires an https (or localhost) redirect URI. Enable HTTPS for this site, or filter convertrack_gsc_redirect_uri to an https URL, before connecting.', 'convertrack-click-conversion-analytics' ); ?>
 				</p>
 			<?php endif; ?>
@@ -159,7 +159,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 					<tr>
 						<th scope="row"><label for="cvtrk-gsc-property"><?php esc_html_e( 'Search Console property', 'convertrack-click-conversion-analytics' ); ?></label></th>
 						<td>
-							<select class="regular-text" data-cvtrk="gsc-property-picker" style="display:none;margin-bottom:8px;">
+							<select class="regular-text cvtrk-stacked-field cvtrk-is-hidden" data-cvtrk="gsc-property-picker">
 								<option value=""><?php esc_html_e( 'Choose a connected property…', 'convertrack-click-conversion-analytics' ); ?></option>
 							</select>
 							<input type="text" id="cvtrk-gsc-property" class="regular-text" name="convertrack_gsc_settings[property_url]" data-cvtrk="gsc-property-input" value="<?php echo esc_attr( $s['property_url'] ); ?>" />
@@ -183,7 +183,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						<th scope="row"><?php esc_html_e( 'Post types to monitor', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $post_types as $post_type => $object ) : ?>
-								<label style="display:inline-block;margin-right:14px;margin-bottom:6px;">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_gsc_settings[selected_post_types][]" value="<?php echo esc_attr( $post_type ); ?>" <?php checked( in_array( $post_type, (array) $s['selected_post_types'], true ) ); ?> />
 									<?php echo esc_html( $object->labels->name ); ?>
 								</label>
@@ -312,7 +312,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 				<a class="button" data-cvtrk="gsc-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
 			</div>
 
-			<div class="cvtrk-notice" data-cvtrk="gsc-progress" hidden aria-live="polite" style="margin:12px 0;"></div>
+			<div class="cvtrk-notice cvtrk-progress-notice" data-cvtrk="gsc-progress" hidden aria-live="polite"></div>
 
 			<div data-cvtrk="gsc-urls"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			<div class="cvtrk-pagination">

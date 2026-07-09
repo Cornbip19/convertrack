@@ -43,7 +43,7 @@ class Keywords_Rest_Controller {
 			);
 		}
 
-		foreach ( array( 'sync', 'analyze', 'bulk' ) as $action ) {
+		foreach ( array( 'enable', 'sync', 'analyze', 'bulk' ) as $action ) {
 			register_rest_route(
 				$namespace,
 				'/gsc/keywords/' . $action,
@@ -302,6 +302,30 @@ class Keywords_Rest_Controller {
 		);
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
+	}
+
+	/**
+	 * Turn the feature on from the dashboard prompt (one click, no settings trip).
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function enable() {
+		$settings            = Keywords_Settings::all();
+		$settings['enabled'] = 1;
+		Keywords_Settings::save( $settings );
+		Logger::info( 'keywords-settings', 'Keyword Insights enabled from the dashboard prompt.' );
+
+		return $this->no_cache(
+			new \WP_REST_Response(
+				array(
+					'ok'        => true,
+					'enabled'   => true,
+					'connected' => Credentials::is_connected(),
+					'ready'     => Keywords_Settings::ready(),
+				),
+				200
+			)
+		);
 	}
 
 	/**

@@ -1470,12 +1470,71 @@
 				.then( function ( snapshot ) {
 					snapshots[ key ] = snapshot;
 					return snapshot;
-				} );
+			} );
+		}
+
+		function heatmapConfidenceText( samples ) {
+			samples = Number( samples ) || 0;
+			if ( samples >= 100 ) {
+				return 'High confidence: ' + num( samples ) + ' heatmap clicks in this view.';
+			}
+			if ( samples >= 25 ) {
+				return 'Moderate confidence: ' + num( samples ) + ' heatmap clicks in this view.';
+			}
+			if ( samples > 0 ) {
+				return 'Low confidence: only ' + num( samples ) + ' heatmap clicks in this view.';
+			}
+			return '';
+		}
+
+		function setHeatmapConfidenceNote( samples ) {
+			var note = attr( 'heatmap-note' );
+			if ( note && Number( samples ) > 0 ) {
+				note.textContent = heatmapConfidenceText( samples );
+			}
 		}
 
 		function renderCurrent() {
 			if ( data ) {
 				renderClickMap( data, showChk ? showChk.checked : true, mode() );
+				setHeatmapConfidenceNote( data.heatmap_clicks !== undefined ? data.heatmap_clicks : data.clicks );
+			}
+		}
+
+		function clearHeatmapSurface( message ) {
+			var msg = message || I18N.noHeatmapPages || I18N.noData || 'No page activity in this range yet.';
+			data = null;
+			[ 'heatmap-elements', 'heatmap-keywords', 'scroll-depth' ].forEach( function ( key ) {
+				var box = attr( key );
+				if ( box ) {
+					empty( box, msg );
+				}
+			} );
+			var note = attr( 'heatmap-note' );
+			if ( note ) {
+				note.textContent = msg;
+			}
+			var meta = attr( 'heatmap-meta' );
+			if ( meta ) {
+				meta.textContent = '';
+			}
+			var stage = attr( 'heatmap-stage' );
+			var page = attr( 'heatmap-page' );
+			var frame = attr( 'heatmap-frame' );
+			var canvas = attr( 'heatmap-canvas' );
+			var markers = attr( 'heatmap-markers' );
+			if ( stage && page && canvas ) {
+				var viewport = applyHeatmapViewport( stage, page, frame, selectedDevice() );
+				if ( frame ) {
+					frame.style.display = 'none';
+					frame.removeAttribute( 'data-snapshot-key' );
+					frame.removeAttribute( 'data-snapshot-url' );
+					frame.removeAttribute( 'src' );
+					frame.removeAttribute( 'srcdoc' );
+				}
+				stage.classList.add( 'cvtrk-no-frame' );
+				page.classList.add( 'cvtrk-no-frame' );
+				drawHeatCanvas( canvas, page, markers, [], 1, viewport.h, null, 'page', viewport );
 			}
 		}
 
@@ -1485,6 +1544,7 @@
 			var device = selectedDevice();
 			syncDeviceToggle();
 			if ( ! post || post === '0' ) {
+				clearHeatmapSurface( 'Select a page to view heatmap data.' );
 				return;
 			}
 			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
@@ -1506,32 +1566,25 @@
 					renderSearchTerms( 'heatmap-keywords', d.search_terms, d.search_keywords_enabled );
 					renderClickMap( d, showChk ? showChk.checked : true, mode() );
 					var meta = attr( 'heatmap-meta' );
+					var heatmapClicks = Number( d.heatmap_clicks !== undefined ? d.heatmap_clicks : d.clicks ) || 0;
+					var trackedClicks = Number( d.tracked_clicks ) || 0;
 					if ( meta ) {
 						var viewport = heatmapViewport( d.device );
 						meta.textContent = viewport.label + ' ' + viewport.w + 'x' + viewport.h + ' - ' +
 							num( d.pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ).toLowerCase() +
-							' - ' + num( d.clicks ) + ' ' + ( I18N.clicksHere || 'clicks' );
+							' - ' + num( heatmapClicks ) + ' heatmap clicks' +
+							( trackedClicks && trackedClicks !== heatmapClicks ? ' - ' + num( trackedClicks ) + ' tracked clicks' : '' );
 					}
+					setHeatmapConfidenceNote( heatmapClicks );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					clearHeatmapSurface( ( err && err.message ) || 'Could not load heatmap data.' );
+				} );
 		}
 
 		function showNoPages() {
 			var msg = I18N.noHeatmapPages || I18N.noData || 'No page activity in this range yet.';
-			[ 'heatmap-elements', 'heatmap-keywords', 'scroll-depth' ].forEach( function ( key ) {
-				var box = attr( key );
-				if ( box ) {
-					empty( box, msg );
-				}
-			} );
-			var note = attr( 'heatmap-note' );
-			if ( note ) {
-				note.textContent = msg;
-			}
-			var meta = attr( 'heatmap-meta' );
-			if ( meta ) {
-				meta.textContent = '';
-			}
+			clearHeatmapSurface( msg );
 		}
 
 		function loadPages() {
@@ -1542,6 +1595,7 @@
 						return;
 					}
 					var cur = postSel.value;
+					var hasCurrent = false;
 					while ( postSel.options.length > 1 ) {
 						postSel.remove( 1 );
 					}
@@ -1551,21 +1605,25 @@
 							o.value = p.post_id;
 							o.textContent = p.title;
 							postSel.appendChild( o );
+							if ( String( p.post_id ) === String( cur ) ) {
+								hasCurrent = true;
+							}
 						}
 					} );
-					if ( ( cur === '0' || ! cur ) && postSel.options.length > 1 ) {
-						postSel.selectedIndex = 1;
-					} else {
-						postSel.value = cur;
-					}
-					// No pages have activity yet: show clear guidance instead of an endless skeleton.
 					if ( postSel.options.length <= 1 ) {
 						showNoPages();
 						return;
 					}
+					if ( cur && cur !== '0' && hasCurrent ) {
+						postSel.value = cur;
+					} else {
+						postSel.selectedIndex = 1;
+					}
 					load();
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					clearHeatmapSurface( ( err && err.message ) || 'Could not load heatmap pages.' );
+				} );
 		}
 
 		if ( rangeSel ) {
@@ -2691,7 +2749,7 @@
 						}
 						propertyPicker.appendChild( opt );
 					} );
-					propertyPicker.style.display = '';
+					propertyPicker.classList.remove( 'cvtrk-is-hidden' );
 					setPropertyStatus( '' );
 				} )
 				.catch( function ( err ) {
@@ -4182,6 +4240,125 @@
 			backBtn.addEventListener( 'click', closeDetail );
 		}
 
+		/* Enable prompt ------------------------------------------------------- */
+
+		var enableModal = null;
+		var lastFocused = null;
+
+		function closeEnablePrompt() {
+			if ( ! enableModal ) {
+				return;
+			}
+			document.removeEventListener( 'keydown', onModalKey );
+			enableModal.parentNode && enableModal.parentNode.removeChild( enableModal );
+			enableModal = null;
+			if ( lastFocused && lastFocused.focus ) {
+				lastFocused.focus();
+			}
+		}
+
+		function onModalKey( event ) {
+			if ( event.key === 'Escape' ) {
+				closeEnablePrompt();
+			}
+		}
+
+		function doEnable( button, thenSync ) {
+			if ( button ) {
+				button.disabled = true;
+				button.textContent = I18N.kwEnabling || 'Enabling…';
+			}
+			postApi( '/gsc/keywords/enable', {} )
+				.then( function ( res ) {
+					root.setAttribute( 'data-kw-enabled', '1' );
+					closeEnablePrompt();
+					setProgress( I18N.kwEnabledMsg || 'Keyword Insights enabled.' );
+					reloadAll();
+					// If Google is connected, kick the first sync straight away.
+					if ( thenSync && res && res.connected ) {
+						startSync( {} );
+					}
+				} )
+				.catch( function ( err ) {
+					if ( button ) {
+						button.disabled = false;
+						button.textContent = I18N.kwPromptEnableBtn || 'Enable & sync now';
+					}
+					setProgress( ( I18N.kwEnableFailed || 'Could not enable Keyword Insights:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+				} );
+		}
+
+		function showEnablePrompt() {
+			if ( enableModal ) {
+				return;
+			}
+			var connected = root.getAttribute( 'data-kw-connected' ) === '1';
+
+			enableModal = el( 'div', 'cvtrk-modal' );
+			enableModal.setAttribute( 'role', 'dialog' );
+			enableModal.setAttribute( 'aria-modal', 'true' );
+			enableModal.setAttribute( 'aria-labelledby', 'cvtrk-kw-modal-title' );
+
+			var backdrop = el( 'div', 'cvtrk-modal-backdrop' );
+			backdrop.addEventListener( 'click', closeEnablePrompt );
+			enableModal.appendChild( backdrop );
+
+			var dialog = el( 'div', 'cvtrk-modal-dialog' );
+			var iconWrap = el( 'span', 'cvtrk-modal-icon' );
+			iconWrap.appendChild( svgIcon( connected ? 'search' : 'shield', 'cvtrk-icon' ) );
+			dialog.appendChild( iconWrap );
+
+			var title = el( 'h2', null, connected ? ( I18N.kwPromptEnableTitle || 'Turn on Keyword Insights' ) : ( I18N.kwPromptConnectTitle || 'Connect Google Search Console' ) );
+			title.id = 'cvtrk-kw-modal-title';
+			dialog.appendChild( title );
+			dialog.appendChild( el( 'p', null, connected ? ( I18N.kwPromptEnableBody || '' ) : ( I18N.kwPromptConnectBody || '' ) ) );
+
+			var actions = el( 'div', 'cvtrk-modal-actions' );
+			var primary;
+
+			if ( connected ) {
+				primary = el( 'button', 'button button-primary', I18N.kwPromptEnableBtn || 'Enable & sync now' );
+				primary.type = 'button';
+				primary.addEventListener( 'click', function () {
+					doEnable( primary, true );
+				} );
+				actions.appendChild( primary );
+
+				var dismiss = el( 'button', 'button', I18N.kwPromptDismiss || 'Not now' );
+				dismiss.type = 'button';
+				dismiss.addEventListener( 'click', closeEnablePrompt );
+				actions.appendChild( dismiss );
+			} else {
+				primary = el( 'a', 'button button-primary', I18N.kwPromptConnectBtn || 'Open Google Index Monitor' );
+				primary.href = ( C.adminUrls && C.adminUrls.gsc ) || '#';
+				actions.appendChild( primary );
+
+				var enableAnyway = el( 'button', 'button', I18N.kwPromptEnableAnyway || 'Enable anyway' );
+				enableAnyway.type = 'button';
+				enableAnyway.addEventListener( 'click', function () {
+					doEnable( enableAnyway, false );
+				} );
+				actions.appendChild( enableAnyway );
+
+				var dismiss2 = el( 'button', 'button', I18N.kwPromptDismiss || 'Not now' );
+				dismiss2.type = 'button';
+				dismiss2.addEventListener( 'click', closeEnablePrompt );
+				actions.appendChild( dismiss2 );
+			}
+
+			dialog.appendChild( actions );
+			enableModal.appendChild( dialog );
+			// Append inside the .convertrack wrapper so the design tokens
+			// (--cvtrk-*) resolve; they are scoped to that element, not :root.
+			root.appendChild( enableModal );
+
+			lastFocused = document.activeElement;
+			document.addEventListener( 'keydown', onModalKey );
+			if ( primary && primary.focus ) {
+				primary.focus();
+			}
+		}
+
 		reloadAll();
 
 		// Resume progress polling after reloads and honor detail deep links.
@@ -4196,6 +4373,12 @@
 		var hashMatch = /^#kw-page-(\d+)$/.exec( location.hash || '' );
 		if ( hashMatch ) {
 			openDetail( Number( hashMatch[ 1 ] ) );
+		}
+
+		// Fresh install / disabled feature: prompt to enable right here instead
+		// of making the user hunt through the settings below.
+		if ( root.getAttribute( 'data-kw-enabled' ) !== '1' ) {
+			showEnablePrompt();
 		}
 	}
 

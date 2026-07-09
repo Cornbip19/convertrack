@@ -1,9 +1,10 @@
 /**
  * Convertrack front-end tracker.
  *
- * Captures clicks on configured "button-like" elements, records a pageview,
- * and sends lightweight presence heartbeats. Events are batched and delivered
- * with navigator.sendBeacon so tracking never blocks navigation.
+ * Captures analytics clicks on configured "button-like" elements, records
+ * all-click heatmap positions, pageviews, and presence heartbeats. Events are
+ * batched and delivered with navigator.sendBeacon so tracking never blocks
+ * navigation.
  */
 ( function () {
 	'use strict';
@@ -73,30 +74,75 @@
 	document.addEventListener( 'click', onClick, true );
 
 	function onClick( e ) {
-		if ( ! selector ) {
-			return;
-		}
 		var target = e.target;
-		if ( ! target || ! target.closest ) {
+		var heatmapEl = heatmapTarget( target );
+		if ( ! heatmapEl ) {
 			return;
 		}
 
-		var el;
-		try {
-			el = target.closest( selector );
-		} catch ( err ) {
-			return;
-		}
-		if ( ! el ) {
-			return;
+		var el = null;
+		if ( selector && target.closest ) {
+			try {
+				el = target.closest( selector );
+			} catch ( err ) {
+				el = null;
+			}
 		}
 
-		var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
-		var coords = clickPosition( e, el );
 		var attr = eventAttribution();
 		var eventDevice = detectDevice();
-		queue.push( {
-			t: 'click',
+
+		// Tracked clicks keep the existing dashboard/conversion semantics and
+		// also feed the heatmap. Untracked clicks are recorded as heatmap-only
+		// events so all-click heatmaps do not inflate click analytics.
+		if ( el ) {
+			var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
+			queue.push( clickPayload( 'click', e, el, href, attr, eventDevice, isConversion( el, href ) ? 1 : 0 ) );
+		} else {
+			queue.push( clickPayload( 'heatmap_click', e, heatmapEl, heatmapHref( heatmapEl ), attr, eventDevice, 0 ) );
+		}
+
+		// Flush immediately if this click is likely to navigate away, so the
+		// event is delivered before unload instead of relying on pagehide alone.
+		var navHref = el ? ( el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '' ) : heatmapHref( heatmapEl );
+		var navigates = ( !! navHref && navHref.charAt( 0 ) !== '#' && navHref.toLowerCase().indexOf( 'javascript:' ) !== 0 ) ||
+			( el && el.type === 'submit' );
+
+		if ( navigates || queue.length >= batchMax ) {
+			flush();
+		}
+	}
+
+	function heatmapTarget( target ) {
+		var el = target && target.nodeType === 1 ? target : ( target && target.parentElement );
+		if ( ! el || ! el.ownerDocument ) {
+			return null;
+		}
+		if ( el === document.documentElement && document.body ) {
+			return document.body;
+		}
+		return el;
+	}
+
+	function heatmapHref( el ) {
+		if ( ! el ) {
+			return '';
+		}
+		if ( el.getAttribute && el.getAttribute( 'href' ) ) {
+			return el.getAttribute( 'href' ) || '';
+		}
+		try {
+			var link = el.closest ? el.closest( 'a[href],area[href]' ) : null;
+			return link && link.getAttribute ? ( link.getAttribute( 'href' ) || '' ) : '';
+		} catch ( e ) {
+			return '';
+		}
+	}
+
+	function clickPayload( type, event, el, href, attr, eventDevice, conversion ) {
+		var coords = clickPosition( event, el );
+		return {
+			t: type,
 			ts: nowMs(),
 			pid: cfg.postId || 0,
 			url: currentPath(),
@@ -107,8 +153,8 @@
 			txt: elementText( el ),
 			sel: cssPath( el ),
 			hsel: heatmapPath( el ),
-			href: href,
-			conv: isConversion( el, href ) ? 1 : 0,
+			href: href || '',
+			conv: conversion ? 1 : 0,
 			dev: eventDevice,
 			src: attr.src,
 			rh: attr.rh,
@@ -128,16 +174,7 @@
 			dh: coords.dh,
 			sx: coords.sx,
 			sy: coords.sy
-		} );
-
-		// Flush immediately if this click is likely to navigate away, so the
-		// event is delivered before unload instead of relying on pagehide alone.
-		var navigates = ( !! href && href.charAt( 0 ) !== '#' && href.toLowerCase().indexOf( 'javascript:' ) !== 0 ) ||
-			el.type === 'submit';
-
-		if ( navigates || queue.length >= batchMax ) {
-			flush();
-		}
+		};
 	}
 
 	/* ----------------------------------------------------------------- *
