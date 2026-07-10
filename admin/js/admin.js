@@ -124,6 +124,37 @@
 		box.appendChild( e );
 	}
 
+	// Distinct error state (warning icon + optional retry) so a failed request
+	// is never mistaken for a legitimately empty result.
+	function errorState( box, msg, onRetry ) {
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		var e = el( 'div', 'cvtrk-empty is-error' );
+		e.appendChild( svgIcon( 'warning', 'cvtrk-empty-icon' ) );
+		e.appendChild( el( 'p', null, msg || I18N.loadError || 'Something went wrong while loading this data.' ) );
+		if ( typeof onRetry === 'function' ) {
+			var actions = el( 'div', 'cvtrk-empty-actions' );
+			var retry = el( 'button', 'button button-small', I18N.retry || 'Try again' );
+			retry.type = 'button';
+			retry.addEventListener( 'click', onRetry );
+			actions.appendChild( retry );
+			e.appendChild( actions );
+		}
+		box.appendChild( e );
+	}
+
+	// Toggle a reload spinner/dim on a region while a fetch is in flight, so
+	// subsequent loads give feedback instead of silently showing stale data.
+	function setBusy( box, on ) {
+		if ( ! box ) {
+			return;
+		}
+		box.classList.toggle( 'cvtrk-loading', !! on );
+		box.setAttribute( 'aria-busy', on ? 'true' : 'false' );
+	}
+
 	function table( headers ) {
 		var wrap = el( 'div', 'cvtrk-table-wrap' );
 		var t = el( 'table', 'cvtrk-table' );
@@ -131,6 +162,10 @@
 		var tr = el( 'tr' );
 		headers.forEach( function ( h ) {
 			var th = el( 'th', h.num ? 'cvtrk-num' : null, h.label );
+			th.scope = 'col';
+			if ( h.hide ) {
+				th.classList.add( 'cvtrk-col-hide-' + h.hide );
+			}
 			tr.appendChild( th );
 		} );
 		thead.appendChild( tr );
@@ -138,6 +173,16 @@
 		t.appendChild( el( 'tbody' ) );
 		wrap.appendChild( t );
 		return wrap;
+	}
+
+	// Mirror a header's responsive-hide class onto the row's cells so the
+	// column disappears as one unit on narrow admin widths.
+	function applyHideClasses( tr, headers ) {
+		headers.forEach( function ( h, i ) {
+			if ( h.hide && tr.cells[ i ] ) {
+				tr.cells[ i ].classList.add( 'cvtrk-col-hide-' + h.hide );
+			}
+		} );
 	}
 
 	function rankCell( i ) {
@@ -248,6 +293,20 @@
 
 	function statusClass( value ) {
 		return String( value || 'unknown' ).toLowerCase().replace( /[^a-z0-9_-]+/g, '_' );
+	}
+
+	// Only http(s) and same-site relative URLs are allowed in generated
+	// links. Protocol-relative (//host) is rejected: it silently points at
+	// an external origin.
+	function safeUrl( value ) {
+		var url = String( value || '' ).trim();
+		if ( ! url ) {
+			return '';
+		}
+		if ( /^https?:\/\//i.test( url ) || /^\/(?!\/)/.test( url ) ) {
+			return url;
+		}
+		return '';
 	}
 
 	/* Rendering ----------------------------------------------------------- */
@@ -2852,7 +2911,9 @@
 			}
 			progressBox.hidden = false;
 			progressBox.textContent = text;
-			progressBox.style.color = isError ? '#b84a62' : '';
+			// Errors get the red variant; everything else keeps the neutral
+			// info style (progress messages are not "successes").
+			progressBox.classList.toggle( 'cvtrk-notice-error', !! isError );
 		}
 
 		function appendParam( parts, key, value ) {
@@ -2883,8 +2944,8 @@
 			exportLink.href = C.notFoundExportUrl + '&_wpnonce=' + encodeURIComponent( C.notFoundExportNonce || '' ) + ( q ? '&' + q.replace( /^&/, '' ) : '' );
 		}
 
-		function kpi( value, label, icon ) {
-			var item = el( 'div', 'cvtrk-kpi' );
+		function kpi( value, label, icon, mod ) {
+			var item = el( 'div', 'cvtrk-kpi' + ( mod ? ' ' + mod : '' ) );
 			var iconWrap = el( 'span', 'cvtrk-kpi-icon' );
 			iconWrap.appendChild( svgIcon( icon || 'warning', 'cvtrk-icon' ) );
 			var body = el( 'span', 'cvtrk-kpi-body' );
@@ -2903,47 +2964,88 @@
 			clear( box );
 
 			var grid = el( 'div', 'cvtrk-kpis cvtrk-404-kpis' );
-			grid.appendChild( kpi( num( data.total ), 'Total 404s', 'warning' ) );
-			grid.appendChild( kpi( num( data.unresolved ), 'Unresolved', 'clock' ) );
-			grid.appendChild( kpi( num( data.recommended ), 'Recommended', 'search' ) );
-			grid.appendChild( kpi( num( data.redirected ), 'Redirected', 'update' ) );
-			grid.appendChild( kpi( num( data.ignored ), 'Ignored', 'hidden' ) );
-			grid.appendChild( kpi( num( data.redirect_hits ), 'Redirect hits', 'click' ) );
+			grid.appendChild( kpi( num( data.total ), I18N.nfTotal || 'Total 404 URLs', 'warning' ) );
+			grid.appendChild( kpi( num( data.unresolved ), I18N.nfNew || 'New', 'clock' ) );
+			grid.appendChild( kpi( num( data.recommended ), I18N.nfPending || 'Pending suggestions', 'search', 'is-amber' ) );
+			grid.appendChild( kpi( num( data.redirected ), I18N.nfResolved || 'Auto-resolved', 'update', 'is-accent' ) );
+			grid.appendChild( kpi( num( data.manual ), I18N.nfManual || 'Manual review', 'list' ) );
+			grid.appendChild( kpi( num( data.ignored ), I18N.nfIgnored || 'Ignored', 'hidden' ) );
 			box.appendChild( grid );
 
 			var meta = el( 'div', 'cvtrk-404-meta' );
 			var mode = data.settings && data.settings.mode ? data.settings.mode : '';
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Mode: ' + statusText( mode ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Valid URLs: ' + num( data.valid_url_count ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'Recent hits: ' + num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
-			if ( data.last_sitemap_refresh ) {
-				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', 'URL cache: ' + dateText( data.last_sitemap_refresh ) ) );
-			}
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfMode || 'Mode' ) + ': ' + statusText( mode ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfRedirectHits || 'Redirect hits' ) + ': ' + num( data.redirect_hits ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfValidUrls || 'Valid URLs' ) + ': ' + num( data.valid_url_count ) ) );
+			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfRecentHits || 'Recent hits' ) + ': ' + num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
 			if ( data.compatibility && data.compatibility.tools && data.compatibility.tools.length ) {
-				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', 'Redirect tool detected' ) );
+				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-warning', I18N.nfToolDetected || 'Redirect tool detected' ) );
 			}
 			box.appendChild( meta );
+
+			var lastScan = attr( '404-last-scan' );
+			if ( lastScan ) {
+				lastScan.textContent = data.last_sitemap_refresh ? dateText( data.last_sitemap_refresh ) : ( I18N.never || 'Never' );
+			}
 		}
 
 		function loadSummary() {
+			var box = attr( '404-summary' );
+			setBusy( box, true );
 			api( '/404/summary' )
-				.then( renderSummary )
+				.then( function ( data ) {
+					setBusy( box, false );
+					renderSummary( data );
+				} )
 				.catch( function ( err ) {
-					var box = attr( '404-summary' );
+					setBusy( box, false );
 					if ( box ) {
-						empty( box, ( err && err.message ) || 'Could not load 404 summary.' );
+						errorState( box, ( err && err.message ) || 'Could not load 404 summary.', loadSummary );
 					}
 				} );
 		}
 
-		function checkboxCell( id ) {
-			var td = el( 'td' );
+		function updateSelectionCount() {
+			var counter = attr( '404-selection' );
+			if ( ! counter ) {
+				return;
+			}
+			var count = selectedIds().length;
+			counter.textContent = count
+				? count + ' ' + ( I18N.nfSelected || 'selected' )
+				: ( I18N.nfNoneSelected || 'No rows selected' );
+			var master = document.querySelector( '.cvtrk-404-select-all' );
+			if ( master ) {
+				var boxes = document.querySelectorAll( '.cvtrk-404-select' );
+				master.checked = boxes.length > 0 && count === boxes.length;
+				master.indeterminate = count > 0 && count < boxes.length;
+			}
+		}
+
+		function checkboxCell( row ) {
+			var td = el( 'td', 'cvtrk-check-col' );
 			var input = document.createElement( 'input' );
 			input.type = 'checkbox';
 			input.className = 'cvtrk-404-select';
-			input.value = String( id );
+			input.value = String( row.id );
+			input.setAttribute( 'aria-label', ( I18N.nfSelectRow || 'Select 404 row' ) + ' ' + ( row.url || row.id ) );
+			input.addEventListener( 'change', updateSelectionCount );
 			td.appendChild( input );
 			return td;
+		}
+
+		function selectAllHeader() {
+			var input = document.createElement( 'input' );
+			input.type = 'checkbox';
+			input.className = 'cvtrk-404-select-all';
+			input.setAttribute( 'aria-label', I18N.nfSelectAll || 'Select all rows on this page' );
+			input.addEventListener( 'change', function () {
+				document.querySelectorAll( '.cvtrk-404-select' ).forEach( function ( box ) {
+					box.checked = input.checked;
+				} );
+				updateSelectionCount();
+			} );
+			return input;
 		}
 
 		function eventActionsCell( row ) {
@@ -2956,25 +3058,59 @@
 				b.setAttribute( 'data-404-destination', row.suggested_url || '' );
 				return b;
 			}
-			td.appendChild( button( 'approve', 'Approve' ) );
-			td.appendChild( button( 'edit', 'Edit' ) );
-			td.appendChild( button( 'ignore', 'Ignore' ) );
-			td.appendChild( button( 'delete', 'Delete' ) );
-			if ( row.source_full_url ) {
-				var source = el( 'a', 'button button-small', 'Open source' );
-				source.href = row.source_full_url;
-				source.target = '_blank';
-				source.rel = 'noopener noreferrer';
-				td.appendChild( source );
-			}
-			if ( row.suggested_url ) {
-				var dest = el( 'a', 'button button-small', 'Open destination' );
-				dest.href = row.suggested_url;
-				dest.target = '_blank';
-				dest.rel = 'noopener noreferrer';
-				td.appendChild( dest );
-			}
+			td.appendChild( button( 'approve', I18N.nfApprove || 'Approve' ) );
+			td.appendChild( button( 'edit', I18N.nfEdit || 'Edit' ) );
+			td.appendChild( button( 'ignore', I18N.nfIgnore || 'Ignore' ) );
+			td.appendChild( button( 'delete', I18N.nfDelete || 'Delete' ) );
+			var details = el( 'button', 'button button-small', I18N.nfDetails || 'Details' );
+			details.type = 'button';
+			details.setAttribute( 'data-404-details', row.id );
+			details.setAttribute( 'aria-expanded', 'false' );
+			td.appendChild( details );
 			return td;
+		}
+
+		function detailItem( label, value, href ) {
+			var item = el( 'div', 'cvtrk-detail-item' );
+			item.appendChild( el( 'span', 'cvtrk-detail-label', label ) );
+			var valueEl = el( 'span', 'cvtrk-detail-value' );
+			var link = safeUrl( href );
+			if ( value && link ) {
+				var a = el( 'a', null, value );
+				a.href = link;
+				a.target = '_blank';
+				a.rel = 'noopener noreferrer';
+				valueEl.appendChild( a );
+			} else {
+				valueEl.textContent = value || '—';
+			}
+			item.appendChild( valueEl );
+			return item;
+		}
+
+		function buildDetailRow( row, columns ) {
+			var tr = el( 'tr', 'cvtrk-detail-row' );
+			tr.setAttribute( 'data-404-detail-row', row.id );
+			tr.hidden = true;
+			var td = el( 'td' );
+			td.colSpan = columns;
+			var panel = el( 'div', 'cvtrk-detail-panel' );
+			panel.appendChild( detailItem( I18N.nfDetailSource || '404 URL', row.url || '', row.source_full_url ) );
+			panel.appendChild( detailItem( I18N.nfDetailReferrer || 'Referrer', row.referrer_url || '', row.referrer_url ) );
+			panel.appendChild( detailItem( I18N.nfDetailFirst || 'First detected', dateText( row.first_detected_at ) ) );
+			panel.appendChild( detailItem( I18N.nfDetailLast || 'Last detected', dateText( row.last_detected_at ) ) );
+			panel.appendChild( detailItem( I18N.nfDetailHits || 'Hit count', num( row.hit_count ) ) );
+			panel.appendChild( detailItem( I18N.nfDetailSuggested || 'Suggested redirect', row.suggested_url || '', row.suggested_url ) );
+			panel.appendChild( detailItem( I18N.nfDetailConfidence || 'Match confidence', row.suggested_url ? ( Number( row.confidence ) || 0 ) + '%' : '' ) );
+			panel.appendChild( detailItem( I18N.nfDetailReason || 'Match reason', row.match_reason || '' ) );
+			panel.appendChild( detailItem( I18N.nfDetailPostType || 'Suggested post type', row.suggested_post_type || '' ) );
+			panel.appendChild( detailItem( I18N.nfDetailStatus || 'Status', statusText( row.status ) ) );
+			if ( row.error_message ) {
+				panel.appendChild( detailItem( I18N.nfDetailError || 'Last error', row.error_message ) );
+			}
+			td.appendChild( panel );
+			tr.appendChild( td );
+			return tr;
 		}
 
 		function renderEvents( data ) {
@@ -2986,50 +3122,72 @@
 			state.lastRows = data.rows || [];
 			updateExportLink();
 			if ( ! state.lastRows.length ) {
-				empty( box, 'No 404 rows match the current filters.' );
+				empty( box, I18N.nfNoRows || 'No 404 rows match the current filters.' );
 				updatePagination();
+				updateSelectionCount();
 				return;
 			}
 
 			clear( box );
-			var wrap = table( [
+			// Referrer/Detected stay available in the expandable Details row,
+			// so they can safely collapse on narrow admin widths.
+			var headers = [
 				{ label: '' },
-				{ label: 'Source URL' },
-				{ label: 'Referrer' },
-				{ label: 'Detected' },
-				{ label: 'Hits', num: true },
-				{ label: 'Suggestion' },
-				{ label: 'Confidence', num: true },
-				{ label: 'Status' },
-				{ label: 'Actions' }
-			] );
+				{ label: I18N.nfColUrl || '404 URL' },
+				{ label: I18N.nfColReferrer || 'Referrer', hide: 'md' },
+				{ label: I18N.nfColDetected || 'Detected', hide: 'sm' },
+				{ label: I18N.nfColHits || 'Hits', num: true },
+				{ label: I18N.nfColSuggestion || 'Suggested redirect' },
+				{ label: I18N.nfColConfidence || 'Confidence', num: true },
+				{ label: I18N.nfColStatus || 'Status' },
+				{ label: I18N.nfColActions || 'Actions' }
+			];
+			var wrap = table( headers );
+			var firstTh = wrap.querySelector( 'thead th' );
+			if ( firstTh ) {
+				firstTh.className = 'cvtrk-check-col';
+				firstTh.appendChild( selectAllHeader() );
+			}
 			var tbody = wrap.querySelector( 'tbody' );
 			state.lastRows.forEach( function ( row ) {
 				var tr = el( 'tr' );
-				tr.appendChild( checkboxCell( row.id ) );
-				tr.appendChild( labelCell( row.url || '-', row.source_full_url || '', row.source_full_url || '' ) );
-				tr.appendChild( labelCell( row.referrer_url || '-', '', row.referrer_url || '' ) );
-				tr.appendChild( labelCell( dateText( row.last_detected_at ), 'First: ' + dateText( row.first_detected_at ) ) );
+				tr.appendChild( checkboxCell( row ) );
+				tr.appendChild( labelCell( row.url || '-', row.source_full_url || '', safeUrl( row.source_full_url ) ) );
+				tr.appendChild( labelCell( row.referrer_url || '-', '', safeUrl( row.referrer_url ) ) );
+				tr.appendChild( labelCell( dateText( row.last_detected_at ), ( I18N.nfFirstSeen || 'First' ) + ': ' + dateText( row.first_detected_at ) ) );
 				tr.appendChild( numCell( row.hit_count ) );
-				tr.appendChild( labelCell( row.suggested_url || '-', row.match_reason || '', row.suggested_url || '' ) );
-				tr.appendChild( numCell( row.confidence ) );
+				tr.appendChild( labelCell( row.suggested_url || '-', row.match_reason || '', safeUrl( row.suggested_url ) ) );
+				var confidenceCell = el( 'td', 'cvtrk-num' );
+				confidenceCell.textContent = row.suggested_url ? ( Number( row.confidence ) || 0 ) + '%' : '—';
+				tr.appendChild( confidenceCell );
 				var statusCell = el( 'td' );
-				statusCell.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ), statusText( row.status ) ) );
+				var statusBadge = el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ) );
+				statusBadge.appendChild( el( 'span', 'cvtrk-badge-dot' ) );
+				statusBadge.appendChild( document.createTextNode( statusText( row.status ) ) );
+				statusCell.appendChild( statusBadge );
 				tr.appendChild( statusCell );
 				tr.appendChild( eventActionsCell( row ) );
+				applyHideClasses( tr, headers );
 				tbody.appendChild( tr );
+				tbody.appendChild( buildDetailRow( row, headers.length ) );
 			} );
 			box.appendChild( wrap );
 			updatePagination();
+			updateSelectionCount();
 		}
 
 		function loadEvents() {
+			var box = attr( '404-events' );
+			setBusy( box, true );
 			api( '/404/events' + query() )
-				.then( renderEvents )
+				.then( function ( data ) {
+					setBusy( box, false );
+					renderEvents( data );
+				} )
 				.catch( function ( err ) {
-					var box = attr( '404-events' );
+					setBusy( box, false );
 					if ( box ) {
-						empty( box, ( err && err.message ) || 'Could not load 404 events.' );
+						errorState( box, ( err && err.message ) || 'Could not load 404 events.', loadEvents );
 					}
 				} );
 		}
@@ -3039,7 +3197,7 @@
 			var prev = attr( '404-prev' );
 			var next = attr( '404-next' );
 			if ( pageEl ) {
-				pageEl.textContent = 'Page ' + state.page + ' / ' + state.pages;
+				pageEl.textContent = ( I18N.pageWord || 'Page' ) + ' ' + state.page + ' / ' + state.pages;
 			}
 			if ( prev ) {
 				prev.disabled = state.page <= 1;
@@ -3073,11 +3231,15 @@
 			rows.forEach( function ( row ) {
 				var tr = el( 'tr' );
 				var provider = row.provider || row.source || 'internal';
-				tr.appendChild( labelCell( row.source_url || '-', '', row.source_url && /^https?:/.test( row.source_url ) ? row.source_url : '' ) );
-				tr.appendChild( labelCell( row.destination_url || '-', '', row.destination_url || '' ) );
+				tr.appendChild( labelCell( row.source_url || '-', '', safeUrl( row.source_url ) ) );
+				tr.appendChild( labelCell( row.destination_url || '-', '', safeUrl( row.destination_url ) ) );
 				tr.appendChild( el( 'td', null, provider ) );
 				var redirectStatus = el( 'td' );
-				redirectStatus.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ), statusText( row.status ) + ' / ' + ( row.redirect_type || 301 ) ) );
+				var typeSuffix = row.redirect_type ? ' / ' + row.redirect_type : ( row.external ? '' : ' / 301' );
+				var redirectBadge = el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ) );
+				redirectBadge.appendChild( el( 'span', 'cvtrk-badge-dot' ) );
+				redirectBadge.appendChild( document.createTextNode( statusText( row.status ) + typeSuffix ) );
+				redirectStatus.appendChild( redirectBadge );
 				tr.appendChild( redirectStatus );
 				tr.appendChild( el( 'td', null, dateText( row.last_hit_at ) ) );
 				tr.appendChild( numCell( row.hit_count ) );
@@ -3107,12 +3269,17 @@
 		}
 
 		function loadRedirects() {
+			var box = attr( '404-redirects' );
+			setBusy( box, true );
 			api( '/404/redirects?limit=100' )
-				.then( renderRedirects )
+				.then( function ( data ) {
+					setBusy( box, false );
+					renderRedirects( data );
+				} )
 				.catch( function ( err ) {
-					var box = attr( '404-redirects' );
+					setBusy( box, false );
 					if ( box ) {
-						empty( box, ( err && err.message ) || 'Could not load redirects.' );
+						errorState( box, ( err && err.message ) || 'Could not load redirects.', loadRedirects );
 					}
 				} );
 		}
@@ -3151,12 +3318,17 @@
 		}
 
 		function loadLogs() {
+			var box = attr( '404-logs' );
+			setBusy( box, true );
 			api( '/404/logs?limit=50' )
-				.then( renderLogs )
+				.then( function ( data ) {
+					setBusy( box, false );
+					renderLogs( data );
+				} )
 				.catch( function ( err ) {
-					var box = attr( '404-logs' );
+					setBusy( box, false );
 					if ( box ) {
-						empty( box, ( err && err.message ) || 'Could not load 404 logs.' );
+						errorState( box, ( err && err.message ) || 'Could not load 404 logs.', loadLogs );
 					}
 				} );
 		}
@@ -3181,6 +3353,15 @@
 		var eventBox = attr( '404-events' );
 		if ( eventBox ) {
 			eventBox.addEventListener( 'click', function ( e ) {
+				var detailsBtn = e.target && e.target.closest ? e.target.closest( '[data-404-details]' ) : null;
+				if ( detailsBtn ) {
+					var detailRow = eventBox.querySelector( '[data-404-detail-row="' + detailsBtn.getAttribute( 'data-404-details' ) + '"]' );
+					if ( detailRow ) {
+						detailRow.hidden = ! detailRow.hidden;
+						detailsBtn.setAttribute( 'aria-expanded', detailRow.hidden ? 'false' : 'true' );
+					}
+					return;
+				}
 				var btn = e.target && e.target.closest ? e.target.closest( '[data-404-action]' ) : null;
 				if ( ! btn ) {
 					return;
@@ -3326,6 +3507,9 @@
 					setProgress( 'Choose at least one row first.', true );
 					return;
 				}
+				if ( 'delete' === action && ! window.confirm( I18N.nfBulkDeleteConfirm || 'Delete the selected 404 rows?' ) ) {
+					return;
+				}
 				bulkRun.disabled = true;
 				postApi( '/404/bulk', body )
 					.then( function ( data ) {
@@ -3369,6 +3553,7 @@
 		var pageSel = attr( 'kw-page-filter' );
 		var oppSel = attr( 'kw-opportunity' );
 		var presenceSel = attr( 'kw-presence' );
+		var minImpressions = attr( 'kw-min-impressions' );
 		var searchInput = attr( 'kw-search' );
 		var progressBox = attr( 'kw-progress' );
 		var exportLink = attr( 'kw-export' );
@@ -3444,7 +3629,9 @@
 			}
 			progressBox.hidden = false;
 			progressBox.textContent = text;
-			progressBox.style.color = isError ? '#b84a62' : '';
+			// Errors get the red variant; everything else keeps the neutral
+			// info style (progress messages are not "successes").
+			progressBox.classList.toggle( 'cvtrk-notice-error', !! isError );
 		}
 
 		function appendParam( parts, key, value ) {
@@ -3463,6 +3650,7 @@
 			appendParam( parts, 'post_id', pageSel && pageSel.value !== '0' ? pageSel.value : '' );
 			appendParam( parts, 'opportunity', oppSel && oppSel.value !== 'all' ? oppSel.value : '' );
 			appendParam( parts, 'presence', presenceSel && presenceSel.value !== 'all' ? presenceSel.value : '' );
+			appendParam( parts, 'min_impressions', minImpressions ? minImpressions.value : '' );
 			appendParam( parts, 'orderby', state.orderby );
 			appendParam( parts, 'order', state.order );
 			return '?' + parts.join( '&' );
@@ -3494,6 +3682,11 @@
 				return;
 			}
 			clear( box );
+
+			var headSync = attr( 'kw-last-sync' );
+			if ( headSync ) {
+				headSync.textContent = data.last_synced_at ? shortDate( data.last_synced_at ) : ( I18N.never || 'Never' );
+			}
 
 			if ( ! data.connected ) {
 				empty( box, I18N.kwNotConnected || 'Connect Google Search Console first.' );
@@ -3604,9 +3797,9 @@
 			var tbody = wrap.querySelector( 'tbody' );
 			rows.forEach( function ( row ) {
 				var tr = el( 'tr' );
-				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, row.page_url ) );
+				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, safeUrl( row.page_url ) ) );
 				tr.appendChild( numCell( row.keywords ) );
-				tr.appendChild( textNumCell( String( Math.round( row.opportunity_score ) ) ) );
+				tr.appendChild( textNumCell( String( Math.round( Number( row.opportunity_score ) || 0 ) ) ) );
 				var td = el( 'td', 'cvtrk-kw-actions' );
 				if ( row.post_id ) {
 					var btn = el( 'button', 'button button-small', I18N.kwDetails || 'Details' );
@@ -3622,17 +3815,27 @@
 		}
 
 		function loadSummary() {
+			var box = attr( 'kw-summary' );
+			setBusy( box, true );
 			api( '/gsc/keywords/summary?range=' + encodeURIComponent( state.range ) )
 				.then( function ( data ) {
+					setBusy( box, false );
 					renderSummary( data );
 					renderBranded( data );
 					renderTopPages( data.top_pages || [] );
 				} )
 				.catch( function ( err ) {
-					var box = attr( 'kw-summary' );
+					setBusy( box, false );
 					if ( box ) {
-						empty( box, ( err && err.message ) || 'Could not load keyword summary.' );
+						errorState( box, ( err && err.message ) || 'Could not load keyword summary.', loadSummary );
 					}
+					// These cards are fed by the same request — stop their
+					// skeletons instead of letting them pulse forever.
+					[ attr( 'kw-branded' ), attr( 'kw-top-pages' ) ].forEach( function ( card ) {
+						if ( card ) {
+							errorState( card, ( err && err.message ) || ( I18N.loadError || 'Something went wrong while loading this data.' ) );
+						}
+					} );
 				} );
 		}
 
@@ -3643,15 +3846,25 @@
 			var tr = el( 'tr' );
 			headers.forEach( function ( h ) {
 				var cls = h.num ? 'cvtrk-num' : '';
+				var sorted = h.sort && state.orderby === h.sort;
 				if ( h.sort ) {
 					cls += ' cvtrk-sortable';
-					if ( state.orderby === h.sort ) {
+					if ( sorted ) {
 						cls += state.order === 'asc' ? ' is-sorted-asc' : ' is-sorted-desc';
 					}
 				}
-				var th = el( 'th', cls.trim() || null, h.label );
+				var th = el( 'th', cls.trim() || null, h.sort ? null : h.label );
+				th.scope = 'col';
+				if ( h.hide ) {
+					th.classList.add( 'cvtrk-col-hide-' + h.hide );
+				}
 				if ( h.sort ) {
-					th.addEventListener( 'click', function () {
+					// Real button inside the header so keyboard and screen-reader
+					// users can sort; aria-sort announces the current direction.
+					th.setAttribute( 'aria-sort', sorted ? ( state.order === 'asc' ? 'ascending' : 'descending' ) : 'none' );
+					var sortBtn = el( 'button', 'cvtrk-sort-btn', h.label );
+					sortBtn.type = 'button';
+					sortBtn.addEventListener( 'click', function () {
 						if ( state.orderby === h.sort ) {
 							state.order = state.order === 'asc' ? 'desc' : 'asc';
 						} else {
@@ -3661,6 +3874,13 @@
 						state.page = 1;
 						loadKeywords();
 						updateExportLink();
+					} );
+					th.appendChild( sortBtn );
+					// Clicks on the header cell's padding still sort.
+					th.addEventListener( 'click', function ( e ) {
+						if ( e.target === th ) {
+							sortBtn.click();
+						}
 					} );
 				}
 				tr.appendChild( th );
@@ -3672,14 +3892,47 @@
 			return wrap;
 		}
 
-		function checkboxCell( id ) {
-			var td = el( 'td' );
+		function updateSelectionCount() {
+			var counter = attr( 'kw-selection' );
+			if ( ! counter ) {
+				return;
+			}
+			var count = selectedIds().length;
+			counter.textContent = count
+				? count + ' ' + ( I18N.kwSelected || 'selected' )
+				: ( I18N.kwNoneSelected || 'No keywords selected' );
+			var master = root.querySelector( '.cvtrk-kw-select-all' );
+			if ( master ) {
+				var boxes = root.querySelectorAll( '.cvtrk-kw-select' );
+				master.checked = boxes.length > 0 && count === boxes.length;
+				master.indeterminate = count > 0 && count < boxes.length;
+			}
+		}
+
+		function checkboxCell( row ) {
+			var td = el( 'td', 'cvtrk-check-col' );
 			var input = document.createElement( 'input' );
 			input.type = 'checkbox';
 			input.className = 'cvtrk-kw-select';
-			input.value = String( id );
+			input.value = String( row.id );
+			input.setAttribute( 'aria-label', ( I18N.kwSelectRow || 'Select keyword' ) + ' ' + ( row.query || row.id ) );
+			input.addEventListener( 'change', updateSelectionCount );
 			td.appendChild( input );
 			return td;
+		}
+
+		function selectAllHeader() {
+			var input = document.createElement( 'input' );
+			input.type = 'checkbox';
+			input.className = 'cvtrk-kw-select-all';
+			input.setAttribute( 'aria-label', I18N.kwSelectAll || 'Select all keywords on this page' );
+			input.addEventListener( 'change', function () {
+				root.querySelectorAll( '.cvtrk-kw-select' ).forEach( function ( box ) {
+					box.checked = input.checked;
+				} );
+				updateSelectionCount();
+			} );
+			return input;
 		}
 
 		function typeBadgesCell( labels ) {
@@ -3706,7 +3959,10 @@
 				td.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', I18N.kwQueuedForAnalysis || 'Queued for analysis' ) );
 				return td;
 			}
-			td.appendChild( el( 'span', 'cvtrk-badge ' + ( presenceTones[ status ] || 'cvtrk-badge-gray' ), presenceLabels[ status ] || status ) );
+			var badge = el( 'span', 'cvtrk-badge ' + ( presenceTones[ status ] || 'cvtrk-badge-gray' ) );
+			badge.appendChild( el( 'span', 'cvtrk-badge-dot' ) );
+			badge.appendChild( document.createTextNode( presenceLabels[ status ] || status ) );
+			td.appendChild( badge );
 			return td;
 		}
 
@@ -3736,14 +3992,15 @@
 			if ( ! state.lastRows.length ) {
 				empty( tableBox, I18N.kwNoResults || 'No keywords match the current filters.' );
 				updatePagination();
+				updateSelectionCount();
 				return;
 			}
 
-			var wrap = sortableTable( [
+			var kwHeaders = [
 				{ label: '' },
 				{ label: I18N.kwKeyword || 'Keyword', sort: 'query' },
 				{ label: I18N.page || 'Page' },
-				{ label: I18N.kwTypes || 'Type' },
+				{ label: I18N.kwTypes || 'Type', hide: 'sm' },
 				{ label: I18N.clicks || 'Clicks', num: true, sort: 'clicks' },
 				{ label: I18N.kwImpressions || 'Impressions', num: true, sort: 'impressions' },
 				{ label: I18N.kwCtrShort || 'CTR', num: true, sort: 'ctr' },
@@ -3752,15 +4009,21 @@
 				{ label: I18N.kwOpportunity || 'Opportunity', num: true, sort: 'opportunity_score' },
 				{ label: I18N.kwAction || 'Recommended action' },
 				{ label: I18N.actions || 'Actions' }
-			] );
+			];
+			var wrap = sortableTable( kwHeaders );
+			var firstTh = wrap.querySelector( 'thead th' );
+			if ( firstTh ) {
+				firstTh.className = 'cvtrk-check-col';
+				firstTh.appendChild( selectAllHeader() );
+			}
 			var tbody = wrap.querySelector( 'tbody' );
 
 			state.lastRows.forEach( function ( row ) {
 				var analyzed = row.analysis_state === 'done';
 				var tr = el( 'tr' );
-				tr.appendChild( checkboxCell( row.id ) );
+				tr.appendChild( checkboxCell( row ) );
 				tr.appendChild( labelCell( row.query ) );
-				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, row.page_url ) );
+				tr.appendChild( labelCell( row.post_title || row.page_url, row.page_url, safeUrl( row.page_url ) ) );
 				tr.appendChild( analyzed ? typeBadgesCell( row.labels ) : el( 'td', null, '—' ) );
 				tr.appendChild( numCell( row.clicks ) );
 				tr.appendChild( numCell( row.impressions ) );
@@ -3785,19 +4048,26 @@
 				actions.appendChild( reanalyze );
 				tr.appendChild( actions );
 
+				applyHideClasses( tr, kwHeaders );
 				tbody.appendChild( tr );
 			} );
 
 			tableBox.appendChild( wrap );
 			updatePagination();
+			updateSelectionCount();
 		}
 
 		function loadKeywords() {
+			setBusy( tableBox, true );
 			api( '/gsc/keywords' + query() )
-				.then( renderKeywords )
+				.then( function ( data ) {
+					setBusy( tableBox, false );
+					renderKeywords( data );
+				} )
 				.catch( function ( err ) {
+					setBusy( tableBox, false );
 					if ( tableBox ) {
-						empty( tableBox, ( err && err.message ) || 'Could not load keywords.' );
+						errorState( tableBox, ( err && err.message ) || 'Could not load keywords.', loadKeywords );
 					}
 				} );
 		}
@@ -3807,7 +4077,7 @@
 			var next = attr( 'kw-next' );
 			var label = attr( 'kw-page' );
 			if ( label ) {
-				label.textContent = state.page + ' / ' + state.pages;
+				label.textContent = ( I18N.pageWord || 'Page' ) + ' ' + state.page + ' / ' + state.pages;
 			}
 			if ( prev ) {
 				prev.disabled = state.page <= 1;
@@ -3926,15 +4196,19 @@
 
 			if ( data.recommendations && data.recommendations.length ) {
 				var recSection = detailSection( body, I18N.kwPageRecs || 'Recommended actions for this page' );
-				var recList = el( 'ol', 'cvtrk-kw-list' );
 				data.recommendations.forEach( function ( rec ) {
-					var li = el( 'li', null, rec.message );
+					var reco = el( 'div', 'cvtrk-reco' );
+					var recoIcon = el( 'span', 'cvtrk-reco-icon' );
+					recoIcon.appendChild( svgIcon( 'indexed', 'cvtrk-icon' ) );
+					reco.appendChild( recoIcon );
+					var recoBody = el( 'div', 'cvtrk-reco-body' );
+					recoBody.appendChild( el( 'div', 'cvtrk-reco-text', rec.message ) );
 					if ( rec.keywords && rec.keywords.length ) {
-						li.appendChild( el( 'span', 'cvtrk-sub', ' — ' + rec.keywords.join( ', ' ) ) );
+						recoBody.appendChild( el( 'div', 'cvtrk-reco-keys', rec.keywords.join( ', ' ) ) );
 					}
-					recList.appendChild( li );
+					reco.appendChild( recoBody );
+					recSection.appendChild( reco );
 				} );
-				recSection.appendChild( recList );
 			}
 
 			if ( data.placements && data.placements.length ) {
@@ -4019,7 +4293,9 @@
 				.catch( function ( err ) {
 					var box = attr( 'kw-detail-body' );
 					if ( box ) {
-						empty( box, ( I18N.kwDetailFailed || 'Could not load the page detail:' ) + ' ' + ( ( err && err.message ) || '' ) );
+						errorState( box, ( I18N.kwDetailFailed || 'Could not load the page detail:' ) + ' ' + ( ( err && err.message ) || '' ), function () {
+							openDetail( postId );
+						} );
 					}
 				} );
 		}
@@ -4061,9 +4337,11 @@
 				return;
 			}
 			setSyncButtons( true );
+			var pollErrors = 0;
 			state.statusTimer = window.setInterval( function () {
 				api( '/gsc/keywords/status' )
 					.then( function ( data ) {
+						pollErrors = 0;
 						var sync = data.sync || {};
 						if ( sync.running ) {
 							var progress = sync.progress || {};
@@ -4082,7 +4360,17 @@
 						}
 						reloadAll();
 					} )
-					.catch( function () {} );
+					.catch( function ( err ) {
+						// Do not let repeated status errors lock the Sync buttons
+						// forever: give up after a few failures and let the user retry.
+						pollErrors++;
+						if ( pollErrors >= 5 ) {
+							window.clearInterval( state.statusTimer );
+							state.statusTimer = null;
+							setSyncButtons( false );
+							setProgress( ( I18N.kwStatusLost || 'Lost contact with the sync status endpoint. The sync may still be running in the background — refresh to check.' ) + ( err && err.message ? ' (' + err.message + ')' : '' ), true );
+						}
+					} );
 			}, 4000 );
 		}
 
@@ -4122,7 +4410,7 @@
 			} );
 		}
 
-		[ typeSel, pageSel, oppSel, presenceSel ].forEach( function ( select ) {
+		[ typeSel, pageSel, oppSel, presenceSel, minImpressions ].forEach( function ( select ) {
 			if ( select ) {
 				select.addEventListener( 'change', function () {
 					state.page = 1;

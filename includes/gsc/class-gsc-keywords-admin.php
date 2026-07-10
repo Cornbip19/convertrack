@@ -61,16 +61,17 @@ class Keywords_Admin {
 		}
 
 		$args = array(
-			'page'        => 1,
-			'per_page'    => 100,
-			'range_key'   => isset( $_GET['range'] ) ? sanitize_key( wp_unslash( $_GET['range'] ) ) : '',
-			'search'      => isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
-			'post_id'     => isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0,
-			'label'       => isset( $_GET['label'] ) ? sanitize_key( wp_unslash( $_GET['label'] ) ) : '',
-			'presence'    => isset( $_GET['presence'] ) ? sanitize_key( wp_unslash( $_GET['presence'] ) ) : '',
-			'opportunity' => isset( $_GET['opportunity'] ) ? sanitize_key( wp_unslash( $_GET['opportunity'] ) ) : '',
-			'orderby'     => isset( $_GET['orderby'] ) ? sanitize_key( wp_unslash( $_GET['orderby'] ) ) : '',
-			'order'       => isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '',
+			'page'            => 1,
+			'per_page'        => 100,
+			'range_key'       => isset( $_GET['range'] ) ? sanitize_key( wp_unslash( $_GET['range'] ) ) : '',
+			'search'          => isset( $_GET['search'] ) ? sanitize_text_field( wp_unslash( $_GET['search'] ) ) : '',
+			'post_id'         => isset( $_GET['post_id'] ) ? absint( $_GET['post_id'] ) : 0,
+			'label'           => isset( $_GET['label'] ) ? sanitize_key( wp_unslash( $_GET['label'] ) ) : '',
+			'presence'        => isset( $_GET['presence'] ) ? sanitize_key( wp_unslash( $_GET['presence'] ) ) : '',
+			'opportunity'     => isset( $_GET['opportunity'] ) ? sanitize_key( wp_unslash( $_GET['opportunity'] ) ) : '',
+			'min_impressions' => isset( $_GET['min_impressions'] ) ? absint( $_GET['min_impressions'] ) : 0,
+			'orderby'         => isset( $_GET['orderby'] ) ? sanitize_key( wp_unslash( $_GET['orderby'] ) ) : '',
+			'order'           => isset( $_GET['order'] ) ? sanitize_key( wp_unslash( $_GET['order'] ) ) : '',
 		);
 
 		nocache_headers();

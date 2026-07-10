@@ -44,8 +44,23 @@ $type_labels = array(
 	data-kw-enabled="<?php echo $s['enabled'] ? '1' : '0'; ?>">
 	<?php Admin::render_header( 'keywords' ); ?>
 
+	<div class="cvtrk-page-head">
+		<div class="cvtrk-page-head-text">
+			<h2 class="cvtrk-page-title"><?php esc_html_e( 'Keyword Insights', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Search Console keyword opportunities mapped to your pages, with presence checks and clear content recommendations.', 'convertrack-click-conversion-analytics' ); ?></p>
+		</div>
+		<div class="cvtrk-page-head-actions">
+			<span class="cvtrk-page-head-meta">
+				<?php echo Admin::icon( 'refresh' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<span><?php esc_html_e( 'Last synced:', 'convertrack-click-conversion-analytics' ); ?> <b data-cvtrk="kw-last-sync">&mdash;</b></span>
+			</span>
+			<a class="button" data-cvtrk="kw-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
+			<button type="button" class="button button-primary" data-cvtrk="kw-sync"><?php esc_html_e( 'Sync Now', 'convertrack-click-conversion-analytics' ); ?></button>
+		</div>
+	</div>
+
 	<?php if ( $notice ) : ?>
-		<div class="cvtrk-notice">
+		<div class="cvtrk-notice cvtrk-notice-success">
 			<?php
 			switch ( $notice ) {
 				case 'settings-saved':
@@ -70,7 +85,7 @@ $type_labels = array(
 		</div>
 	<?php endif; ?>
 
-	<div class="cvtrk-notice" data-cvtrk="kw-progress" hidden aria-live="polite"></div>
+	<div class="cvtrk-notice cvtrk-progress-notice" data-cvtrk="kw-progress" hidden aria-live="polite"></div>
 
 	<div class="cvtrk-gsc-panel" data-cvtrk="kw-summary">
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
@@ -99,28 +114,24 @@ $type_labels = array(
 
 	<div class="cvtrk-card" id="convertrack-kw-table">
 		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Keywords', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Search Console queries mapped to your content, with presence checks and recommendations', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div>
+				<h2><?php esc_html_e( 'Keywords', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Search Console queries mapped to your content, with presence checks and recommendations', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
 		</div>
 		<div class="cvtrk-card-body">
-			<div class="cvtrk-toolbar cvtrk-kw-toolbar">
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Date range', 'convertrack-click-conversion-analytics' ); ?>
+			<div class="cvtrk-filters" role="group" aria-label="<?php esc_attr_e( 'Keyword filters', 'convertrack-click-conversion-analytics' ); ?>">
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Date range', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="kw-range">
 						<?php foreach ( $range_labels as $range_key => $range_label ) : ?>
 							<option value="<?php echo esc_attr( $range_key ); ?>" <?php selected( $s['default_range'], $range_key ); ?>><?php echo esc_html( $range_label ); ?></option>
 						<?php endforeach; ?>
-						<option value="custom"><?php esc_html_e( 'Custom range (synced on demand)', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="custom"><?php esc_html_e( 'Custom range', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
-				<label class="cvtrk-field" data-cvtrk="kw-custom-dates" hidden>
-					<?php esc_html_e( 'From / to', 'convertrack-click-conversion-analytics' ); ?>
-					<input type="date" data-cvtrk="kw-date-from" />
-					<input type="date" data-cvtrk="kw-date-to" />
-					<button type="button" class="button" data-cvtrk="kw-custom-sync"><?php esc_html_e( 'Sync range', 'convertrack-click-conversion-analytics' ); ?></button>
-				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Keyword type', 'convertrack-click-conversion-analytics' ); ?>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Keyword type', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="kw-type">
 						<option value="all"><?php esc_html_e( 'All types', 'convertrack-click-conversion-analytics' ); ?></option>
 						<?php foreach ( $type_labels as $type_key => $type_label ) : ?>
@@ -128,14 +139,14 @@ $type_labels = array(
 						<?php endforeach; ?>
 					</select>
 				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Page', 'convertrack-click-conversion-analytics' ); ?>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Page', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="kw-page-filter">
 						<option value="0"><?php esc_html_e( 'All pages', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Opportunity', 'convertrack-click-conversion-analytics' ); ?>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Opportunity', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="kw-opportunity">
 						<option value="all"><?php esc_html_e( 'All levels', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="high"><?php esc_html_e( 'High', 'convertrack-click-conversion-analytics' ); ?></option>
@@ -144,8 +155,8 @@ $type_labels = array(
 						<option value="optimized"><?php esc_html_e( 'Already optimized', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Presence', 'convertrack-click-conversion-analytics' ); ?>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Presence', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="kw-presence">
 						<option value="all"><?php esc_html_e( 'All statuses', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="present"><?php esc_html_e( 'Present', 'convertrack-click-conversion-analytics' ); ?></option>
@@ -156,22 +167,36 @@ $type_labels = array(
 						<option value="unknown"><?php esc_html_e( 'Not analyzable', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
-				<label class="cvtrk-field cvtrk-field-search">
-					<?php esc_html_e( 'Search', 'convertrack-click-conversion-analytics' ); ?>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Min. impressions', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="number" min="0" step="1" inputmode="numeric" data-cvtrk="kw-min-impressions" placeholder="<?php esc_attr_e( 'Any', 'convertrack-click-conversion-analytics' ); ?>" />
+				</label>
+				<label class="cvtrk-mini-field cvtrk-mini-field-search cvtrk-filter-wide">
+					<span><?php esc_html_e( 'Search', 'convertrack-click-conversion-analytics' ); ?></span>
 					<input type="search" data-cvtrk="kw-search" placeholder="<?php esc_attr_e( 'Keyword or page URL', 'convertrack-click-conversion-analytics' ); ?>" />
 				</label>
-				<button type="button" class="button button-primary" data-cvtrk="kw-sync"><?php esc_html_e( 'Sync Now', 'convertrack-click-conversion-analytics' ); ?></button>
-				<a class="button" data-cvtrk="kw-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
 			</div>
 
-			<div class="cvtrk-toolbar cvtrk-kw-bulk">
+			<div class="cvtrk-mini-field cvtrk-filter-wide" data-cvtrk="kw-custom-dates" hidden>
+				<span><?php esc_html_e( 'Custom range (synced on demand)', 'convertrack-click-conversion-analytics' ); ?></span>
+				<div class="cvtrk-field-pair">
+					<input type="date" data-cvtrk="kw-date-from" aria-label="<?php esc_attr_e( 'From date', 'convertrack-click-conversion-analytics' ); ?>" />
+					<span><?php esc_html_e( 'to', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="date" data-cvtrk="kw-date-to" aria-label="<?php esc_attr_e( 'To date', 'convertrack-click-conversion-analytics' ); ?>" />
+					<button type="button" class="button" data-cvtrk="kw-custom-sync"><?php esc_html_e( 'Sync range', 'convertrack-click-conversion-analytics' ); ?></button>
+				</div>
+			</div>
+
+			<div class="cvtrk-bulk-bar">
+				<span class="cvtrk-selection-count" data-cvtrk="kw-selection" aria-live="polite"><?php esc_html_e( 'No keywords selected', 'convertrack-click-conversion-analytics' ); ?></span>
+				<span class="cvtrk-bulk-spacer"></span>
 				<button type="button" class="button" data-cvtrk="kw-bulk-reanalyze"><?php esc_html_e( 'Re-analyze selected', 'convertrack-click-conversion-analytics' ); ?></button>
 			</div>
 
-			<div data-cvtrk="kw-table"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="kw-table" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			<div class="cvtrk-pagination">
 				<button type="button" class="button" data-cvtrk="kw-prev"><?php esc_html_e( 'Previous', 'convertrack-click-conversion-analytics' ); ?></button>
-				<span data-cvtrk="kw-page"></span>
+				<span data-cvtrk="kw-page" aria-live="polite"></span>
 				<button type="button" class="button" data-cvtrk="kw-next"><?php esc_html_e( 'Next', 'convertrack-click-conversion-analytics' ); ?></button>
 			</div>
 		</div>
@@ -237,7 +262,7 @@ $type_labels = array(
 						<th scope="row"><?php esc_html_e( 'Ranges to keep synced', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $range_labels as $range_key => $range_label ) : ?>
-								<label class="cvtrk-check">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_gsc_keywords_settings[sync_ranges][]" value="<?php echo esc_attr( $range_key ); ?>" <?php checked( in_array( $range_key, (array) $s['sync_ranges'], true ) ); ?> />
 									<?php echo esc_html( $range_label ); ?>
 								</label>
@@ -270,7 +295,7 @@ $type_labels = array(
 						<th scope="row"><?php esc_html_e( 'Post types to analyze', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $post_types as $post_type => $object ) : ?>
-								<label class="cvtrk-check">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_gsc_keywords_settings[selected_post_types][]" value="<?php echo esc_attr( $post_type ); ?>" <?php checked( in_array( $post_type, (array) $s['selected_post_types'], true ) ); ?> />
 									<?php echo esc_html( $object->labels->name ); ?>
 								</label>
@@ -281,7 +306,7 @@ $type_labels = array(
 						<th scope="row"><?php esc_html_e( 'Keyword types to score', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $type_labels as $type_key => $type_label ) : ?>
-								<label class="cvtrk-check">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_gsc_keywords_settings[keyword_types][]" value="<?php echo esc_attr( $type_key ); ?>" <?php checked( in_array( $type_key, (array) $s['keyword_types'], true ) ); ?> />
 									<?php echo esc_html( $type_label ); ?>
 								</label>

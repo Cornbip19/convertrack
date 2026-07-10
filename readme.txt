@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.1
+Stable tag: 2.2.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,14 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.2.2 =
+* Restructured the Keyword Insights and 404 Monitor dashboards: page header with primary actions and last sync/scan date, summary cards, aligned filter grids, and a separated bulk-action bar (404 settings moved below the data).
+* Fixed table overflow: long URLs now truncate with tooltips and text cells wrap instead of forcing horizontal scrolling.
+* Added expandable "Details" rows to the 404 table (referrer, first/last detected, match reason, confidence, post type, errors) and clearer redirect-recommendation callouts on keyword page details.
+* Fixed the Recommended Placements section of the keyword page detail never rendering, the keyword table/CSV export ignoring the minimum-impressions filter, 404 confidence missing its % sign, and a stuck sync poll disabling the Sync button indefinitely.
+* Improved accessibility: labelled row checkboxes with select-all, keyboard-sortable column headers with aria-sort, visible focus rings everywhere, WCAG AA muted-text contrast, and status badges with a color-independent dot.
+* Distinct loading, empty, and error states (with Retry) so failed requests are no longer shown as "no data", plus softer badges and calmer, more consistent styling across the admin.
 
 = 2.2.1 =
 * Upgraded heatmaps to capture all page clicks for click-map analysis, while keeping conversion/dashboard analytics limited to configured tracked clicks.

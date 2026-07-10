@@ -103,16 +103,17 @@ class Keywords_Rest_Controller {
 	public function keywords( $request ) {
 		$data = Keywords_Database::list_keywords(
 			array(
-				'page'        => absint( $request->get_param( 'page' ) ),
-				'per_page'    => absint( $request->get_param( 'per_page' ) ),
-				'range_key'   => sanitize_key( (string) $request->get_param( 'range' ) ),
-				'search'      => sanitize_text_field( (string) $request->get_param( 'search' ) ),
-				'post_id'     => absint( $request->get_param( 'post_id' ) ),
-				'label'       => sanitize_key( (string) $request->get_param( 'label' ) ),
-				'presence'    => sanitize_key( (string) $request->get_param( 'presence' ) ),
-				'opportunity' => sanitize_key( (string) $request->get_param( 'opportunity' ) ),
-				'orderby'     => sanitize_key( (string) $request->get_param( 'orderby' ) ),
-				'order'       => sanitize_key( (string) $request->get_param( 'order' ) ),
+				'page'            => absint( $request->get_param( 'page' ) ),
+				'per_page'        => absint( $request->get_param( 'per_page' ) ),
+				'range_key'       => sanitize_key( (string) $request->get_param( 'range' ) ),
+				'search'          => sanitize_text_field( (string) $request->get_param( 'search' ) ),
+				'post_id'         => absint( $request->get_param( 'post_id' ) ),
+				'label'           => sanitize_key( (string) $request->get_param( 'label' ) ),
+				'presence'        => sanitize_key( (string) $request->get_param( 'presence' ) ),
+				'opportunity'     => sanitize_key( (string) $request->get_param( 'opportunity' ) ),
+				'min_impressions' => absint( $request->get_param( 'min_impressions' ) ),
+				'orderby'         => sanitize_key( (string) $request->get_param( 'orderby' ) ),
+				'order'           => sanitize_key( (string) $request->get_param( 'order' ) ),
 			)
 		);
 
@@ -291,6 +292,7 @@ class Keywords_Rest_Controller {
 			'keywords'        => $rows,
 			'groups'          => $groups,
 			'recommendations' => array_slice( $page_recs, 0, 10 ),
+			'placements'      => $placements,
 			'faq'             => $faq,
 			'anchors'         => $anchors,
 			'title_meta'      => array(

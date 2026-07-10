@@ -21,7 +21,8 @@
 	--cvtrk-border-strong: #c5d3dc;
 	--cvtrk-ink: #13263a;
 	--cvtrk-secondary: #506779;
-	--cvtrk-muted: #778999;
+	--cvtrk-muted: #5e7180;
+	--cvtrk-focus: 0 0 0 2px #fff, 0 0 0 4px rgba(15, 152, 162, 0.55);
 	--cvtrk-shadow-sm: 0 1px 2px rgba(11, 42, 74, 0.045);
 	--cvtrk-shadow: 0 10px 24px rgba(11, 42, 74, 0.075);
 	--cvtrk-radius: 8px;
@@ -46,6 +47,12 @@
 .convertrack a:hover,
 .convertrack a:focus {
 	color: var(--cvtrk-navy);
+}
+
+/* The hidden attribute must always win: several components set an explicit
+   display (inline-flex etc.) that would otherwise override the UA rule. */
+.convertrack [hidden] {
+	display: none !important;
 }
 
 .convertrack .cvtrk-icon {
@@ -327,7 +334,7 @@
 .convertrack input:focus,
 .convertrack textarea:focus {
 	border-color: var(--cvtrk-teal);
-	box-shadow: 0 0 0 2px rgba(15, 152, 162, 0.14);
+	box-shadow: 0 0 0 2px rgba(15, 152, 162, 0.35);
 }
 
 .convertrack .button,
@@ -428,10 +435,10 @@
 
 .cvtrk-card-head {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	justify-content: space-between;
 	flex-wrap: wrap;
-	gap: 12px;
+	gap: 12px 16px;
 	width: 100%;
 	max-width: 100%;
 	min-width: 0;
@@ -486,7 +493,7 @@
 
 .cvtrk-card-actions {
 	display: flex;
-	align-items: flex-end;
+	align-items: center;
 	justify-content: flex-end;
 	flex-wrap: wrap;
 	gap: 10px;
@@ -978,8 +985,19 @@ a.cvtrk-health-card:focus {
 	text-align: right;
 }
 
-.cvtrk-table-wrap .cvtrk-table th,
+.cvtrk-table-wrap .cvtrk-table th {
+	white-space: nowrap;
+}
+
+/* Text cells are allowed to wrap; only numeric columns stay on one line.
+   Long URLs/titles self-truncate via .cvtrk-label/.cvtrk-sub, so the table
+   fits the admin width instead of forcing horizontal scroll. */
 .cvtrk-table-wrap .cvtrk-table td {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.cvtrk-table-wrap .cvtrk-table td.cvtrk-num {
 	white-space: nowrap;
 }
 
@@ -998,7 +1016,7 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-label {
 	display: block;
-	max-width: 420px;
+	max-width: min(420px, 46vw);
 	color: var(--cvtrk-ink);
 	font-weight: 500;
 	line-height: 1.35;
@@ -1009,7 +1027,7 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-sub {
 	display: block;
-	max-width: 420px;
+	max-width: min(420px, 46vw);
 	margin-top: 2px;
 	color: var(--cvtrk-muted);
 	font-family: Consolas, Monaco, monospace;
@@ -1058,20 +1076,31 @@ a.cvtrk-health-card:focus {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	gap: 5px;
 	max-width: 100%;
-	min-height: 21px;
-	padding: 2px 7px;
+	min-height: 20px;
+	padding: 2px 8px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: 999px;
 	background: var(--cvtrk-card-soft);
 	color: var(--cvtrk-secondary);
 	font-size: 11px;
 	font-weight: 500;
-	line-height: 1.25;
+	line-height: 1.3;
 	text-align: center;
 	white-space: normal;
 	overflow-wrap: anywhere;
 	font-variant-numeric: tabular-nums;
+}
+
+/* Optional leading dot so status is not conveyed by color alone
+   (accessibility: color-independent status indicator). */
+.cvtrk-badge-dot {
+	width: 6px;
+	height: 6px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: currentColor;
 }
 
 .cvtrk-badge-green,
@@ -1081,7 +1110,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-status-active,
 .cvtrk-status-approved,
 .cvtrk-status-auto_redirected {
-	border-color: #b8e5d3;
+	border-color: transparent;
 	background: var(--cvtrk-green-soft);
 	color: var(--cvtrk-green);
 }
@@ -1099,7 +1128,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-status-manual_review,
 .cvtrk-status-warning,
 .cvtrk-status-paused {
-	border-color: #efd8a3;
+	border-color: transparent;
 	background: var(--cvtrk-amber-soft);
 	color: var(--cvtrk-amber-dark);
 }
@@ -1114,7 +1143,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-status-failed,
 .cvtrk-status-disabled,
 .cvtrk-status-deleted {
-	border-color: #f2b9c2;
+	border-color: transparent;
 	background: var(--cvtrk-red-soft);
 	color: var(--cvtrk-red-dark);
 }
@@ -1649,11 +1678,9 @@ a.cvtrk-health-card:focus {
 	box-shadow: var(--cvtrk-shadow-sm);
 }
 
-.cvtrk-gsc-stat:hover,
-.cvtrk-gsc-stat:focus-visible {
+.cvtrk-gsc-stat:hover {
 	border-color: var(--cvtrk-border-strong);
 	box-shadow: 0 4px 14px rgba(11, 42, 74, 0.075);
-	outline: none;
 }
 
 .cvtrk-gsc-stat-icon {
@@ -1709,8 +1736,8 @@ a.cvtrk-health-card:focus {
 	display: flex;
 	align-items: center;
 	flex-wrap: wrap;
-	gap: 6px;
-	flex: 1 1 260px;
+	gap: 6px 8px;
+	flex: 1 1 220px;
 	justify-content: flex-start;
 	min-width: 0;
 	max-width: 100%;
@@ -2055,6 +2082,28 @@ a.cvtrk-health-card:focus {
 	color: var(--cvtrk-teal-dark);
 }
 
+/* The sort control is a real <button> for keyboard/screen-reader access;
+   visually it inherits the header cell's look and fills the cell so the
+   click target matches the old whole-header behavior. */
+.cvtrk-sort-btn {
+	appearance: none;
+	-webkit-appearance: none;
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: inherit;
+	cursor: pointer;
+}
+
+.cvtrk-sort-btn:hover {
+	color: var(--cvtrk-teal-dark);
+}
+
 .cvtrk-table th.is-sorted-asc::after {
 	content: "\2191";
 	margin-left: 4px;
@@ -2214,4 +2263,400 @@ a.cvtrk-health-card:focus {
 	flex-wrap: wrap;
 	justify-content: center;
 	margin-top: 20px;
+}
+
+/* ====================================================================
+   Dashboard structure refresh (Keyword Insights & 404 Monitor)
+   Shared, additive components — safe for every Convertrack screen.
+   ==================================================================== */
+
+/* Page header: section title + description + meta + primary/secondary
+   actions, sitting under the shared brand header/tabs. */
+.cvtrk-page-head {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px 20px;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	margin: 0 0 18px;
+}
+
+.cvtrk-page-head-text {
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+}
+
+.cvtrk-page-title {
+	margin: 0;
+	padding: 0;
+	color: var(--cvtrk-ink);
+	font-size: 18px;
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.cvtrk-page-desc {
+	margin: 0;
+	max-width: 74ch;
+	color: var(--cvtrk-secondary);
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.5;
+}
+
+.cvtrk-page-head-actions {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px 10px;
+	min-width: 0;
+}
+
+.cvtrk-page-head-meta {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	font-weight: 400;
+	white-space: nowrap;
+}
+
+.cvtrk-page-head-meta b {
+	color: var(--cvtrk-secondary);
+	font-weight: 600;
+}
+
+/* Clean, aligned filter grid — replaces the flat wrapping toolbar.
+   Auto-fits into as many columns as fit, labels sit above controls. */
+.cvtrk-filters {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+	gap: 12px 14px;
+	align-items: end;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	margin: 0 0 14px;
+}
+
+.cvtrk-filters .cvtrk-mini-field {
+	width: 100%;
+	min-width: 0;
+}
+
+.cvtrk-filters .cvtrk-mini-field select,
+.cvtrk-filters .cvtrk-mini-field input {
+	width: 100%;
+	min-width: 0;
+}
+
+/* A filter that should occupy the full row (e.g. search on its own line). */
+.cvtrk-filters .cvtrk-filter-wide {
+	grid-column: 1 / -1;
+}
+
+/* Paired min/max style inputs inside one field. */
+.cvtrk-field-pair {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+
+.cvtrk-field-pair input {
+	width: 100%;
+	min-width: 0;
+}
+
+.cvtrk-field-pair span {
+	color: var(--cvtrk-muted);
+	font-size: 11px;
+}
+
+/* Base rule for the search field (previously only defined in a descendant
+   selector, so it was unstyled at default widths). */
+.cvtrk-field-search {
+	flex: 1 1 220px;
+}
+
+.cvtrk-field-search input,
+.cvtrk-mini-field-search input {
+	width: 100%;
+	min-width: 0;
+}
+
+/* Base rule for card-head control clusters (previously only inside the
+   782px media query, so unstyled on desktop). */
+.cvtrk-card-head-controls {
+	align-items: center;
+}
+
+.cvtrk-card-head-controls .cvtrk-card-actions {
+	align-items: center;
+}
+
+/* Toolbar that separates a filter group from an action group. */
+.cvtrk-bulk-bar {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	margin: 0 0 14px;
+	padding: 10px 0 0;
+	border-top: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-bulk-bar .cvtrk-mini-field {
+	margin: 0;
+}
+
+.cvtrk-bulk-spacer {
+	flex: 1 1 auto;
+}
+
+.cvtrk-selection-count {
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+
+/* Compact checkbox column for row selection. */
+.cvtrk-table th.cvtrk-check-col,
+.cvtrk-table td.cvtrk-check-col {
+	width: 32px;
+	padding-right: 4px;
+	text-align: center;
+	white-space: nowrap;
+}
+
+.cvtrk-table .cvtrk-check-col input[type="checkbox"] {
+	margin: 0;
+	vertical-align: middle;
+}
+
+/* Distinct notice variants so error/success no longer look like info. */
+.cvtrk-notice-error {
+	border-color: #f2b9c2;
+	border-left-color: var(--cvtrk-red);
+	background: var(--cvtrk-red-soft);
+	color: var(--cvtrk-red-dark);
+}
+
+.cvtrk-notice-success {
+	border-color: #b8e5d3;
+	border-left-color: var(--cvtrk-green);
+	background: var(--cvtrk-green-soft);
+	color: var(--cvtrk-ink);
+}
+
+/* Distinct error empty-state (vs the "no data" empty state). */
+.cvtrk-empty.is-error .cvtrk-empty-icon {
+	background: var(--cvtrk-red-soft);
+	color: var(--cvtrk-red-dark);
+}
+
+.cvtrk-empty.is-error {
+	color: var(--cvtrk-red-dark);
+}
+
+.cvtrk-empty-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: center;
+	margin-top: 4px;
+}
+
+/* Reload loading state: dim + lock the region while a fetch is in flight
+   (subsequent loads previously showed stale data with no feedback). */
+.cvtrk-loading {
+	position: relative;
+	min-height: 60px;
+	opacity: 0.55;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+}
+
+.cvtrk-loading::after {
+	content: "";
+	position: absolute;
+	top: 14px;
+	left: 50%;
+	width: 22px;
+	height: 22px;
+	margin-left: -11px;
+	border: 2px solid var(--cvtrk-border-strong);
+	border-top-color: var(--cvtrk-teal);
+	border-radius: 50%;
+	animation: cvtrkSpin 0.7s linear infinite;
+}
+
+@keyframes cvtrkSpin {
+	to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cvtrk-loading::after {
+		animation: none;
+	}
+}
+
+/* Expandable detail row (404 "View details"). */
+.cvtrk-detail-row > td {
+	padding: 0;
+	background: var(--cvtrk-card-soft);
+}
+
+.cvtrk-detail-panel {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 12px 24px;
+	padding: 14px 16px;
+	border-top: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-detail-item {
+	display: grid;
+	gap: 3px;
+	min-width: 0;
+}
+
+.cvtrk-detail-label {
+	color: var(--cvtrk-muted);
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.cvtrk-detail-value {
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+	line-height: 1.45;
+	overflow-wrap: anywhere;
+}
+
+.cvtrk-detail-value a {
+	overflow-wrap: anywhere;
+}
+
+/* Recommendation callouts — clear, readable guidance blocks. */
+.cvtrk-reco {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 11px 13px;
+	border: 1px solid var(--cvtrk-border);
+	border-left: 3px solid var(--cvtrk-teal);
+	border-radius: var(--cvtrk-radius-sm);
+	background: var(--cvtrk-card-soft);
+}
+
+.cvtrk-reco + .cvtrk-reco {
+	margin-top: 8px;
+}
+
+.cvtrk-reco-icon {
+	flex: 0 0 auto;
+	margin-top: 1px;
+	color: var(--cvtrk-teal-dark);
+}
+
+.cvtrk-reco-body {
+	min-width: 0;
+}
+
+.cvtrk-reco-text {
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.cvtrk-reco-keys {
+	margin-top: 4px;
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+/* Optional per-column responsive hiding (JS tags secondary columns).
+   Keeps the most important columns visible on narrow admin widths. */
+@media (max-width: 960px) {
+	.cvtrk-table th.cvtrk-col-hide-md,
+	.cvtrk-table td.cvtrk-col-hide-md {
+		display: none;
+	}
+}
+
+@media (max-width: 782px) {
+	.cvtrk-page-head {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.cvtrk-page-head-actions .button,
+	.cvtrk-page-head-actions .button-primary {
+		flex: 1 1 auto;
+	}
+
+	.cvtrk-filters {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-bulk-bar {
+		align-items: stretch;
+		flex-direction: column;
+	}
+
+	.cvtrk-bulk-bar .button,
+	.cvtrk-bulk-bar select {
+		width: 100%;
+	}
+
+	.cvtrk-table th.cvtrk-col-hide-sm,
+	.cvtrk-table td.cvtrk-col-hide-sm {
+		display: none;
+	}
+
+	/* Tighter table padding so more fits before horizontal scroll. */
+	.cvtrk-table th,
+	.cvtrk-table td {
+		padding: 9px 10px;
+	}
+
+	/* Keep the earlier 782px stacking rules in charge of head controls
+	   (the desktop base rule above would otherwise win by cascade order). */
+	.cvtrk-card-head-controls,
+	.cvtrk-card-head-controls .cvtrk-card-actions {
+		align-items: stretch;
+	}
+}
+
+/* Consistent, visible keyboard focus for every interactive element. Uses
+   :focus-visible so mouse clicks don't show the ring, but keyboard and
+   switch-device focus always does. Kept at the end of the file so it wins
+   the cascade over component :focus rules that reset box-shadow. */
+.convertrack a:focus-visible,
+.convertrack button:focus-visible,
+.convertrack .button:focus-visible,
+.convertrack .button-primary:focus-visible,
+.convertrack select:focus-visible,
+.convertrack input:focus-visible,
+.convertrack textarea:focus-visible,
+.convertrack [tabindex]:focus-visible,
+.convertrack .cvtrk-tab:focus-visible,
+.convertrack .cvtrk-segment:focus-visible,
+.convertrack .cvtrk-gsc-stat:focus-visible,
+.convertrack .cvtrk-sort-btn:focus-visible {
+	outline: 2px solid transparent;
+	box-shadow: var(--cvtrk-focus);
 }

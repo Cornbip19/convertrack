@@ -19,8 +19,24 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 <div class="wrap convertrack" id="convertrack-404-monitor" data-404-threshold="<?php echo esc_attr( (int) $s['auto_min_confidence'] ); ?>">
 	<?php Admin::render_header( '404' ); ?>
 
+	<div class="cvtrk-page-head">
+		<div class="cvtrk-page-head-text">
+			<h2 class="cvtrk-page-title"><?php esc_html_e( '404 Monitor', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Broken URLs your visitors hit, with matched redirect suggestions and a safe approval workflow.', 'convertrack-click-conversion-analytics' ); ?></p>
+		</div>
+		<div class="cvtrk-page-head-actions">
+			<span class="cvtrk-page-head-meta">
+				<?php echo Admin::icon( 'refresh' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+				<span><?php esc_html_e( 'Last scan:', 'convertrack-click-conversion-analytics' ); ?> <b data-cvtrk="404-last-scan">&mdash;</b></span>
+			</span>
+			<a class="button" data-cvtrk="404-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
+			<button type="button" class="button" data-cvtrk="404-refresh"><?php esc_html_e( 'Refresh URLs', 'convertrack-click-conversion-analytics' ); ?></button>
+			<button type="button" class="button button-primary" data-cvtrk="404-process"><?php esc_html_e( 'Run Match', 'convertrack-click-conversion-analytics' ); ?></button>
+		</div>
+	</div>
+
 	<?php if ( $notice ) : ?>
-		<div class="cvtrk-notice">
+		<div class="cvtrk-notice cvtrk-notice-success">
 			<?php
 			switch ( $notice ) {
 				case 'settings-saved':
@@ -34,33 +50,142 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 		</div>
 	<?php endif; ?>
 
-	<div class="cvtrk-card">
+	<?php if ( ! empty( $compatibility['tools'] ) || ! empty( $compatibility['htaccess_hint'] ) ) : ?>
+		<div class="cvtrk-notice cvtrk-notice-warning">
+			<?php if ( ! empty( $compatibility['tools'] ) ) : ?>
+				<p>
+					<?php
+					echo esc_html(
+						sprintf(
+							/* translators: %s: redirect tool names. */
+							__( 'Detected redirect tools: %s. Convertrack keeps those integrations read-only and blocks duplicate internal redirects for matching sources.', 'convertrack-click-conversion-analytics' ),
+							implode( ', ', wp_list_pluck( $compatibility['tools'], 'label' ) )
+						)
+					);
+					?>
+				</p>
+			<?php endif; ?>
+			<?php if ( ! empty( $compatibility['htaccess_hint'] ) ) : ?>
+				<p><?php echo esc_html( $compatibility['htaccess_hint'] ); ?></p>
+			<?php endif; ?>
+		</div>
+	<?php endif; ?>
+
+	<div class="cvtrk-notice cvtrk-progress-notice" data-cvtrk="404-progress" hidden aria-live="polite"></div>
+
+	<div class="cvtrk-404-panel" data-cvtrk="404-summary">
+		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
+	</div>
+
+	<div class="cvtrk-card" id="convertrack-404-events">
 		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( '404 Monitor Settings', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Conservative by default: monitor and recommend before redirecting', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div>
+				<h2><?php esc_html_e( 'Detected 404s', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Recommendations, approval workflow, and bulk review', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
 		</div>
 		<div class="cvtrk-card-body">
-			<?php if ( ! empty( $compatibility['tools'] ) || ! empty( $compatibility['htaccess_hint'] ) ) : ?>
-				<div class="cvtrk-notice cvtrk-notice-warning">
-					<?php if ( ! empty( $compatibility['tools'] ) ) : ?>
-						<p>
-							<?php
-							echo esc_html(
-								sprintf(
-									/* translators: %s: redirect tool names. */
-									__( 'Detected redirect tools: %s. Convertrack keeps those integrations read-only and blocks duplicate internal redirects for matching sources.', 'convertrack-click-conversion-analytics' ),
-									implode( ', ', wp_list_pluck( $compatibility['tools'], 'label' ) )
-								)
-							);
-							?>
-						</p>
-					<?php endif; ?>
-					<?php if ( ! empty( $compatibility['htaccess_hint'] ) ) : ?>
-						<p><?php echo esc_html( $compatibility['htaccess_hint'] ); ?></p>
-					<?php endif; ?>
-				</div>
-			<?php endif; ?>
+			<div class="cvtrk-filters" role="group" aria-label="<?php esc_attr_e( '404 filters', 'convertrack-click-conversion-analytics' ); ?>">
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Status', 'convertrack-click-conversion-analytics' ); ?></span>
+					<select data-cvtrk="404-status">
+						<option value="all"><?php esc_html_e( 'All active', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="new"><?php esc_html_e( 'New', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="recommended"><?php esc_html_e( 'Recommended', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="manual_review"><?php esc_html_e( 'Manual review', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="approved"><?php esc_html_e( 'Approved', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="auto_redirected"><?php esc_html_e( 'Auto redirected', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
+					</select>
+				</label>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Post type', 'convertrack-click-conversion-analytics' ); ?></span>
+					<select data-cvtrk="404-post-type">
+						<option value="all"><?php esc_html_e( 'All post types', 'convertrack-click-conversion-analytics' ); ?></option>
+						<?php foreach ( $post_types as $post_type => $object ) : ?>
+							<option value="<?php echo esc_attr( $post_type ); ?>"><?php echo esc_html( $object->labels->name ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</label>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Confidence %', 'convertrack-click-conversion-analytics' ); ?></span>
+					<div class="cvtrk-field-pair">
+						<input type="number" min="0" max="100" data-cvtrk="404-confidence-min" placeholder="<?php esc_attr_e( 'Min', 'convertrack-click-conversion-analytics' ); ?>" aria-label="<?php esc_attr_e( 'Minimum confidence', 'convertrack-click-conversion-analytics' ); ?>" />
+						<span><?php esc_html_e( 'to', 'convertrack-click-conversion-analytics' ); ?></span>
+						<input type="number" min="0" max="100" data-cvtrk="404-confidence-max" placeholder="<?php esc_attr_e( 'Max', 'convertrack-click-conversion-analytics' ); ?>" aria-label="<?php esc_attr_e( 'Maximum confidence', 'convertrack-click-conversion-analytics' ); ?>" />
+					</div>
+				</label>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Detected from', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="date" data-cvtrk="404-detected-from" />
+				</label>
+				<label class="cvtrk-mini-field">
+					<span><?php esc_html_e( 'Detected to', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="date" data-cvtrk="404-detected-to" />
+				</label>
+				<label class="cvtrk-mini-field cvtrk-mini-field-search cvtrk-filter-wide">
+					<span><?php esc_html_e( 'Search', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="search" data-cvtrk="404-search" placeholder="<?php esc_attr_e( 'URL or referrer', 'convertrack-click-conversion-analytics' ); ?>" />
+				</label>
+			</div>
 
+			<div class="cvtrk-bulk-bar">
+				<label class="cvtrk-mini-field">
+					<span class="screen-reader-text"><?php esc_html_e( 'Bulk action', 'convertrack-click-conversion-analytics' ); ?></span>
+					<select data-cvtrk="404-bulk-action" aria-label="<?php esc_attr_e( 'Bulk action', 'convertrack-click-conversion-analytics' ); ?>">
+						<option value=""><?php esc_html_e( 'Bulk actions', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="approve"><?php esc_html_e( 'Approve selected', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="approve_high_confidence"><?php esc_html_e( 'Approve high-confidence recommendations', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="ignore"><?php esc_html_e( 'Ignore selected', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="delete"><?php esc_html_e( 'Delete selected', 'convertrack-click-conversion-analytics' ); ?></option>
+					</select>
+				</label>
+				<button type="button" class="button" data-cvtrk="404-bulk-run"><?php esc_html_e( 'Apply', 'convertrack-click-conversion-analytics' ); ?></button>
+				<span class="cvtrk-bulk-spacer"></span>
+				<span class="cvtrk-selection-count" data-cvtrk="404-selection" aria-live="polite"><?php esc_html_e( 'No rows selected', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+
+			<div data-cvtrk="404-events" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div class="cvtrk-pagination">
+				<button type="button" class="button" data-cvtrk="404-prev"><?php esc_html_e( 'Previous', 'convertrack-click-conversion-analytics' ); ?></button>
+				<span data-cvtrk="404-page" aria-live="polite"></span>
+				<button type="button" class="button" data-cvtrk="404-next"><?php esc_html_e( 'Next', 'convertrack-click-conversion-analytics' ); ?></button>
+			</div>
+		</div>
+	</div>
+
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( 'Redirect Visibility', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Internal 301 redirects and safely readable third-party rows', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="404-redirects" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+		</div>
+	</div>
+
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( '404 Monitor Activity Log', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Recent scans, recommendations, redirects, validation failures, and cleanup events', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="404-logs" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+		</div>
+	</div>
+
+	<div class="cvtrk-card">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( '404 Monitor Settings', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Conservative by default: monitor and recommend before redirecting', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="convertrack_404_save_settings" />
 				<?php wp_nonce_field( 'convertrack_404_save_settings' ); ?>
@@ -106,7 +231,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 								<option value="twicedaily" <?php selected( $s['scan_frequency'], 'twicedaily' ); ?>><?php esc_html_e( 'Twice daily', 'convertrack-click-conversion-analytics' ); ?></option>
 								<option value="daily" <?php selected( $s['scan_frequency'], 'daily' ); ?>><?php esc_html_e( 'Daily', 'convertrack-click-conversion-analytics' ); ?></option>
 							</select>
-							<input type="number" min="1" max="168" name="convertrack_404_settings[sitemap_refresh_hours]" value="<?php echo esc_attr( (int) $s['sitemap_refresh_hours'] ); ?>" />
+							<input type="number" min="1" max="168" name="convertrack_404_settings[sitemap_refresh_hours]" value="<?php echo esc_attr( (int) $s['sitemap_refresh_hours'] ); ?>" aria-label="<?php esc_attr_e( 'Minimum hours between sitemap refreshes', 'convertrack-click-conversion-analytics' ); ?>" />
 							<span class="description"><?php esc_html_e( 'minimum hours between sitemap refreshes', 'convertrack-click-conversion-analytics' ); ?></span>
 						</td>
 					</tr>
@@ -130,7 +255,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 						<th scope="row"><?php esc_html_e( 'Excluded post types', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $post_types as $post_type => $object ) : ?>
-								<label class="cvtrk-check">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_404_settings[exclude_post_types][]" value="<?php echo esc_attr( $post_type ); ?>" <?php checked( in_array( $post_type, (array) $s['exclude_post_types'], true ) ); ?> />
 									<?php echo esc_html( $object->labels->name ); ?>
 								</label>
@@ -141,7 +266,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 						<th scope="row"><?php esc_html_e( 'Excluded taxonomies', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<?php foreach ( $taxonomies as $taxonomy => $object ) : ?>
-								<label class="cvtrk-check">
+								<label class="cvtrk-inline-option">
 									<input type="checkbox" name="convertrack_404_settings[exclude_taxonomies][]" value="<?php echo esc_attr( $taxonomy ); ?>" <?php checked( in_array( $taxonomy, (array) $s['exclude_taxonomies'], true ) ); ?> />
 									<?php echo esc_html( $object->labels->name ); ?>
 								</label>
@@ -155,9 +280,9 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 								<input type="checkbox" name="convertrack_404_settings[email_notifications]" value="1" <?php checked( $s['email_notifications'], 1 ); ?> />
 								<?php esc_html_e( 'Email the site admin when recent 404 hits exceed', 'convertrack-click-conversion-analytics' ); ?>
 							</label>
-							<input type="number" min="5" max="10000" name="convertrack_404_settings[spike_threshold]" value="<?php echo esc_attr( (int) $s['spike_threshold'] ); ?>" />
+							<input type="number" min="5" max="10000" name="convertrack_404_settings[spike_threshold]" value="<?php echo esc_attr( (int) $s['spike_threshold'] ); ?>" aria-label="<?php esc_attr_e( 'Spike hit threshold', 'convertrack-click-conversion-analytics' ); ?>" />
 							<?php esc_html_e( 'hits in', 'convertrack-click-conversion-analytics' ); ?>
-							<input type="number" min="5" max="1440" name="convertrack_404_settings[spike_window_minutes]" value="<?php echo esc_attr( (int) $s['spike_window_minutes'] ); ?>" />
+							<input type="number" min="5" max="1440" name="convertrack_404_settings[spike_window_minutes]" value="<?php echo esc_attr( (int) $s['spike_window_minutes'] ); ?>" aria-label="<?php esc_attr_e( 'Spike window in minutes', 'convertrack-click-conversion-analytics' ); ?>" />
 							<?php esc_html_e( 'minutes.', 'convertrack-click-conversion-analytics' ); ?>
 						</td>
 					</tr>
@@ -165,101 +290,6 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 
 				<?php submit_button( __( 'Save 404 Monitor Settings', 'convertrack-click-conversion-analytics' ) ); ?>
 			</form>
-		</div>
-	</div>
-
-	<div class="cvtrk-404-panel" data-cvtrk="404-summary">
-		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
-	</div>
-
-	<div class="cvtrk-card" id="convertrack-404-events">
-		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Detected 404s', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Recommendations, approval workflow, and bulk review', 'convertrack-click-conversion-analytics' ); ?></span>
-		</div>
-		<div class="cvtrk-card-body">
-			<div class="cvtrk-toolbar cvtrk-404-toolbar">
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Status', 'convertrack-click-conversion-analytics' ); ?>
-					<select data-cvtrk="404-status">
-						<option value="all"><?php esc_html_e( 'All active', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="new"><?php esc_html_e( 'New', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="recommended"><?php esc_html_e( 'Recommended', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="manual_review"><?php esc_html_e( 'Manual review', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="approved"><?php esc_html_e( 'Approved', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="auto_redirected"><?php esc_html_e( 'Auto redirected', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
-					</select>
-				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Post type', 'convertrack-click-conversion-analytics' ); ?>
-					<select data-cvtrk="404-post-type">
-						<option value="all"><?php esc_html_e( 'All post types', 'convertrack-click-conversion-analytics' ); ?></option>
-						<?php foreach ( $post_types as $post_type => $object ) : ?>
-							<option value="<?php echo esc_attr( $post_type ); ?>"><?php echo esc_html( $object->labels->name ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Confidence', 'convertrack-click-conversion-analytics' ); ?>
-					<input type="number" min="0" max="100" data-cvtrk="404-confidence-min" placeholder="<?php esc_attr_e( 'Min', 'convertrack-click-conversion-analytics' ); ?>" />
-					<input type="number" min="0" max="100" data-cvtrk="404-confidence-max" placeholder="<?php esc_attr_e( 'Max', 'convertrack-click-conversion-analytics' ); ?>" />
-				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Detected from', 'convertrack-click-conversion-analytics' ); ?>
-					<input type="date" data-cvtrk="404-detected-from" />
-				</label>
-				<label class="cvtrk-field">
-					<?php esc_html_e( 'Detected to', 'convertrack-click-conversion-analytics' ); ?>
-					<input type="date" data-cvtrk="404-detected-to" />
-				</label>
-				<label class="cvtrk-field cvtrk-field-search">
-					<?php esc_html_e( 'Search', 'convertrack-click-conversion-analytics' ); ?>
-					<input type="search" data-cvtrk="404-search" placeholder="<?php esc_attr_e( 'URL or referrer', 'convertrack-click-conversion-analytics' ); ?>" />
-				</label>
-				<button type="button" class="button" data-cvtrk="404-refresh"><?php esc_html_e( 'Refresh URLs', 'convertrack-click-conversion-analytics' ); ?></button>
-				<button type="button" class="button" data-cvtrk="404-process"><?php esc_html_e( 'Run Match', 'convertrack-click-conversion-analytics' ); ?></button>
-				<a class="button" data-cvtrk="404-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
-			</div>
-
-			<div class="cvtrk-toolbar cvtrk-404-bulk">
-				<select data-cvtrk="404-bulk-action">
-					<option value=""><?php esc_html_e( 'Bulk actions', 'convertrack-click-conversion-analytics' ); ?></option>
-					<option value="approve"><?php esc_html_e( 'Approve selected', 'convertrack-click-conversion-analytics' ); ?></option>
-					<option value="approve_high_confidence"><?php esc_html_e( 'Approve high-confidence recommendations', 'convertrack-click-conversion-analytics' ); ?></option>
-					<option value="ignore"><?php esc_html_e( 'Ignore selected', 'convertrack-click-conversion-analytics' ); ?></option>
-					<option value="delete"><?php esc_html_e( 'Delete selected', 'convertrack-click-conversion-analytics' ); ?></option>
-				</select>
-				<button type="button" class="button" data-cvtrk="404-bulk-run"><?php esc_html_e( 'Apply', 'convertrack-click-conversion-analytics' ); ?></button>
-			</div>
-
-			<div class="cvtrk-notice" data-cvtrk="404-progress" hidden aria-live="polite"></div>
-			<div data-cvtrk="404-events"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
-			<div class="cvtrk-pagination">
-				<button type="button" class="button" data-cvtrk="404-prev"><?php esc_html_e( 'Previous', 'convertrack-click-conversion-analytics' ); ?></button>
-				<span data-cvtrk="404-page"></span>
-				<button type="button" class="button" data-cvtrk="404-next"><?php esc_html_e( 'Next', 'convertrack-click-conversion-analytics' ); ?></button>
-			</div>
-		</div>
-	</div>
-
-	<div class="cvtrk-card">
-		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Redirect Visibility', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Internal redirects and safely readable third-party rows', 'convertrack-click-conversion-analytics' ); ?></span>
-		</div>
-		<div class="cvtrk-card-body">
-			<div data-cvtrk="404-redirects"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
-		</div>
-	</div>
-
-	<div class="cvtrk-card">
-		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( '404 Monitor Activity Log', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Recent scans, recommendations, redirects, validation failures, and cleanup events', 'convertrack-click-conversion-analytics' ); ?></span>
-		</div>
-		<div class="cvtrk-card-body">
-			<div data-cvtrk="404-logs"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 </div>
