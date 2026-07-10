@@ -989,12 +989,12 @@ a.cvtrk-health-card:focus {
 	white-space: nowrap;
 }
 
-/* Text cells are allowed to wrap; only numeric columns stay on one line.
-   Long URLs/titles self-truncate via .cvtrk-label/.cvtrk-sub, so the table
-   fits the admin width instead of forcing horizontal scroll. */
+/* Text cells are allowed to wrap at word boundaries; only numeric columns
+   stay on one line. Long URLs/titles self-truncate via .cvtrk-label/.cvtrk-sub.
+   No overflow-wrap:anywhere here — it lets auto table layout collapse columns
+   to one character wide, which shatters badges into vertical letter stacks. */
 .cvtrk-table-wrap .cvtrk-table td {
 	white-space: normal;
-	overflow-wrap: anywhere;
 }
 
 .cvtrk-table-wrap .cvtrk-table td.cvtrk-num {
@@ -1088,8 +1088,9 @@ a.cvtrk-health-card:focus {
 	font-weight: 500;
 	line-height: 1.3;
 	text-align: center;
-	white-space: normal;
-	overflow-wrap: anywhere;
+	/* A pill must never break mid-word; the surrounding .cvtrk-badge-group
+	   wraps BETWEEN pills instead. */
+	white-space: nowrap;
 	font-variant-numeric: tabular-nums;
 }
 

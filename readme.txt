@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.2
+Stable tag: 2.2.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,9 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.2.3 =
+* Fixed 2.2.2 regression: type/status badges in the Keyword Insights and 404 Monitor tables could shatter into one-letter-per-line vertical stacks, making rows enormously tall. Table cells now wrap only at word boundaries and pills never break mid-word.
 
 = 2.2.2 =
 * Restructured the Keyword Insights and 404 Monitor dashboards: page header with primary actions and last sync/scan date, summary cards, aligned filter grids, and a separated bulk-action bar (404 settings moved below the data).
