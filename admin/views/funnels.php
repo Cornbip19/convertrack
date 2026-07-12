@@ -1,6 +1,6 @@
 <?php
 /**
- * Funnels: conversion journey and drop-off reporting. Hydrated from REST.
+ * Journeys: conversion path and drop-off reporting. Hydrated from REST.
  *
  * @package Convertrack
  */
@@ -11,17 +11,25 @@ defined( 'ABSPATH' ) || exit;
 ?>
 <div class="wrap convertrack" id="convertrack-funnels">
 	<?php Admin::render_header( 'funnels' ); ?>
+	<?php Admin::render_subnav( 'analytics', 'funnels' ); ?>
 
-	<div class="cvtrk-toolbar">
-		<label class="cvtrk-field">
-			<?php esc_html_e( 'Date range', 'convertrack-click-conversion-analytics' ); ?>
-			<select id="convertrack-range" data-cvtrk="range">
-				<option value="1"><?php esc_html_e( 'Today', 'convertrack-click-conversion-analytics' ); ?></option>
-				<option value="7" selected><?php esc_html_e( 'Last 7 days', 'convertrack-click-conversion-analytics' ); ?></option>
-				<option value="30"><?php esc_html_e( 'Last 30 days', 'convertrack-click-conversion-analytics' ); ?></option>
-				<option value="90"><?php esc_html_e( 'Last 90 days', 'convertrack-click-conversion-analytics' ); ?></option>
-			</select>
-		</label>
+	<div class="cvtrk-page-head">
+		<div class="cvtrk-page-head-text">
+			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Journeys', 'convertrack-click-conversion-analytics' ); ?></h1>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Understand the paths people take before converting and where non-converting visits end.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<span class="cvtrk-page-head-meta"><?php esc_html_e( 'Observed paths, not ordered-step funnels', 'convertrack-click-conversion-analytics' ); ?></span>
+		</div>
+		<div class="cvtrk-page-head-actions">
+			<label class="cvtrk-field">
+				<span><?php esc_html_e( 'Date range', 'convertrack-click-conversion-analytics' ); ?></span>
+				<select id="convertrack-range" data-cvtrk="range">
+					<option value="1"><?php esc_html_e( 'Today', 'convertrack-click-conversion-analytics' ); ?></option>
+					<option value="7" selected><?php esc_html_e( 'Last 7 days', 'convertrack-click-conversion-analytics' ); ?></option>
+					<option value="30"><?php esc_html_e( 'Last 30 days', 'convertrack-click-conversion-analytics' ); ?></option>
+					<option value="90"><?php esc_html_e( 'Last 90 days', 'convertrack-click-conversion-analytics' ); ?></option>
+				</select>
+			</label>
+		</div>
 	</div>
 
 	<div class="cvtrk-kpis">

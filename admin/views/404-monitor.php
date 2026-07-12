@@ -21,7 +21,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
-			<h2 class="cvtrk-page-title"><?php esc_html_e( '404 Monitor', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Broken URLs', 'convertrack-click-conversion-analytics' ); ?></h1>
 			<p class="cvtrk-page-desc"><?php esc_html_e( 'Broken URLs your visitors hit, with matched redirect suggestions and a safe approval workflow.', 'convertrack-click-conversion-analytics' ); ?></p>
 		</div>
 		<div class="cvtrk-page-head-actions">
@@ -77,7 +77,13 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
 
-	<div class="cvtrk-card" id="convertrack-404-events">
+	<nav class="cvtrk-subview-nav" aria-label="<?php esc_attr_e( 'Broken URL views', 'convertrack-click-conversion-analytics' ); ?>">
+		<a class="cvtrk-subview-link is-active" href="#convertrack-404-events" data-cvtrk-404-view="detected" aria-current="page"><?php esc_html_e( 'Detected', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="cvtrk-subview-link" href="#convertrack-404-redirects" data-cvtrk-404-view="redirects"><?php esc_html_e( 'Redirects', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="cvtrk-subview-link" href="#convertrack-404-activity" data-cvtrk-404-view="activity"><?php esc_html_e( 'Activity', 'convertrack-click-conversion-analytics' ); ?></a>
+	</nav>
+
+	<div class="cvtrk-card cvtrk-404-view-panel is-active" id="convertrack-404-events" data-cvtrk-404-panel="detected">
 		<div class="cvtrk-card-head">
 			<div>
 				<h2><?php esc_html_e( 'Detected 404s', 'convertrack-click-conversion-analytics' ); ?></h2>
@@ -145,7 +151,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 				<span class="cvtrk-selection-count" data-cvtrk="404-selection" aria-live="polite"><?php esc_html_e( 'No rows selected', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 
-			<div data-cvtrk="404-events" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="404-events" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			<div class="cvtrk-pagination">
 				<button type="button" class="button" data-cvtrk="404-prev"><?php esc_html_e( 'Previous', 'convertrack-click-conversion-analytics' ); ?></button>
 				<span data-cvtrk="404-page" aria-live="polite"></span>
@@ -154,7 +160,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 		</div>
 	</div>
 
-	<div class="cvtrk-card">
+	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-redirects" data-cvtrk-404-panel="redirects">
 		<div class="cvtrk-card-head">
 			<div>
 				<h2><?php esc_html_e( 'Redirect Visibility', 'convertrack-click-conversion-analytics' ); ?></h2>
@@ -162,11 +168,11 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
-			<div data-cvtrk="404-redirects" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="404-redirects" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 
-	<div class="cvtrk-card">
+	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-activity" data-cvtrk-404-panel="activity">
 		<div class="cvtrk-card-head">
 			<div>
 				<h2><?php esc_html_e( '404 Monitor Activity Log', 'convertrack-click-conversion-analytics' ); ?></h2>
@@ -174,10 +180,15 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
-			<div data-cvtrk="404-logs" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="404-logs" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 
+	<details class="cvtrk-advanced-disclosure cvtrk-module-settings" id="convertrack-404-settings">
+		<summary>
+			<strong><?php esc_html_e( 'Broken URL settings', 'convertrack-click-conversion-analytics' ); ?></strong>
+			<span><?php esc_html_e( 'Monitoring mode, matching, exclusions, retention, and alerts', 'convertrack-click-conversion-analytics' ); ?></span>
+		</summary>
 	<div class="cvtrk-card">
 		<div class="cvtrk-card-head">
 			<div>
@@ -290,6 +301,30 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 
 				<?php submit_button( __( 'Save 404 Monitor Settings', 'convertrack-click-conversion-analytics' ) ); ?>
 			</form>
+		</div>
+	</div>
+	</details>
+
+	<div class="cvtrk-dialog-backdrop" data-cvtrk="404-edit-dialog" hidden>
+		<div class="cvtrk-dialog" role="dialog" aria-modal="true" aria-labelledby="convertrack-404-edit-title" aria-describedby="convertrack-404-edit-description" tabindex="-1">
+			<div class="cvtrk-dialog-head">
+				<h2 id="convertrack-404-edit-title"><?php esc_html_e( 'Edit redirect', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<button type="button" class="cvtrk-dialog-close" data-cvtrk="404-edit-cancel" aria-label="<?php esc_attr_e( 'Close edit redirect dialog', 'convertrack-click-conversion-analytics' ); ?>">&times;</button>
+			</div>
+			<div class="cvtrk-dialog-body">
+				<p id="convertrack-404-edit-description"><?php esc_html_e( 'Choose the destination for this broken URL. Convertrack validates it before saving.', 'convertrack-click-conversion-analytics' ); ?></p>
+				<input type="hidden" data-cvtrk="404-edit-id" value="" />
+				<label class="cvtrk-field" for="convertrack-404-edit-destination">
+					<span><?php esc_html_e( 'Destination URL', 'convertrack-click-conversion-analytics' ); ?></span>
+					<input type="text" inputmode="url" autocomplete="url" spellcheck="false" id="convertrack-404-edit-destination" class="large-text" data-cvtrk="404-edit-destination" value="" aria-describedby="convertrack-404-edit-destination-hint" required />
+				</label>
+				<p class="description" id="convertrack-404-edit-destination-hint"><?php esc_html_e( 'Enter a full same-site URL or a root-relative path such as /new-page/.', 'convertrack-click-conversion-analytics' ); ?></p>
+				<p class="cvtrk-field-error" data-cvtrk="404-edit-error" hidden aria-live="polite"></p>
+			</div>
+			<div class="cvtrk-dialog-actions">
+				<button type="button" class="button" data-cvtrk="404-edit-cancel"><?php esc_html_e( 'Cancel', 'convertrack-click-conversion-analytics' ); ?></button>
+				<button type="button" class="button button-primary" data-cvtrk="404-edit-save"><?php esc_html_e( 'Save redirect', 'convertrack-click-conversion-analytics' ); ?></button>
+			</div>
 		</div>
 	</div>
 </div>

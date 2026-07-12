@@ -81,6 +81,61 @@ class Rest_Controller {
 			)
 		);
 
+		// Admin: searchable, sortable and paginated per-page statistics.
+		register_rest_route(
+			self::REST_NAMESPACE,
+			'/stats/pages',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'stats_pages' ),
+				'permission_callback' => array( $this, 'can_view_stats' ),
+				'args'                => array(
+					'range'    => array(
+						'default'           => 7,
+						'sanitize_callback' => 'absint',
+						'validate_callback' => function ( $value ) {
+							return (int) $value >= 1 && (int) $value <= 365;
+						},
+					),
+					'page'     => array(
+						'default'           => 1,
+						'sanitize_callback' => 'absint',
+						'validate_callback' => function ( $value ) {
+							return (int) $value >= 1;
+						},
+					),
+					'per_page' => array(
+						'default'           => 25,
+						'sanitize_callback' => 'absint',
+						'validate_callback' => function ( $value ) {
+							return (int) $value >= 1 && (int) $value <= 100;
+						},
+					),
+					'search'   => array(
+						'default'           => '',
+						'sanitize_callback' => 'sanitize_text_field',
+						'validate_callback' => function ( $value ) {
+							return is_string( $value );
+						},
+					),
+					'orderby'  => array(
+						'default'           => 'pageviews',
+						'sanitize_callback' => 'sanitize_key',
+						'validate_callback' => function ( $value ) {
+							return in_array( sanitize_key( (string) $value ), array( 'pageviews', 'clicks', 'conversions', 'title' ), true );
+						},
+					),
+					'order'    => array(
+						'default'           => 'desc',
+						'sanitize_callback' => 'sanitize_key',
+						'validate_callback' => function ( $value ) {
+							return in_array( sanitize_key( (string) $value ), array( 'asc', 'desc' ), true );
+						},
+					),
+				),
+			)
+		);
+
 		// Admin: per-page heatmap (click density + scroll depth).
 		register_rest_route(
 			self::REST_NAMESPACE,
@@ -222,6 +277,35 @@ class Rest_Controller {
 
 		$data['active']        = Presence::active_count();
 		$data['recent_events'] = Database::recent_events( $range, 100 );
+
+		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
+	}
+
+	/**
+	 * GET /stats/pages
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function stats_pages( $request ) {
+		$result = Database::paged_pages(
+			array(
+				'range'    => (int) $request->get_param( 'range' ),
+				'page'     => (int) $request->get_param( 'page' ),
+				'per_page' => (int) $request->get_param( 'per_page' ),
+				'search'   => (string) $request->get_param( 'search' ),
+				'orderby'  => sanitize_key( (string) $request->get_param( 'orderby' ) ),
+				'order'    => sanitize_key( (string) $request->get_param( 'order' ) ),
+			)
+		);
+
+		$data = array(
+			'rows'        => $this->decorate_pages( $result['rows'] ),
+			'page'        => (int) $result['page'],
+			'per_page'    => (int) $result['per_page'],
+			'total'       => (int) $result['total'],
+			'total_pages' => (int) $result['total_pages'],
+		);
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}

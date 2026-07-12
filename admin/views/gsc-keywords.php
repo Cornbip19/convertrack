@@ -43,10 +43,11 @@ $type_labels = array(
 	data-kw-connected="<?php echo $connected ? '1' : '0'; ?>"
 	data-kw-enabled="<?php echo $s['enabled'] ? '1' : '0'; ?>">
 	<?php Admin::render_header( 'keywords' ); ?>
+	<?php Admin::render_subnav( 'search', 'keywords' ); ?>
 
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
-			<h2 class="cvtrk-page-title"><?php esc_html_e( 'Keyword Insights', 'convertrack-click-conversion-analytics' ); ?></h2>
+			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ); ?></h1>
 			<p class="cvtrk-page-desc"><?php esc_html_e( 'Search Console keyword opportunities mapped to your pages, with presence checks and clear content recommendations.', 'convertrack-click-conversion-analytics' ); ?></p>
 		</div>
 		<div class="cvtrk-page-head-actions">
@@ -81,7 +82,7 @@ $type_labels = array(
 		</div>
 	<?php elseif ( ! $s['enabled'] ) : ?>
 		<div class="cvtrk-notice cvtrk-notice-warning">
-			<p><?php esc_html_e( 'Keyword Insights is currently disabled. Enable it in the settings at the bottom of this page, save, then run your first sync.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p><?php esc_html_e( 'Keyword Opportunities is currently disabled. Open the advanced keyword settings below, enable it, save, then run your first sync.', 'convertrack-click-conversion-analytics' ); ?></p>
 		</div>
 	<?php endif; ?>
 
@@ -193,7 +194,7 @@ $type_labels = array(
 				<button type="button" class="button" data-cvtrk="kw-bulk-reanalyze"><?php esc_html_e( 'Re-analyze selected', 'convertrack-click-conversion-analytics' ); ?></button>
 			</div>
 
-			<div data-cvtrk="kw-table" aria-live="polite" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="kw-table" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 			<div class="cvtrk-pagination">
 				<button type="button" class="button" data-cvtrk="kw-prev"><?php esc_html_e( 'Previous', 'convertrack-click-conversion-analytics' ); ?></button>
 				<span data-cvtrk="kw-page" aria-live="polite"></span>
@@ -217,13 +218,19 @@ $type_labels = array(
 		</div>
 	</div>
 
-	<div class="cvtrk-card">
+	<section class="cvtrk-card" id="convertrack-kw-settings" aria-labelledby="convertrack-kw-settings-title">
 		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'Keyword Insights Settings', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Data sync, thresholds, and classification vocabulary', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div>
+				<h2 id="convertrack-kw-settings-title"><?php esc_html_e( 'Keyword Opportunities Settings', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Data sync, thresholds, and classification vocabulary', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+			<a class="button-link" href="<?php echo esc_url( admin_url( 'admin.php?page=convertrack-settings#cvtrk-settings-modules' ) ); ?>"><?php esc_html_e( 'View all module settings', 'convertrack-click-conversion-analytics' ); ?></a>
 		</div>
 		<div class="cvtrk-card-body">
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<p><?php esc_html_e( 'Module-specific controls remain here so you can tune recommendations while reviewing keyword data. Central Settings links to this panel alongside the other Convertrack modules.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<details class="cvtrk-advanced-disclosure">
+				<summary><?php esc_html_e( 'Advanced keyword settings', 'convertrack-click-conversion-analytics' ); ?></summary>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="convertrack_gsc_keywords_save_settings" />
 				<?php wp_nonce_field( 'convertrack_gsc_keywords_save_settings' ); ?>
 
@@ -375,7 +382,8 @@ $type_labels = array(
 				</table>
 
 				<?php submit_button( __( 'Save Keyword Insights Settings', 'convertrack-click-conversion-analytics' ) ); ?>
-			</form>
+				</form>
+			</details>
 
 			<div class="cvtrk-toolbar cvtrk-kw-tools">
 				<button type="button" class="button" data-cvtrk="kw-sync-now"><?php esc_html_e( 'Sync keywords now', 'convertrack-click-conversion-analytics' ); ?></button>
@@ -383,5 +391,5 @@ $type_labels = array(
 				<span class="description" data-cvtrk="kw-tools-status" hidden></span>
 			</div>
 		</div>
-	</div>
+	</section>
 </div>

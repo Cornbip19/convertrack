@@ -130,8 +130,19 @@
 		if ( ! box ) {
 			return;
 		}
-		clear( box );
+		var previous = box.querySelector( '.cvtrk-refresh-error' );
+		if ( previous && previous.parentNode ) {
+			previous.parentNode.removeChild( previous );
+		}
+		var preserve = !! box.firstElementChild && ! box.querySelector( '.cvtrk-skeleton' ) && ! box.querySelector( '.cvtrk-empty.is-error:not(.cvtrk-refresh-error)' );
+		if ( ! preserve ) {
+			clear( box );
+		}
 		var e = el( 'div', 'cvtrk-empty is-error' );
+		e.setAttribute( 'role', 'alert' );
+		if ( preserve ) {
+			e.classList.add( 'cvtrk-refresh-error' );
+		}
 		e.appendChild( svgIcon( 'warning', 'cvtrk-empty-icon' ) );
 		e.appendChild( el( 'p', null, msg || I18N.loadError || 'Something went wrong while loading this data.' ) );
 		if ( typeof onRetry === 'function' ) {
@@ -153,6 +164,119 @@
 		}
 		box.classList.toggle( 'cvtrk-loading', !! on );
 		box.setAttribute( 'aria-busy', on ? 'true' : 'false' );
+	}
+
+	// Admin URLs already use the `page` query argument for the WordPress menu
+	// slug. Keep Convertrack state namespaced so pagination never overwrites it.
+	function getUrlParam( key, fallback ) {
+		if ( ! window.URLSearchParams ) {
+			return fallback;
+		}
+		var value = new URLSearchParams( window.location.search ).get( 'cvtrk_' + key );
+		return value === null || value === '' ? fallback : value;
+	}
+
+	function setUrlParams( values, replace ) {
+		if ( ! window.URL || ! window.history || ! history.pushState ) {
+			return;
+		}
+		var url = new URL( window.location.href );
+		Object.keys( values || {} ).forEach( function ( key ) {
+			var value = values[ key ];
+			if ( value === undefined || value === null || value === '' ) {
+				url.searchParams.delete( 'cvtrk_' + key );
+			} else {
+				url.searchParams.set( 'cvtrk_' + key, String( value ) );
+			}
+		} );
+		history[ replace ? 'replaceState' : 'pushState' ]( null, '', url.pathname + url.search + url.hash );
+	}
+
+	function focusableElements( container ) {
+		if ( ! container ) {
+			return [];
+		}
+		return Array.prototype.slice.call( container.querySelectorAll(
+			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+		) ).filter( function ( node ) {
+			return ! node.hidden && node.getAttribute( 'aria-hidden' ) !== 'true';
+		} );
+	}
+
+	// Make every branch outside a nested modal inert, including the WordPress
+	// admin menu. Attribute state is restored exactly when the dialog closes.
+	function setModalBackgroundInert( modal, on ) {
+		if ( ! modal ) {
+			return;
+		}
+		if ( ! on ) {
+			( modal._cvtrkInertNodes || [] ).forEach( function ( item ) {
+				if ( ! item.hadInert ) {
+					item.node.removeAttribute( 'inert' );
+				}
+				if ( item.ariaHidden === null ) {
+					item.node.removeAttribute( 'aria-hidden' );
+				} else {
+					item.node.setAttribute( 'aria-hidden', item.ariaHidden );
+				}
+			} );
+			modal._cvtrkInertNodes = [];
+			return;
+		}
+
+		var stored = [];
+		var branch = modal;
+		while ( branch && branch.parentElement ) {
+			Array.prototype.forEach.call( branch.parentElement.children, function ( sibling ) {
+				if ( sibling === branch || stored.some( function ( item ) { return item.node === sibling; } ) ) {
+					return;
+				}
+				stored.push( {
+					node: sibling,
+					hadInert: sibling.hasAttribute( 'inert' ),
+					ariaHidden: sibling.getAttribute( 'aria-hidden' )
+				} );
+				sibling.setAttribute( 'inert', '' );
+				sibling.setAttribute( 'aria-hidden', 'true' );
+			} );
+			if ( branch.parentElement === document.body ) {
+				break;
+			}
+			branch = branch.parentElement;
+		}
+		modal._cvtrkInertNodes = stored;
+	}
+
+	function handleModalKeydown( event, modal, close ) {
+		if ( event.key === 'Escape' ) {
+			event.preventDefault();
+			close();
+			return;
+		}
+		if ( event.key !== 'Tab' ) {
+			return;
+		}
+		var items = focusableElements( modal );
+		if ( ! items.length ) {
+			event.preventDefault();
+			return;
+		}
+		var first = items[ 0 ];
+		var last = items[ items.length - 1 ];
+		if ( event.shiftKey && document.activeElement === first ) {
+			event.preventDefault();
+			last.focus();
+		} else if ( ! event.shiftKey && document.activeElement === last ) {
+			event.preventDefault();
+			first.focus();
+		}
+	}
+
+	function appendChartSummary( box, text ) {
+		if ( ! box || ! text ) {
+			return;
+		}
+		box.appendChild( el( 'p', 'cvtrk-chart-summary', text ) );
 	}
 
 	function table( headers ) {
@@ -295,6 +419,14 @@
 		return String( value || 'unknown' ).toLowerCase().replace( /[^a-z0-9_-]+/g, '_' );
 	}
 
+	function summaryMetaItem( label, value, tone ) {
+		var className = 'cvtrk-summary-meta-item' + ( tone ? ' is-' + tone : '' );
+		var item = el( 'span', className );
+		item.appendChild( el( 'span', 'cvtrk-summary-meta-label', label ) );
+		item.appendChild( el( 'strong', 'cvtrk-summary-meta-value', value === null || value === undefined || value === '' ? '—' : String( value ) ) );
+		return item;
+	}
+
 	// Only http(s) and same-site relative URLs are allowed in generated
 	// links. Protocol-relative (//host) is rejected: it silently points at
 	// an external origin.
@@ -369,10 +501,10 @@
 		var gscIssues = ( Number( gsc && gsc.not_indexed ) || 0 ) + ( Number( gsc && gsc.errors ) || 0 ) +
 			( Number( gsc && gsc.blocked_by_robots ) || 0 ) + ( Number( gsc && gsc.noindex_detected ) || 0 );
 		var gscReady = !! ( gsc && gsc.settings_ready && gsc.credentials && gsc.credentials.connected );
+		var notFoundError = !! ( notFound && notFound._loadError );
+		var gscError = !! ( gsc && gsc._loadError );
 		var pct = gscTotal > 0 ? Math.round( ( gscIndexed / gscTotal ) * 100 ) : 0;
 		var lastScan = ( gsc && gsc.last_sync_time ) || ( notFound && notFound.last_sitemap_refresh ) || '';
-		var health = C.health || {};
-
 		clear( box );
 		var grid = el( 'div', 'cvtrk-health-grid' );
 		var cards = [
@@ -382,54 +514,61 @@
 				meta: num( pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ) + ' / ' + num( clicks ) + ' ' + ( I18N.clicks || 'Clicks' ) + ' / ' + num( conversions ) + ' ' + ( I18N.conversions || 'Conversions' ),
 				tone: pageviews + clicks > 0 ? 'green' : 'neutral',
 				icon: 'visit',
-				href: C.adminUrls && C.adminUrls.overview
+				href: C.adminUrls && C.adminUrls.overview,
+				show: pageviews + clicks === 0
 			},
 			{
 				label: I18N.total404s || 'Total 404 URLs',
-				value: notFound ? num( total404 ) : I18N.loading || 'Loading...',
-				meta: notFound ? num( unresolved ) + ' unresolved' : '',
-				tone: unresolved > 0 ? 'amber' : ( total404 > 0 ? 'neutral' : 'green' ),
+				value: notFoundError ? ( I18N.unavailable || 'Unavailable' ) : ( notFound ? num( total404 ) : I18N.loading || 'Loading...' ),
+				meta: notFoundError ? ( notFound._loadError || I18N.loadError || 'Could not load this data.' ) : ( notFound ? num( unresolved ) + ' unresolved' : '' ),
+				tone: notFoundError ? 'red' : ( unresolved > 0 ? 'amber' : ( total404 > 0 ? 'neutral' : 'green' ) ),
 				icon: 'warning',
-				href: C.adminUrls && C.adminUrls.notFound
+				href: C.adminUrls && C.adminUrls.notFound,
+				show: notFoundError || unresolved > 0
 			},
 			{
 				label: I18N.activeRedirects || 'Active redirects',
-				value: notFound ? num( redirected ) : I18N.loading || 'Loading...',
-				meta: notFound ? num( redirectHits ) + ' redirect hits' : '',
-				tone: redirected > 0 ? 'green' : 'neutral',
+				value: notFoundError ? ( I18N.unavailable || 'Unavailable' ) : ( notFound ? num( redirected ) : I18N.loading || 'Loading...' ),
+				meta: notFoundError ? ( notFound._loadError || I18N.loadError || 'Could not load this data.' ) : ( notFound ? num( redirectHits ) + ' redirect hits' : '' ),
+				tone: notFoundError ? 'red' : ( redirected > 0 ? 'green' : 'neutral' ),
 				icon: 'update',
-				href: C.adminUrls && C.adminUrls.notFound
+				href: C.adminUrls && C.adminUrls.notFound,
+				show: false
 			},
 			{
 				label: I18N.pendingRecommendations || 'Pending recommendations',
-				value: notFound ? num( recommended ) : I18N.loading || 'Loading...',
-				meta: notFound ? 'Manual review queue' : '',
-				tone: recommended > 0 ? 'amber' : 'green',
+				value: notFoundError ? ( I18N.unavailable || 'Unavailable' ) : ( notFound ? num( recommended ) : I18N.loading || 'Loading...' ),
+				meta: notFoundError ? ( notFound._loadError || I18N.loadError || 'Could not load this data.' ) : ( notFound ? 'Manual review queue' : '' ),
+				tone: notFoundError ? 'red' : ( recommended > 0 ? 'amber' : 'green' ),
 				icon: 'search',
-				href: C.adminUrls && C.adminUrls.notFound
+				href: C.adminUrls && C.adminUrls.notFound,
+				show: recommended > 0
 			},
 			{
 				label: I18N.sitemapStatus || 'Sitemap status',
-				value: ! gsc ? ( I18N.loading || 'Loading...' ) : ( gscReady ? ( gscTotal > 0 ? pct + '% indexed' : I18N.connected || 'Connected' ) : I18N.setupNeeded || 'Setup needed' ),
-				meta: ! gsc ? '' : ( gscReady ? num( gscTotal ) + ' URLs / ' + num( gscIssues ) + ' issues' : I18N.notConnected || 'Not connected' ),
-				tone: ! gsc ? 'neutral' : ( ! gscReady || gscIssues > 0 ? 'amber' : 'green' ),
+				value: gscError ? ( I18N.unavailable || 'Unavailable' ) : ( ! gsc ? ( I18N.loading || 'Loading...' ) : ( gscReady ? ( gscTotal > 0 ? pct + '% indexed' : I18N.connected || 'Connected' ) : I18N.setupNeeded || 'Setup needed' ) ),
+				meta: gscError ? ( gsc._loadError || I18N.loadError || 'Could not load this data.' ) : ( ! gsc ? '' : ( gscReady ? num( gscTotal ) + ' URLs / ' + num( gscIssues ) + ' issues' : I18N.notConnected || 'Not connected' ) ),
+				tone: gscError ? 'red' : ( ! gsc ? 'neutral' : ( ! gscReady || gscIssues > 0 ? 'amber' : 'green' ) ),
 				icon: 'indexed',
-				href: C.adminUrls && C.adminUrls.gsc
+				href: C.adminUrls && C.adminUrls.gsc,
+				show: gscError || ! gscReady || gscIssues > 0
 			},
 			{
 				label: I18N.lastScan || 'Last scan',
 				value: shortDate( lastScan ),
 				meta: gsc && gsc.next_scheduled_check ? 'Next: ' + shortDate( gsc.next_scheduled_check ) : '',
 				tone: lastScan ? 'green' : 'neutral',
-				icon: 'calendar'
+				icon: 'calendar',
+				show: gscReady && ! lastScan
 			},
 			{
 				label: I18N.pluginHealth || 'Plugin health',
 				value: I18N.operational || 'Operational',
-				meta: 'Convertrack ' + ( C.version || '' ) + ' / WP ' + ( health.wpVersion || '-' ) + ' / PHP ' + ( health.phpVersion || '-' ),
+				meta: 'Convertrack ' + ( C.version || '' ),
 				tone: 'green',
 				icon: 'shield',
-				href: C.adminUrls && C.adminUrls.settings
+				href: C.adminUrls && C.adminUrls.settings,
+				show: false
 			}
 		];
 
@@ -437,7 +576,15 @@
 			cards[ 0 ].meta += ' / ' + num( active ) + ' live';
 		}
 
-		cards.forEach( function ( item ) {
+		var attentionCards = cards.filter( function ( item ) { return item.show; } );
+		if ( ! attentionCards.length ) {
+			var clear = el( 'div', 'cvtrk-empty cvtrk-health-clear' );
+			clear.appendChild( svgIcon( 'indexed', 'cvtrk-empty-icon' ) );
+			clear.appendChild( el( 'p', null, I18N.noAttentionNeeded || 'No setup or health issues need attention right now.' ) );
+			box.appendChild( clear );
+			return;
+		}
+		attentionCards.forEach( function ( item ) {
 			grid.appendChild( healthCard( item ) );
 		} );
 		box.appendChild( grid );
@@ -485,6 +632,8 @@
 			return;
 		}
 		clear( box );
+		box.removeAttribute( 'role' );
+		box.removeAttribute( 'aria-label' );
 
 		var dates = Object.keys( series || {} );
 		if ( ! dates.length ) {
@@ -524,6 +673,14 @@
 
 		box.appendChild( chart );
 		box.appendChild( legend );
+		var totals = dates.reduce( function ( result, date ) {
+			result.pageviews += Number( series[ date ].pageviews ) || 0;
+			result.clicks += Number( series[ date ].clicks ) || 0;
+			return result;
+		}, { pageviews: 0, clicks: 0 } );
+		appendChartSummary( box, dates[ 0 ] + ' to ' + dates[ dates.length - 1 ] + ': ' +
+			num( totals.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ) + ', ' +
+			num( totals.clicks ) + ' ' + ( I18N.clicks || 'clicks' ) + '.' );
 	}
 
 	function legendItem( cls, label ) {
@@ -563,6 +720,8 @@
 		}
 		lastSeries = series;
 		clear( box );
+		box.removeAttribute( 'role' );
+		box.removeAttribute( 'aria-label' );
 
 		var dates = Object.keys( series || {} );
 		if ( ! dates.length ) {
@@ -662,6 +821,26 @@
 
 		box.appendChild( svg );
 		box.appendChild( legend );
+		var totals = { pageviews: 0, clicks: 0, conversions: 0 };
+		var peakDate = dates[ 0 ];
+		var peakValue = -1;
+		dates.forEach( function ( date ) {
+			var dayTotal = 0;
+			Object.keys( totals ).forEach( function ( key ) {
+				var value = Number( series[ date ][ key ] ) || 0;
+				totals[ key ] += value;
+				dayTotal += value;
+			} );
+			if ( dayTotal > peakValue ) {
+				peakValue = dayTotal;
+				peakDate = date;
+			}
+		} );
+		appendChartSummary( box, dates[ 0 ] + ' to ' + dates[ dates.length - 1 ] + ': ' +
+			num( totals.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ) + ', ' +
+			num( totals.clicks ) + ' ' + ( I18N.clicks || 'clicks' ) + ', and ' +
+			num( totals.conversions ) + ' ' + ( I18N.conversions || 'conversions' ) +
+			'. Peak activity was ' + peakDate + '.' );
 	}
 
 	function renderHourlyChart( items ) {
@@ -670,6 +849,8 @@
 			return;
 		}
 		clear( box );
+		box.removeAttribute( 'role' );
+		box.removeAttribute( 'aria-label' );
 		if ( ! items || ! items.length ) {
 			empty( box, I18N.noData );
 			return;
@@ -721,6 +902,25 @@
 
 		box.appendChild( chart );
 		box.appendChild( legend );
+		var hourTotals = { pageviews: 0, clicks: 0, conversions: 0 };
+		var peak = items[ 0 ];
+		var peakTotal = -1;
+		items.forEach( function ( item ) {
+			var itemTotal = 0;
+			Object.keys( hourTotals ).forEach( function ( key ) {
+				var value = Number( item[ key ] ) || 0;
+				hourTotals[ key ] += value;
+				itemTotal += value;
+			} );
+			if ( itemTotal > peakTotal ) {
+				peakTotal = itemTotal;
+				peak = item;
+			}
+		} );
+		appendChartSummary( box, ( I18N.busiestHour || 'Busiest hour' ) + ': ' + ( peak.hour || '-' ) + '. ' +
+			num( hourTotals.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ) + ', ' +
+			num( hourTotals.clicks ) + ' ' + ( I18N.clicks || 'clicks' ) + ', and ' +
+			num( hourTotals.conversions ) + ' ' + ( I18N.conversions || 'conversions' ) + ' overall.' );
 	}
 
 	function renderEngagement( data ) {
@@ -729,6 +929,8 @@
 			return;
 		}
 		clear( box );
+		box.removeAttribute( 'role' );
+		box.removeAttribute( 'aria-label' );
 
 		var items = [
 			{ key: 'pageviews', label: I18N.pageviews || 'Pageviews', value: Number( data && data.pageviews ) || 0, color: '#145c63' },
@@ -766,6 +968,9 @@
 		} );
 		wrap.appendChild( list );
 		box.appendChild( wrap );
+		appendChartSummary( box, items.map( function ( item ) {
+			return item.label + ': ' + num( item.value );
+		} ).join( '. ' ) + '.' );
 	}
 
 	function renderButtons( items ) {
@@ -810,28 +1015,80 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
 
-		var t = table( [
+		var headers = [
 			{ label: '' },
 			{ label: I18N.page || 'Page' },
 			{ label: I18N.clicks || 'Clicks', num: true },
 			{ label: I18N.pageviews || 'Pageviews', num: true },
 			{ label: I18N.conversions || 'Conversions', num: true }
-		] );
+		];
+		if ( onPick ) {
+			headers.push( { label: I18N.actions || 'Actions' } );
+		}
+		var t = table( headers );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it, i ) {
 			var tr = el( 'tr' );
-			if ( onPick ) {
-				tr.className = 'is-clickable';
-				tr.addEventListener( 'click', function () { onPick( it ); } );
-			}
 			tr.appendChild( rankCell( i ) );
 			tr.appendChild( labelCell( it.title, it.url, it.url || '' ) );
 			tr.appendChild( clicksCell( it.clicks, max ) );
 			tr.appendChild( numCell( it.pageviews ) );
 			tr.appendChild( convCell( it.conversions ) );
+			if ( onPick ) {
+				var actionCell = el( 'td', 'cvtrk-row-actions' );
+				var details = el( 'button', 'button button-small', I18N.viewDetails || 'View details' );
+				details.type = 'button';
+				details.setAttribute( 'aria-label', ( I18N.viewDetails || 'View details' ) + ': ' + ( it.title || it.url || '' ) );
+				details.addEventListener( 'click', function () { onPick( it ); } );
+				actionCell.appendChild( details );
+				tr.appendChild( actionCell );
+			}
 			body.appendChild( tr );
 		} );
 		box.appendChild( t );
+	}
+
+	function renderPagedPages( box, data, onPick ) {
+		if ( ! box ) {
+			return;
+		}
+		var rows = ( data && data.rows ) || [];
+		clear( box );
+		if ( ! rows.length ) {
+			empty( box, I18N.noMatchingPages || 'No tracked pages match the current filters.' );
+			return;
+		}
+
+		var max = rows.reduce( function ( current, row ) {
+			return Math.max( current, Number( row.clicks ) || 0 );
+		}, 1 );
+		var wrap = table( [
+			{ label: I18N.page || 'Page' },
+			{ label: I18N.clicks || 'Clicks', num: true },
+			{ label: I18N.pageviews || 'Pageviews', num: true },
+			{ label: I18N.conversions || 'Conversions', num: true },
+			{ label: I18N.actions || 'Actions' }
+		] );
+		var t = wrap.querySelector( 'table' );
+		var caption = el( 'caption', null, num( data.total ) + ' ' + ( I18N.trackedPages || 'tracked pages' ) );
+		t.insertBefore( caption, t.firstChild );
+		var body = wrap.querySelector( 'tbody' );
+		rows.forEach( function ( row ) {
+			var tr = el( 'tr' );
+			tr.appendChild( labelCell( row.title || row.url || ( '#' + row.post_id ), row.url || '', safeUrl( row.url ) ) );
+			tr.appendChild( clicksCell( row.clicks, max ) );
+			tr.appendChild( numCell( row.pageviews ) );
+			tr.appendChild( convCell( row.conversions ) );
+			var actionCell = el( 'td', 'cvtrk-row-actions' );
+			var details = el( 'button', 'button button-small', I18N.viewDetails || 'View details' );
+			details.type = 'button';
+			details.setAttribute( 'aria-label', ( I18N.viewDetails || 'View details' ) + ': ' + ( row.title || row.url || row.post_id ) );
+			details.addEventListener( 'click', function () { onPick( row ); } );
+			actionCell.appendChild( details );
+			tr.appendChild( actionCell );
+			body.appendChild( tr );
+		} );
+		box.appendChild( wrap );
 	}
 
 	function renderSessions( items ) {
@@ -1163,10 +1420,11 @@
 	}
 
 	function setLive( count ) {
-		var node = attr( 'active' );
-		if ( node ) {
-			node.textContent = num( count );
-		}
+		[ attr( 'active' ), attr( 'active-secondary' ) ].forEach( function ( node ) {
+			if ( node ) {
+				node.textContent = num( count );
+			}
+		} );
 	}
 
 	/* Heatmaps ------------------------------------------------------------ */
@@ -1421,6 +1679,7 @@
 		var canvas = attr( 'heatmap-canvas' );
 		var markers = attr( 'heatmap-markers' );
 		var note = attr( 'heatmap-note' );
+		var blocked = attr( 'heatmap-frame-blocked' );
 		if ( ! stage || ! page || ! canvas ) {
 			return;
 		}
@@ -1428,6 +1687,9 @@
 		var maxW = ( data && data.max_weight ) || 1;
 		mode = mode === 'page' ? 'page' : 'element';
 		var viewport = applyHeatmapViewport( stage, page, frame, data && data.device );
+		if ( blocked ) {
+			blocked.hidden = true;
+		}
 
 		if ( note ) {
 			note.textContent = points.length ? '' : ( I18N.noHeatmap || '' );
@@ -1441,10 +1703,16 @@
 				window.setTimeout( function () {
 					var docH = docHeight( frame );
 					if ( docH > 0 ) {
+						if ( blocked ) {
+							blocked.hidden = true;
+						}
 						var renderH = Math.max( viewport.h, Math.min( docH, 8000 ) );
 						frame.style.height = renderH + 'px';
 						drawHeatCanvas( canvas, page, markers, points, maxW, renderH, frame, mode, viewport );
 					} else {
+						if ( blocked ) {
+							blocked.hidden = false;
+						}
 						frame.style.display = 'none';
 						stage.classList.add( 'cvtrk-no-frame' );
 						drawHeatCanvas( canvas, page, markers, points, maxW, viewport.h, null, 'page', viewport );
@@ -1469,6 +1737,9 @@
 				frame.onload();
 			}
 		} else {
+			if ( blocked && showPage ) {
+				blocked.hidden = false;
+			}
 			if ( frame ) {
 				frame.style.display = 'none';
 				frame.removeAttribute( 'data-snapshot-key' );
@@ -1487,9 +1758,19 @@
 		var deviceToggle = attr( 'device-toggle' );
 		var modeSel = attr( 'heatmap-mode' );
 		var showChk = attr( 'show-page' );
+		var pageSearch = attr( 'heatmap-page-search' );
+		var confidence = attr( 'heatmap-confidence' );
+		var frameBlocked = attr( 'heatmap-frame-blocked' );
 		var data = null;
 		var snapshots = {};
 		var resizeTimer = null;
+		var pageSearchTimer = null;
+		if ( rangeSel ) {
+			var initialRange = getUrlParam( 'range', rangeSel.value );
+			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
+				rangeSel.value = initialRange;
+			}
+		}
 
 		function selectedDevice() {
 			var value = deviceSel ? deviceSel.value : 'desktop';
@@ -1548,8 +1829,13 @@
 
 		function setHeatmapConfidenceNote( samples ) {
 			var note = attr( 'heatmap-note' );
+			var text = heatmapConfidenceText( samples );
+			if ( confidence ) {
+				confidence.textContent = text;
+				confidence.hidden = ! text;
+			}
 			if ( note && Number( samples ) > 0 ) {
-				note.textContent = heatmapConfidenceText( samples );
+				note.textContent = text;
 			}
 		}
 
@@ -1576,6 +1862,13 @@
 			var meta = attr( 'heatmap-meta' );
 			if ( meta ) {
 				meta.textContent = '';
+			}
+			if ( confidence ) {
+				confidence.textContent = '';
+				confidence.hidden = true;
+			}
+			if ( frameBlocked ) {
+				frameBlocked.hidden = true;
 			}
 			var stage = attr( 'heatmap-stage' );
 			var page = attr( 'heatmap-page' );
@@ -1634,6 +1927,13 @@
 							' - ' + num( heatmapClicks ) + ' heatmap clicks' +
 							( trackedClicks && trackedClicks !== heatmapClicks ? ' - ' + num( trackedClicks ) + ' tracked clicks' : '' );
 					}
+					var canvas = attr( 'heatmap-canvas' );
+					if ( canvas ) {
+						var selected = postSel && postSel.options[ postSel.selectedIndex ];
+						canvas.setAttribute( 'aria-label', ( selected ? selected.textContent + '. ' : '' ) +
+							num( d.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ).toLowerCase() + ', ' +
+							num( heatmapClicks ) + ' heatmap clicks. ' + heatmapConfidenceText( heatmapClicks ) );
+					}
 					setHeatmapConfidenceNote( heatmapClicks );
 				} )
 				.catch( function ( err ) {
@@ -1648,9 +1948,10 @@
 
 		function loadPages() {
 			var range = rangeSel ? rangeSel.value : 7;
-			api( '/stats/summary?range=' + encodeURIComponent( range ) )
+			var search = pageSearch ? pageSearch.value.trim() : '';
+			api( '/stats/pages?range=' + encodeURIComponent( range ) + '&page=1&per_page=100&orderby=pageviews&order=desc&search=' + encodeURIComponent( search ) )
 				.then( function ( d ) {
-					if ( ! postSel || ! d.top_pages ) {
+					if ( ! postSel || ! d.rows ) {
 						return;
 					}
 					var cur = postSel.value;
@@ -1658,7 +1959,7 @@
 					while ( postSel.options.length > 1 ) {
 						postSel.remove( 1 );
 					}
-					d.top_pages.forEach( function ( p ) {
+					d.rows.forEach( function ( p ) {
 						if ( p.post_id > 0 ) {
 							var o = document.createElement( 'option' );
 							o.value = p.post_id;
@@ -1670,7 +1971,7 @@
 						}
 					} );
 					if ( postSel.options.length <= 1 ) {
-						showNoPages();
+						clearHeatmapSurface( search ? ( I18N.noMatchingPages || 'No tracked pages match this search.' ) : ( I18N.noHeatmapPages || 'No page activity in this range yet.' ) );
 						return;
 					}
 					if ( cur && cur !== '0' && hasCurrent ) {
@@ -1686,10 +1987,19 @@
 		}
 
 		if ( rangeSel ) {
-			rangeSel.addEventListener( 'change', loadPages );
+			rangeSel.addEventListener( 'change', function () {
+				setUrlParams( { range: rangeSel.value }, false );
+				loadPages();
+			} );
 		}
 		if ( postSel ) {
 			postSel.addEventListener( 'change', load );
+		}
+		if ( pageSearch ) {
+			pageSearch.addEventListener( 'input', function () {
+				window.clearTimeout( pageSearchTimer );
+				pageSearchTimer = window.setTimeout( loadPages, 250 );
+			} );
 		}
 		if ( deviceSel ) {
 			deviceSel.addEventListener( 'change', function () {
@@ -1872,13 +2182,44 @@
 
 	/* Data loaders -------------------------------------------------------- */
 
+	function regionNodes( keys ) {
+		var seen = [];
+		( keys || [] ).forEach( function ( key ) {
+			var node = attr( key );
+			if ( node && seen.indexOf( node ) === -1 ) {
+				seen.push( node );
+			}
+		} );
+		return seen;
+	}
+
+	function setRegionsBusy( keys, on ) {
+		regionNodes( keys ).forEach( function ( node ) { setBusy( node, on ); } );
+	}
+
+	function showRegionsError( keys, error, retry ) {
+		var message = ( error && error.message ) || I18N.loadError || 'Something went wrong while loading this data.';
+		regionNodes( keys ).forEach( function ( node ) {
+			setBusy( node, false );
+			errorState( node, message, retry );
+		} );
+	}
+
 	function loadActive() {
+		var sessions = attr( 'active-sessions' );
+		setBusy( sessions, true );
 		api( '/stats/active' )
 			.then( function ( data ) {
+				setBusy( sessions, false );
 				setLive( data.active );
 				renderSessions( data.sessions );
 			} )
-			.catch( function () {} );
+			.catch( function ( err ) {
+				setBusy( sessions, false );
+				if ( sessions ) {
+					errorState( sessions, ( err && err.message ) || 'Could not load live visitors.', loadActive );
+				}
+			} );
 	}
 
 	function initLive() {
@@ -1894,12 +2235,21 @@
 		var timelineType = attr( 'timeline-type' );
 		var timelineFilter = attr( 'timeline-filter' );
 		var timelineSort = attr( 'timeline-sort' );
+		var overviewRegions = [ 'chart', 'hourly-chart', 'engagement-chart', 'top-buttons', 'top-pages', 'top-sources', 'top-search-terms', 'top-countries', 'event-timeline', 'active-sessions', 'overview-health' ];
+		if ( rangeSel ) {
+			var initialRange = getUrlParam( 'range', rangeSel.value );
+			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
+				rangeSel.value = initialRange;
+			}
+		}
 
 		function load() {
 			var range = rangeSel ? rangeSel.value : 7;
 			updateExports( range, 0 );
+			setRegionsBusy( overviewRegions, true );
 			api( '/stats/summary?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
+					setRegionsBusy( overviewRegions, false );
 					renderCards( data.totals );
 					set( 'avg_duration', formatDuration( data.avg_session_seconds ) );
 					renderChart( data.series );
@@ -1916,17 +2266,30 @@
 					toggleConvHint( data.totals );
 					renderOverviewHealth( data, null, null );
 					Promise.all( [
-						api( '/404/summary' ).catch( function () { return null; } ),
-						api( '/gsc/summary' ).catch( function () { return null; } )
+						api( '/404/summary' ).catch( function ( err ) {
+							return { _loadError: ( err && err.message ) || ( I18N.loadError || 'Could not load 404 data.' ) };
+						} ),
+						api( '/gsc/summary' ).catch( function ( err ) {
+							return { _loadError: ( err && err.message ) || ( I18N.loadError || 'Could not load indexing data.' ) };
+						} )
 					] ).then( function ( moduleData ) {
 						renderOverviewHealth( data, moduleData[ 0 ], moduleData[ 1 ] );
 					} );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					showRegionsError( overviewRegions, err, load );
+					var updated = attr( 'last-updated' );
+					if ( updated ) {
+						updated.textContent = I18N.loadError || 'Could not load dashboard data.';
+					}
+				} );
 		}
 
 		if ( rangeSel ) {
-			rangeSel.addEventListener( 'change', load );
+			rangeSel.addEventListener( 'change', function () {
+				setUrlParams( { range: rangeSel.value }, false );
+				load();
+			} );
 		}
 		if ( timelineType ) {
 			timelineType.addEventListener( 'change', function () { renderTimeline(); } );
@@ -1940,7 +2303,7 @@
 		load();
 	}
 
-	function initPages() {
+	function initPagesLegacy() {
 		var rangeSel = attr( 'range' );
 		var postSel = attr( 'post' );
 		var titleEl = attr( 'buttons-title' );
@@ -1975,7 +2338,13 @@
 						pagesLoaded = true;
 					}
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					[ attr( 'top-pages' ), attr( 'top-buttons' ) ].forEach( function ( box ) {
+						if ( box ) {
+							errorState( box, ( err && err.message ) || 'Could not load content analytics.', load );
+						}
+					} );
+				} );
 		}
 
 		function ensureOption( select, value, label ) {
@@ -2000,24 +2369,296 @@
 		load();
 	}
 
+	function initPages() {
+		var rangeSel = attr( 'range' );
+		var postSel = attr( 'post' );
+		var titleEl = attr( 'buttons-title' );
+		var listBox = attr( 'pages-list' ) || attr( 'top-pages' );
+		var searchInput = attr( 'pages-search' );
+		var orderbySel = attr( 'pages-orderby' );
+		var orderSel = attr( 'pages-order' );
+		var perPageSel = attr( 'pages-per-page' );
+		var prev = attr( 'pages-prev' );
+		var next = attr( 'pages-next' );
+		var pageEl = attr( 'pages-page' );
+		var resultCount = attr( 'pages-result-count' );
+		var detailBox = attr( 'top-buttons' );
+		var state = { page: 1, pages: 1, total: 0 };
+
+		function ensureOption( select, value, label ) {
+			if ( ! select ) {
+				return;
+			}
+			value = String( value );
+			for ( var i = 0; i < select.options.length; i++ ) {
+				if ( select.options[ i ].value === value ) {
+					if ( label && /^#\d+$/.test( select.options[ i ].textContent || '' ) ) {
+						select.options[ i ].textContent = label;
+					}
+					return;
+				}
+			}
+			var option = document.createElement( 'option' );
+			option.value = value;
+			option.textContent = label;
+			select.appendChild( option );
+		}
+
+		function useSelectValue( select, value ) {
+			if ( ! select ) {
+				return;
+			}
+			value = String( value );
+			for ( var i = 0; i < select.options.length; i++ ) {
+				if ( select.options[ i ].value === value ) {
+					select.value = value;
+					return;
+				}
+			}
+		}
+
+		useSelectValue( rangeSel, getUrlParam( 'range', rangeSel ? rangeSel.value : '7' ) );
+		useSelectValue( orderbySel, getUrlParam( 'pages_orderby', orderbySel ? orderbySel.value : 'pageviews' ) );
+		useSelectValue( orderSel, getUrlParam( 'pages_order', orderSel ? orderSel.value : 'desc' ) );
+		useSelectValue( perPageSel, getUrlParam( 'pages_per_page', perPageSel ? perPageSel.value : '25' ) );
+		state.page = Math.max( 1, Number( getUrlParam( 'pages_page', '1' ) ) || 1 );
+		if ( searchInput ) {
+			searchInput.value = getUrlParam( 'pages_search', searchInput.value || '' );
+		}
+		var initialPost = Math.max( 0, Number( getUrlParam( 'pages_post', '0' ) ) || 0 );
+		if ( initialPost && postSel ) {
+			ensureOption( postSel, initialPost, '#' + initialPost );
+			postSel.value = String( initialPost );
+		}
+
+		function listQuery() {
+			return '?' + [
+				'range=' + encodeURIComponent( rangeSel ? rangeSel.value : 7 ),
+				'page=' + encodeURIComponent( state.page ),
+				'per_page=' + encodeURIComponent( perPageSel ? perPageSel.value : 25 ),
+				'search=' + encodeURIComponent( searchInput ? searchInput.value : '' ),
+				'orderby=' + encodeURIComponent( orderbySel ? orderbySel.value : 'pageviews' ),
+				'order=' + encodeURIComponent( orderSel ? orderSel.value : 'desc' )
+			].join( '&' );
+		}
+
+		function syncListUrl( replace ) {
+			setUrlParams( {
+				range: rangeSel ? rangeSel.value : 7,
+				pages_page: state.page,
+				pages_per_page: perPageSel ? perPageSel.value : 25,
+				pages_search: searchInput ? searchInput.value : '',
+				pages_orderby: orderbySel ? orderbySel.value : 'pageviews',
+				pages_order: orderSel ? orderSel.value : 'desc',
+				pages_post: postSel && postSel.value !== '0' ? postSel.value : ''
+			}, replace );
+		}
+
+		function updatePagination() {
+			if ( pageEl ) {
+				pageEl.textContent = ( I18N.pageWord || 'Page' ) + ' ' + state.page + ' / ' + state.pages + ' (' + num( state.total ) + ')';
+			}
+			if ( resultCount ) {
+				resultCount.textContent = num( state.total ) + ' ' + ( state.total === 1 ? ( I18N.trackedPage || 'tracked page' ) : ( I18N.trackedPages || 'tracked pages' ) );
+			}
+			if ( prev ) {
+				prev.disabled = state.page <= 1;
+			}
+			if ( next ) {
+				next.disabled = state.page >= state.pages;
+			}
+		}
+
+		function focusDetail() {
+			var card = document.querySelector( '[data-cvtrk-pages-detail]' ) || document.getElementById( 'convertrack-page-detail' );
+			if ( card && card.scrollIntoView ) {
+				card.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+			}
+			if ( titleEl ) {
+				titleEl.setAttribute( 'tabindex', '-1' );
+				titleEl.focus();
+			}
+		}
+
+		function loadDetail( shouldFocus ) {
+			var range = rangeSel ? rangeSel.value : 7;
+			var post = postSel ? postSel.value : '0';
+			updateExports( range, post );
+			if ( ! post || post === '0' ) {
+				if ( titleEl ) {
+					titleEl.textContent = I18N.pageDetails || 'Page details';
+				}
+				if ( detailBox ) {
+					empty( detailBox, I18N.choosePage || 'Select View details for a page to inspect its calls to action.' );
+				}
+				return;
+			}
+
+			setBusy( detailBox, true );
+			api( '/stats/summary?range=' + encodeURIComponent( range ) + '&post=' + encodeURIComponent( post ) )
+				.then( function ( data ) {
+					setBusy( detailBox, false );
+					( data.top_pages || [] ).forEach( function ( page ) {
+						ensureOption( postSel, page.post_id, page.title || page.url || ( '#' + page.post_id ) );
+					} );
+					var selected = postSel && postSel.options[ postSel.selectedIndex ];
+					if ( titleEl ) {
+						titleEl.textContent = ( I18N.topButtons || 'Buttons clicked' ) + ( selected ? ' - ' + selected.textContent : '' );
+					}
+					renderButtons( data.top_buttons || [] );
+					if ( shouldFocus ) {
+						focusDetail();
+					}
+				} )
+				.catch( function ( err ) {
+					setBusy( detailBox, false );
+					if ( detailBox ) {
+						errorState( detailBox, ( err && err.message ) || 'Could not load page details.', function () { loadDetail( false ); } );
+					}
+				} );
+		}
+
+		function pickPage( row ) {
+			ensureOption( postSel, row.post_id, row.title || row.url || ( '#' + row.post_id ) );
+			if ( postSel ) {
+				postSel.value = String( row.post_id );
+			}
+			syncListUrl( false );
+			loadDetail( true );
+		}
+
+		function loadList() {
+			setBusy( listBox, true );
+			api( '/stats/pages' + listQuery() )
+				.then( function ( data ) {
+					setBusy( listBox, false );
+					state.page = Math.max( 1, Number( data.page ) || 1 );
+					state.pages = Math.max( 1, Number( data.total_pages ) || 1 );
+					state.total = Number( data.total ) || 0;
+					( data.rows || [] ).forEach( function ( page ) {
+						ensureOption( postSel, page.post_id, page.title || page.url || ( '#' + page.post_id ) );
+					} );
+					renderPagedPages( listBox, data, pickPage );
+					updatePagination();
+					syncListUrl( true );
+				} )
+				.catch( function ( err ) {
+					setBusy( listBox, false );
+					if ( listBox ) {
+						errorState( listBox, ( err && err.message ) || 'Could not load tracked pages.', loadList );
+					}
+					if ( resultCount ) {
+						resultCount.textContent = I18N.loadError || 'Could not load tracked pages.';
+					}
+				} );
+		}
+
+		if ( rangeSel ) {
+			rangeSel.addEventListener( 'change', function () {
+				state.page = 1;
+				syncListUrl( false );
+				loadList();
+				loadDetail( false );
+			} );
+		}
+		if ( postSel ) {
+			postSel.addEventListener( 'change', function () {
+				syncListUrl( false );
+				loadDetail( true );
+			} );
+		}
+		[ orderbySel, orderSel, perPageSel ].forEach( function ( select ) {
+			if ( select ) {
+				select.addEventListener( 'change', function () {
+					state.page = 1;
+					syncListUrl( false );
+					loadList();
+				} );
+			}
+		} );
+		if ( searchInput ) {
+			var searchTimer = null;
+			searchInput.addEventListener( 'input', function () {
+				window.clearTimeout( searchTimer );
+				searchTimer = window.setTimeout( function () {
+					state.page = 1;
+					syncListUrl( true );
+					loadList();
+				}, 250 );
+			} );
+		}
+		if ( prev ) {
+			prev.addEventListener( 'click', function () {
+				if ( state.page > 1 ) {
+					state.page--;
+					syncListUrl( false );
+					loadList();
+				}
+			} );
+		}
+		if ( next ) {
+			next.addEventListener( 'click', function () {
+				if ( state.page < state.pages ) {
+					state.page++;
+					syncListUrl( false );
+					loadList();
+				}
+			} );
+		}
+		window.addEventListener( 'popstate', function () {
+			useSelectValue( rangeSel, getUrlParam( 'range', rangeSel ? rangeSel.value : '7' ) );
+			useSelectValue( orderbySel, getUrlParam( 'pages_orderby', orderbySel ? orderbySel.value : 'pageviews' ) );
+			useSelectValue( orderSel, getUrlParam( 'pages_order', orderSel ? orderSel.value : 'desc' ) );
+			useSelectValue( perPageSel, getUrlParam( 'pages_per_page', perPageSel ? perPageSel.value : '25' ) );
+			state.page = Math.max( 1, Number( getUrlParam( 'pages_page', '1' ) ) || 1 );
+			if ( searchInput ) {
+				searchInput.value = getUrlParam( 'pages_search', '' );
+			}
+			var post = Math.max( 0, Number( getUrlParam( 'pages_post', '0' ) ) || 0 );
+			if ( postSel ) {
+				ensureOption( postSel, post, post ? '#' + post : ( I18N.choosePage || 'Choose a page' ) );
+				postSel.value = String( post );
+			}
+			loadList();
+			loadDetail( false );
+		} );
+		updatePagination();
+		loadList();
+		loadDetail( false );
+	}
+
 	function initFunnels() {
 		var rangeSel = attr( 'range' );
+		if ( rangeSel ) {
+			var initialRange = getUrlParam( 'range', rangeSel.value );
+			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
+				rangeSel.value = initialRange;
+			}
+		}
 
 		function load() {
 			var range = rangeSel ? rangeSel.value : 7;
+			var boxes = [ 'funnel-paths', 'funnel-dropoffs', 'funnel-sources', 'funnel-buttons' ];
+			setRegionsBusy( boxes, true );
 			api( '/stats/funnels?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
+					setRegionsBusy( boxes, false );
 					renderFunnelCards( data );
 					renderFunnelPaths( data.paths );
 					renderFunnelDropoffs( data.dropoffs );
 					renderFunnelSources( data.sources );
 					renderFunnelButtons( data.buttons );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					showRegionsError( boxes, err, load );
+				} );
 		}
 
 		if ( rangeSel ) {
-			rangeSel.addEventListener( 'change', load );
+			rangeSel.addEventListener( 'change', function () {
+				setUrlParams( { range: rangeSel.value }, false );
+				load();
+			} );
 		}
 		load();
 	}
@@ -2051,15 +2692,23 @@
 		}
 
 		function loadSummary() {
+			var box = attr( 'gsc-summary' );
+			setBusy( box, true );
 			api( '/gsc/summary' )
 				.then( function ( data ) {
+					setBusy( box, false );
 					renderGscSummary( data );
 					renderGscSitemapOptions( data.sitemaps || [] );
 					if ( ! proc.running && data.last_batch_error && data.last_batch_error.message ) {
 						setGscProgress( data.last_batch_error.message, true );
 					}
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					setBusy( box, false );
+					if ( box ) {
+						errorState( box, ( err && err.message ) || 'Could not load indexing coverage.', loadSummary );
+					}
+				} );
 		}
 
 		function renderGscSitemapOptions( items ) {
@@ -2152,6 +2801,11 @@
 				legend.appendChild( lit );
 			} );
 			wrap.appendChild( legend );
+			var first = history[ 0 ];
+			var last = history[ history.length - 1 ];
+			appendChartSummary( wrap, ( first.date || '' ) + ' to ' + ( last.date || '' ) + ': ' +
+				( I18N.indexed || 'Indexed' ) + ' ' + num( first.indexed ) + ' to ' + num( last.indexed ) +
+				' out of ' + num( last.total ) + ' URLs.' );
 			return wrap;
 		}
 
@@ -2346,9 +3000,26 @@
 			if ( ! postTabs || ! postTypeSel ) {
 				return;
 			}
+			postTabs.setAttribute( 'role', 'tablist' );
+			postTabs.setAttribute( 'aria-label', I18N.postType || 'Filter by post type' );
+			var controlled = attr( 'gsc-urls' );
+			if ( controlled && ! controlled.id ) {
+				controlled.id = 'cvtrk-gsc-url-results';
+			}
+			if ( controlled ) {
+				controlled.setAttribute( 'role', 'tabpanel' );
+				controlled.setAttribute( 'tabindex', '0' );
+			}
 			var value = postTypeSel.value || 'all';
 			postTabs.querySelectorAll( '[data-gsc-post-tab]' ).forEach( function ( tab ) {
-				if ( tab.getAttribute( 'data-gsc-post-tab' ) === value ) {
+				var active = tab.getAttribute( 'data-gsc-post-tab' ) === value;
+				tab.setAttribute( 'role', 'tab' );
+				tab.setAttribute( 'aria-selected', active ? 'true' : 'false' );
+				tab.setAttribute( 'tabindex', active ? '0' : '-1' );
+				if ( controlled ) {
+					tab.setAttribute( 'aria-controls', controlled.id );
+				}
+				if ( active ) {
 					tab.classList.add( 'is-active' );
 				} else {
 					tab.classList.remove( 'is-active' );
@@ -2359,13 +3030,21 @@
 		function loadUrls() {
 			syncPostTabs();
 			updateExport();
+			var box = attr( 'gsc-urls' );
+			setBusy( box, true );
 			api( '/gsc/urls' + query() )
 				.then( function ( data ) {
+					setBusy( box, false );
 					state.pages = data.pages || 1;
 					renderGscUrls( data.rows || [] );
 					renderGscPagination( data );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					setBusy( box, false );
+					if ( box ) {
+						errorState( box, ( err && err.message ) || 'Could not load the indexing queue.', loadUrls );
+					}
+				} );
 		}
 
 		function renderGscUrls( rows ) {
@@ -2485,11 +3164,19 @@
 		}
 
 		function loadLogs() {
+			var box = attr( 'gsc-logs' );
+			setBusy( box, true );
 			api( '/gsc/logs?limit=50' )
 				.then( function ( data ) {
+					setBusy( box, false );
 					renderGscLogs( data.rows || [] );
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					setBusy( box, false );
+					if ( box ) {
+						errorState( box, ( err && err.message ) || 'Could not load indexing activity.', loadLogs );
+					}
+				} );
 		}
 
 		function renderGscLogs( rows ) {
@@ -2577,6 +3264,21 @@
 				postTypeSel.value = tab.getAttribute( 'data-gsc-post-tab' ) || 'all';
 				state.page = 1;
 				loadUrls();
+			} );
+			postTabs.addEventListener( 'keydown', function ( e ) {
+				if ( [ 'ArrowLeft', 'ArrowRight', 'Home', 'End' ].indexOf( e.key ) === -1 ) {
+					return;
+				}
+				var tabs = Array.prototype.slice.call( postTabs.querySelectorAll( '[data-gsc-post-tab]' ) );
+				var current = tabs.indexOf( document.activeElement );
+				if ( current < 0 || ! tabs.length ) {
+					return;
+				}
+				e.preventDefault();
+				var index = e.key === 'Home' ? 0 : ( e.key === 'End' ? tabs.length - 1 : current + ( e.key === 'ArrowRight' ? 1 : -1 ) );
+				index = ( index + tabs.length ) % tabs.length;
+				tabs[ index ].focus();
+				tabs[ index ].click();
 			} );
 		}
 
@@ -2972,14 +3674,14 @@
 			grid.appendChild( kpi( num( data.ignored ), I18N.nfIgnored || 'Ignored', 'hidden' ) );
 			box.appendChild( grid );
 
-			var meta = el( 'div', 'cvtrk-404-meta' );
+			var meta = el( 'div', 'cvtrk-summary-meta cvtrk-404-meta' );
 			var mode = data.settings && data.settings.mode ? data.settings.mode : '';
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfMode || 'Mode' ) + ': ' + statusText( mode ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfRedirectHits || 'Redirect hits' ) + ': ' + num( data.redirect_hits ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfValidUrls || 'Valid URLs' ) + ': ' + num( data.valid_url_count ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.nfRecentHits || 'Recent hits' ) + ': ' + num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
+			meta.appendChild( summaryMetaItem( I18N.nfMode || 'Mode', statusText( mode ) ) );
+			meta.appendChild( summaryMetaItem( I18N.nfRedirectHits || 'Redirect hits', num( data.redirect_hits ) ) );
+			meta.appendChild( summaryMetaItem( I18N.nfValidUrls || 'Valid URLs', num( data.valid_url_count ) ) );
+			meta.appendChild( summaryMetaItem( I18N.nfRecentHits || 'Recent hits', num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
 			if ( data.compatibility && data.compatibility.tools && data.compatibility.tools.length ) {
-				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-status-warning', I18N.nfToolDetected || 'Redirect tool detected' ) );
+				meta.appendChild( summaryMetaItem( I18N.status || 'Status', I18N.nfToolDetected || 'Redirect tool detected', 'warning' ) );
 			}
 			box.appendChild( meta );
 
@@ -3350,6 +4052,209 @@
 			} ).filter( Boolean );
 		}
 
+		var destinationModal = null;
+		var destinationLastFocused = null;
+
+		function closeDestinationDialog() {
+			if ( ! destinationModal ) {
+				return;
+			}
+			document.removeEventListener( 'keydown', onDestinationDialogKey );
+			setModalBackgroundInert( destinationModal, false );
+			if ( destinationModal._cvtrkCleanup ) {
+				destinationModal._cvtrkCleanup();
+				destinationModal._cvtrkCleanup = null;
+			}
+			if ( destinationModal.getAttribute( 'data-cvtrk' ) === '404-edit-dialog' ) {
+				destinationModal.hidden = true;
+			} else {
+				destinationModal.parentNode && destinationModal.parentNode.removeChild( destinationModal );
+			}
+			destinationModal = null;
+			if ( destinationLastFocused && destinationLastFocused.focus ) {
+				destinationLastFocused.focus();
+			}
+		}
+
+		function onDestinationDialogKey( event ) {
+			handleModalKeydown( event, destinationModal, closeDestinationDialog );
+		}
+
+		function run404Action( action, id, destination ) {
+			var body = { id: id };
+			if ( destination ) {
+				body.destination = destination;
+			}
+			return postApi( '/404/' + action, body )
+				.then( function () {
+					setProgress( '404 row updated.' );
+					reloadAll();
+				} )
+				.catch( function ( err ) {
+					setProgress( ( err && err.message ) || '404 action failed.', true );
+					throw err;
+				} );
+		}
+
+		function showDestinationDialog( action, id, current, trigger ) {
+			if ( destinationModal ) {
+				return;
+			}
+			destinationLastFocused = trigger || document.activeElement;
+			var staticDialog = attr( '404-edit-dialog' );
+			if ( staticDialog ) {
+				destinationModal = staticDialog;
+				var staticId = attr( '404-edit-id' );
+				var staticInput = attr( '404-edit-destination' );
+				var staticError = attr( '404-edit-error' );
+				var staticSave = attr( '404-edit-save' );
+				var staticCancels = Array.prototype.slice.call( root.querySelectorAll( '[data-cvtrk="404-edit-cancel"]' ) );
+				if ( staticId ) {
+					staticId.value = String( id );
+				}
+				if ( staticInput ) {
+					staticInput.value = current || '';
+				}
+				if ( staticError ) {
+					staticError.hidden = true;
+					staticError.textContent = '';
+				}
+				staticDialog.hidden = false;
+				function cancelStatic() {
+					closeDestinationDialog();
+				}
+				function clickBackdrop( event ) {
+					if ( event.target === staticDialog ) {
+						closeDestinationDialog();
+					}
+				}
+				function saveStatic() {
+					var destination = staticInput ? staticInput.value.trim() : '';
+					if ( ! destination || ( staticInput && staticInput.checkValidity && ! staticInput.checkValidity() ) ) {
+						if ( staticError ) {
+							staticError.textContent = I18N.nfDestinationRequired || 'Enter a valid destination URL.';
+							staticError.hidden = false;
+						}
+						if ( staticInput && staticInput.reportValidity ) {
+							staticInput.reportValidity();
+						}
+						staticInput && staticInput.focus();
+						return;
+					}
+					if ( staticSave ) {
+						staticSave.disabled = true;
+					}
+					run404Action( action, id, destination )
+						.then( closeDestinationDialog )
+						.catch( function ( err ) {
+							if ( staticSave ) {
+								staticSave.disabled = false;
+							}
+							if ( staticError ) {
+								staticError.textContent = ( err && err.message ) || 'Could not update this redirect.';
+								staticError.hidden = false;
+							}
+						} );
+				}
+				function inputKey( event ) {
+					if ( event.key === 'Enter' ) {
+						event.preventDefault();
+						saveStatic();
+					}
+				}
+				staticCancels.forEach( function ( button ) { button.addEventListener( 'click', cancelStatic ); } );
+				staticSave && staticSave.addEventListener( 'click', saveStatic );
+				staticInput && staticInput.addEventListener( 'keydown', inputKey );
+				staticDialog.addEventListener( 'click', clickBackdrop );
+				staticDialog._cvtrkCleanup = function () {
+					staticCancels.forEach( function ( button ) { button.removeEventListener( 'click', cancelStatic ); } );
+					staticSave && staticSave.removeEventListener( 'click', saveStatic );
+					staticInput && staticInput.removeEventListener( 'keydown', inputKey );
+					staticDialog.removeEventListener( 'click', clickBackdrop );
+					if ( staticSave ) {
+						staticSave.disabled = false;
+					}
+				};
+				setModalBackgroundInert( destinationModal, true );
+				document.addEventListener( 'keydown', onDestinationDialogKey );
+				if ( staticInput ) {
+					staticInput.focus();
+					staticInput.select();
+				}
+				return;
+			}
+			destinationModal = el( 'div', 'cvtrk-modal' );
+			destinationModal.setAttribute( 'role', 'dialog' );
+			destinationModal.setAttribute( 'aria-modal', 'true' );
+			destinationModal.setAttribute( 'aria-labelledby', 'cvtrk-404-destination-title' );
+			destinationModal.setAttribute( 'aria-describedby', 'cvtrk-404-destination-help' );
+
+			var backdrop = el( 'div', 'cvtrk-modal-backdrop' );
+			backdrop.addEventListener( 'click', closeDestinationDialog );
+			destinationModal.appendChild( backdrop );
+
+			var dialog = el( 'div', 'cvtrk-modal-dialog' );
+			var title = el( 'h2', null, action === 'edit' ? ( I18N.nfEditDestination || 'Edit redirect destination' ) : ( I18N.nfAddDestination || 'Add redirect destination' ) );
+			title.id = 'cvtrk-404-destination-title';
+			dialog.appendChild( title );
+			var help = el( 'p', null, I18N.nfDestinationHelp || 'Enter the page URL where this missing address should redirect.' );
+			help.id = 'cvtrk-404-destination-help';
+			dialog.appendChild( help );
+
+			var form = document.createElement( 'form' );
+			var label = el( 'label', 'cvtrk-field' );
+			label.appendChild( el( 'span', null, I18N.nfDestination || 'Destination URL' ) );
+			var input = document.createElement( 'input' );
+			input.type = 'url';
+			input.className = 'regular-text';
+			input.value = current || '';
+			input.placeholder = 'https://example.com/page/';
+			input.required = true;
+			input.setAttribute( 'autocomplete', 'url' );
+			label.appendChild( input );
+			form.appendChild( label );
+			var error = el( 'p', 'cvtrk-notice cvtrk-notice-error' );
+			error.hidden = true;
+			error.setAttribute( 'aria-live', 'polite' );
+			form.appendChild( error );
+
+			var actions = el( 'div', 'cvtrk-modal-actions' );
+			var save = el( 'button', 'button button-primary', I18N.save || 'Save destination' );
+			save.type = 'submit';
+			actions.appendChild( save );
+			var cancel = el( 'button', 'button', I18N.cancel || 'Cancel' );
+			cancel.type = 'button';
+			cancel.addEventListener( 'click', closeDestinationDialog );
+			actions.appendChild( cancel );
+			form.appendChild( actions );
+			form.addEventListener( 'submit', function ( event ) {
+				event.preventDefault();
+				var destination = input.value.trim();
+				if ( ! destination ) {
+					error.textContent = I18N.nfDestinationRequired || 'Enter a destination URL.';
+					error.hidden = false;
+					input.focus();
+					return;
+				}
+				save.disabled = true;
+				error.hidden = true;
+				run404Action( action, id, destination )
+					.then( closeDestinationDialog )
+					.catch( function ( err ) {
+						save.disabled = false;
+						error.textContent = ( err && err.message ) || 'Could not update this redirect.';
+						error.hidden = false;
+					} );
+			} );
+			dialog.appendChild( form );
+			destinationModal.appendChild( dialog );
+			root.appendChild( destinationModal );
+			setModalBackgroundInert( destinationModal, true );
+			document.addEventListener( 'keydown', onDestinationDialogKey );
+			input.focus();
+			input.select();
+		}
+
 		var eventBox = attr( '404-events' );
 		if ( eventBox ) {
 			eventBox.addEventListener( 'click', function ( e ) {
@@ -3369,31 +4274,18 @@
 				var action = btn.getAttribute( 'data-404-action' );
 				var id = Number( btn.getAttribute( 'data-404-id' ) ) || 0;
 				var destination = btn.getAttribute( 'data-404-destination' ) || '';
-				var body = { id: id };
 
-				if ( 'approve' === action && ! destination ) {
-					destination = window.prompt( 'Destination URL' ) || '';
-				}
-				if ( 'edit' === action ) {
-					destination = window.prompt( 'Destination URL', destination ) || '';
-					if ( ! destination ) {
-						return;
-					}
+				if ( 'edit' === action || ( 'approve' === action && ! destination ) ) {
+					showDestinationDialog( action, id, destination, btn );
+					return;
 				}
 				if ( 'delete' === action && ! window.confirm( 'Delete this 404 row?' ) ) {
 					return;
 				}
-				if ( destination ) {
-					body.destination = destination;
-				}
-				postApi( '/404/' + action, body )
-					.then( function () {
-						setProgress( '404 row updated.' );
-						reloadAll();
-					} )
-					.catch( function ( err ) {
-						setProgress( ( err && err.message ) || '404 action failed.', true );
-					} );
+				run404Action( action, id, destination ).catch( function ( err ) {
+					// run404Action already announced the error in the persistent status area.
+					return err;
+				} );
 			} );
 		}
 
@@ -3718,15 +4610,15 @@
 			grid.appendChild( kpi( num( data.low_ctr ), I18N.kwLowCtr || 'High impressions, low CTR', 'visibility' ) );
 			box.appendChild( grid );
 
-			var meta = el( 'div', 'cvtrk-kw-meta' );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.kwLastSync || 'Last keyword sync' ) + ': ' + shortDate( data.last_synced_at ) ) );
-			meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', ( I18N.kwLastAnalysis || 'Last content analysis' ) + ': ' + shortDate( data.last_analyzed_at ) ) );
+			var meta = el( 'div', 'cvtrk-summary-meta cvtrk-kw-meta' );
+			meta.appendChild( summaryMetaItem( I18N.kwLastSync || 'Last keyword sync', shortDate( data.last_synced_at ) ) );
+			meta.appendChild( summaryMetaItem( I18N.kwLastAnalysis || 'Last content analysis', shortDate( data.last_analyzed_at ) ) );
 			if ( Number( data.pending_analysis ) > 0 ) {
-				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', ( I18N.kwPendingAnalysis || 'Keywords awaiting analysis' ) + ': ' + num( data.pending_analysis ) ) );
+				meta.appendChild( summaryMetaItem( I18N.kwPendingAnalysis || 'Keywords awaiting analysis', num( data.pending_analysis ), 'warning' ) );
 			}
 			var lastSync = data.last_sync && data.last_sync[ state.range ];
 			if ( lastSync && lastSync.truncated ) {
-				meta.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-amber', I18N.kwTruncated || 'Row cap reached.' ) );
+				meta.appendChild( summaryMetaItem( I18N.status || 'Status', I18N.kwTruncated || 'Row cap reached.', 'warning' ) );
 			}
 			box.appendChild( meta );
 
@@ -4119,7 +5011,9 @@
 						pageSel.value = '0';
 					}
 				} )
-				.catch( function () {} );
+				.catch( function ( err ) {
+					setProgress( ( I18N.kwPageFilterFailed || 'Could not load the page filter:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+				} );
 		}
 
 		/* Page detail --------------------------------------------------------- */
@@ -4538,6 +5432,7 @@
 				return;
 			}
 			document.removeEventListener( 'keydown', onModalKey );
+			setModalBackgroundInert( enableModal, false );
 			enableModal.parentNode && enableModal.parentNode.removeChild( enableModal );
 			enableModal = null;
 			if ( lastFocused && lastFocused.focus ) {
@@ -4546,9 +5441,7 @@
 		}
 
 		function onModalKey( event ) {
-			if ( event.key === 'Escape' ) {
-				closeEnablePrompt();
-			}
+			handleModalKeydown( event, enableModal, closeEnablePrompt );
 		}
 
 		function doEnable( button, thenSync ) {
@@ -4586,6 +5479,7 @@
 			enableModal.setAttribute( 'role', 'dialog' );
 			enableModal.setAttribute( 'aria-modal', 'true' );
 			enableModal.setAttribute( 'aria-labelledby', 'cvtrk-kw-modal-title' );
+			enableModal.setAttribute( 'aria-describedby', 'cvtrk-kw-modal-description' );
 
 			var backdrop = el( 'div', 'cvtrk-modal-backdrop' );
 			backdrop.addEventListener( 'click', closeEnablePrompt );
@@ -4599,7 +5493,9 @@
 			var title = el( 'h2', null, connected ? ( I18N.kwPromptEnableTitle || 'Turn on Keyword Insights' ) : ( I18N.kwPromptConnectTitle || 'Connect Google Search Console' ) );
 			title.id = 'cvtrk-kw-modal-title';
 			dialog.appendChild( title );
-			dialog.appendChild( el( 'p', null, connected ? ( I18N.kwPromptEnableBody || '' ) : ( I18N.kwPromptConnectBody || '' ) ) );
+			var description = el( 'p', null, connected ? ( I18N.kwPromptEnableBody || '' ) : ( I18N.kwPromptConnectBody || '' ) );
+			description.id = 'cvtrk-kw-modal-description';
+			dialog.appendChild( description );
 
 			var actions = el( 'div', 'cvtrk-modal-actions' );
 			var primary;
@@ -4641,6 +5537,7 @@
 			root.appendChild( enableModal );
 
 			lastFocused = document.activeElement;
+			setModalBackgroundInert( enableModal, true );
 			document.addEventListener( 'keydown', onModalKey );
 			if ( primary && primary.focus ) {
 				primary.focus();
@@ -4656,7 +5553,9 @@
 					beginPolling();
 				}
 			} )
-			.catch( function () {} );
+			.catch( function ( err ) {
+				setProgress( ( I18N.kwStatusFailed || 'Could not check keyword sync status:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+			} );
 
 		var hashMatch = /^#kw-page-(\d+)$/.exec( location.hash || '' );
 		if ( hashMatch ) {
@@ -4670,8 +5569,118 @@
 		}
 	}
 
+	function initSubviews() {
+		var controlSelector = '[data-cvtrk-subview], [data-cvtrk-404-view]';
+		var controls = Array.prototype.slice.call( document.querySelectorAll( controlSelector ) );
+		if ( ! controls.length ) {
+			return;
+		}
+		var groups = [];
+		controls.forEach( function ( control ) {
+			var group = control.closest( '[data-cvtrk-subviews]' ) || control.closest( '.convertrack' );
+			if ( group && groups.indexOf( group ) === -1 ) {
+				groups.push( group );
+			}
+		} );
+
+		groups.forEach( function ( group, groupIndex ) {
+			var groupControls = Array.prototype.slice.call( group.querySelectorAll( controlSelector ) ).filter( function ( control ) {
+				return ( control.closest( '[data-cvtrk-subviews]' ) || control.closest( '.convertrack' ) ) === group;
+			} );
+			var panels = Array.prototype.slice.call( group.querySelectorAll( '[data-cvtrk-subview-panel], [data-cvtrk-subview-content], [data-cvtrk-404-panel]' ) );
+			if ( ! groupControls.length || ! panels.length ) {
+				return;
+			}
+
+			var tablist = groupControls[ 0 ].parentElement;
+			if ( tablist ) {
+				tablist.setAttribute( 'role', 'tablist' );
+			}
+			function panelName( panel ) {
+				return panel.getAttribute( 'data-cvtrk-subview-panel' ) || panel.getAttribute( 'data-cvtrk-subview-content' ) || panel.getAttribute( 'data-cvtrk-404-panel' ) || '';
+			}
+			function controlName( control ) {
+				return control.getAttribute( 'data-cvtrk-subview' ) || control.getAttribute( 'data-cvtrk-404-view' ) || '';
+			}
+			function activate( name, updateUrl, focus ) {
+				var found = false;
+				groupControls.forEach( function ( control, index ) {
+					var active = controlName( control ) === name;
+					found = found || active;
+					control.setAttribute( 'role', 'tab' );
+					control.setAttribute( 'aria-selected', active ? 'true' : 'false' );
+					control.setAttribute( 'tabindex', active ? '0' : '-1' );
+					control.classList.toggle( 'is-active', active );
+					if ( active ) {
+						control.setAttribute( 'aria-current', 'page' );
+					} else {
+						control.removeAttribute( 'aria-current' );
+					}
+					var controlled = panels.filter( function ( panel ) { return panelName( panel ) === controlName( control ); } )[ 0 ];
+					if ( controlled ) {
+						if ( ! controlled.id ) {
+							controlled.id = 'cvtrk-subview-' + groupIndex + '-' + index;
+						}
+						control.setAttribute( 'aria-controls', controlled.id );
+						if ( ! control.id ) {
+							control.id = controlled.id + '-tab';
+						}
+						controlled.setAttribute( 'aria-labelledby', control.id );
+					}
+					if ( active && focus ) {
+						control.focus();
+					}
+				} );
+				if ( ! found ) {
+					return;
+				}
+				panels.forEach( function ( panel ) {
+					var active = panelName( panel ) === name;
+					panel.hidden = ! active;
+					panel.setAttribute( 'role', 'tabpanel' );
+					panel.setAttribute( 'tabindex', active ? '0' : '-1' );
+				} );
+				if ( updateUrl ) {
+					setUrlParams( { subview: name }, false );
+				}
+				group.dispatchEvent( new CustomEvent( 'cvtrk:subview', { detail: { name: name } } ) );
+			}
+
+			groupControls.forEach( function ( control ) {
+				control.addEventListener( 'click', function ( event ) {
+					event.preventDefault();
+					activate( controlName( control ), true, false );
+				} );
+				control.addEventListener( 'keydown', function ( event ) {
+					if ( [ 'ArrowLeft', 'ArrowRight', 'Home', 'End' ].indexOf( event.key ) === -1 ) {
+						return;
+					}
+					event.preventDefault();
+					var current = groupControls.indexOf( control );
+					var index = event.key === 'Home' ? 0 : ( event.key === 'End' ? groupControls.length - 1 : current + ( event.key === 'ArrowRight' ? 1 : -1 ) );
+					index = ( index + groupControls.length ) % groupControls.length;
+					activate( controlName( groupControls[ index ] ), true, true );
+				} );
+			} );
+
+			var initial = getUrlParam( 'subview', '' );
+			if ( ! groupControls.some( function ( control ) { return controlName( control ) === initial; } ) ) {
+				var activeControl = groupControls.filter( function ( control ) { return control.classList.contains( 'is-active' ); } )[ 0 ];
+				initial = activeControl ? controlName( activeControl ) : controlName( groupControls[ 0 ] );
+			}
+			activate( initial, false, false );
+			window.addEventListener( 'popstate', function () {
+				var restored = getUrlParam( 'subview', initial );
+				if ( groupControls.some( function ( control ) { return controlName( control ) === restored; } ) ) {
+					activate( restored, false, false );
+				}
+			} );
+		} );
+	}
+
 	/* Boot ---------------------------------------------------------------- */
 
+	initSubviews();
 	initLive();
 	if ( document.getElementById( 'convertrack-overview' ) ) {
 		initOverview();

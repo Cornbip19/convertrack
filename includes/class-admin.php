@@ -21,6 +21,9 @@ class Admin {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
+		add_filter( 'parent_file', array( $this, 'highlight_parent_menu' ), 99 );
+		add_filter( 'submenu_file', array( $this, 'highlight_submenu' ), 99, 2 );
+		add_filter( 'admin_title', array( $this, 'hidden_page_admin_title' ), 10, 2 );
 		add_filter( 'plugin_action_links_' . CONVERTRACK_BASENAME, array( $this, 'action_links' ) );
 		add_action( 'admin_post_convertrack_seed_demo', array( $this, 'handle_seed_demo' ) );
 		add_action( 'admin_post_convertrack_reset_data', array( $this, 'handle_reset_data' ) );
@@ -168,30 +171,20 @@ class Admin {
 	}
 
 	/**
-	 * Render the shared header (brand + live pill) and tab navigation.
+	 * Render the compact shared product header.
 	 *
-	 * @param string $current Active tab key: overview|pages|heatmaps|funnels|gsc|404|settings.
+	 * @param string $current Current screen key. Retained for view compatibility.
 	 */
 	public static function render_header( $current ) {
-		$tabs = array(
-			'overview' => array( 'label' => __( 'Overview', 'convertrack-click-conversion-analytics' ), 'icon' => 'overview', 'page' => 'convertrack' ),
-			'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'icon' => 'pages', 'page' => 'convertrack-pages' ),
-			'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'icon' => 'heatmap', 'page' => 'convertrack-heatmaps' ),
-			'funnels'  => array( 'label' => __( 'Funnels', 'convertrack-click-conversion-analytics' ), 'icon' => 'funnel', 'page' => 'convertrack-funnels' ),
-			'gsc'      => array( 'label' => __( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'search', 'page' => 'convertrack-gsc' ),
-			'keywords' => array( 'label' => __( 'Keyword Insights', 'convertrack-click-conversion-analytics' ), 'icon' => 'keywords', 'page' => 'convertrack-gsc-keywords' ),
-			'404'      => array( 'label' => __( '404 Monitor', 'convertrack-click-conversion-analytics' ), 'icon' => 'warning', 'page' => 'convertrack-404-monitor' ),
-			'settings' => array( 'label' => __( 'Settings', 'convertrack-click-conversion-analytics' ), 'icon' => 'settings', 'page' => 'convertrack-settings' ),
-		);
+		unset( $current );
 		$logo_path    = plugin_dir_path( CONVERTRACK_FILE ) . 'admin/assets/convertrack-logo.svg';
 		$logo_version = file_exists( $logo_path ) ? filemtime( $logo_path ) : CONVERTRACK_VERSION;
 		?>
-		<div class="cvtrk-header">
+		<div class="cvtrk-header cvtrk-header-compact">
 			<div class="cvtrk-brand-block">
-				<h1 class="cvtrk-brand">
+				<div class="cvtrk-brand">
 					<img class="cvtrk-logo" src="<?php echo esc_url( CONVERTRACK_URL . 'admin/assets/convertrack-logo.svg?ver=' . $logo_version ); ?>" width="196" height="48" alt="<?php esc_attr_e( 'Convertrack', 'convertrack-click-conversion-analytics' ); ?>" />
-					<span class="cvtrk-ver">v<?php echo esc_html( CONVERTRACK_VERSION ); ?></span>
-				</h1>
+				</div>
 				<p class="cvtrk-tagline"><?php esc_html_e( 'First-party visitor analytics for WordPress', 'convertrack-click-conversion-analytics' ); ?></p>
 			</div>
 			<div class="cvtrk-header-status">
@@ -202,12 +195,35 @@ class Admin {
 				</div>
 			</div>
 		</div>
-		<nav class="cvtrk-tabs" aria-label="<?php esc_attr_e( 'Convertrack sections', 'convertrack-click-conversion-analytics' ); ?>">
-			<?php foreach ( $tabs as $key => $tab ) : ?>
-				<a class="cvtrk-tab <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $tab['page'] ) ); ?>" <?php echo $key === $current ? 'aria-current="page"' : ''; ?>>
-					<?php echo self::icon( $tab['icon'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-					<span><?php echo esc_html( $tab['label'] ); ?></span>
-				</a>
+		<?php
+	}
+
+	/**
+	 * Render local navigation within a grouped admin destination.
+	 *
+	 * @param string $group   Navigation group: analytics|search.
+	 * @param string $current Active local screen key.
+	 */
+	public static function render_subnav( $group, $current ) {
+		$groups = array(
+			'analytics' => array(
+				'pages'    => array( 'label' => __( 'Content & CTAs', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-pages' ),
+				'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-heatmaps' ),
+				'funnels'  => array( 'label' => __( 'Journeys', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-funnels' ),
+			),
+			'search'    => array(
+				'gsc'      => array( 'label' => __( 'Indexing', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc' ),
+				'keywords' => array( 'label' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc-keywords' ),
+			),
+		);
+
+		if ( empty( $groups[ $group ] ) ) {
+			return;
+		}
+		?>
+		<nav class="cvtrk-subnav" aria-label="<?php esc_attr_e( 'Current section', 'convertrack-click-conversion-analytics' ); ?>">
+			<?php foreach ( $groups[ $group ] as $key => $item ) : ?>
+				<a class="cvtrk-subnav-link <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $item['page'] ) ); ?>" <?php echo $key === $current ? 'aria-current="page"' : ''; ?>><?php echo esc_html( $item['label'] ); ?></a>
 			<?php endforeach; ?>
 		</nav>
 		<?php
@@ -278,8 +294,8 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Overview', 'convertrack-click-conversion-analytics' ),
-			__( 'Overview', 'convertrack-click-conversion-analytics' ),
+			__( 'Dashboard', 'convertrack-click-conversion-analytics' ),
+			__( 'Dashboard', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			self::MENU_SLUG,
 			array( $this, 'render_overview' )
@@ -287,15 +303,15 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ),
-			__( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ),
+			__( 'Analytics', 'convertrack-click-conversion-analytics' ),
+			__( 'Analytics', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-pages',
 			array( $this, 'render_pages' )
 		);
 
 		add_submenu_page(
-			self::MENU_SLUG,
+			null,
 			__( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
 			__( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
@@ -304,9 +320,9 @@ class Admin {
 		);
 
 		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'Funnels', 'convertrack-click-conversion-analytics' ),
-			__( 'Funnels', 'convertrack-click-conversion-analytics' ),
+			null,
+			__( 'Journeys', 'convertrack-click-conversion-analytics' ),
+			__( 'Journeys', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-funnels',
 			array( $this, 'render_funnels' )
@@ -314,17 +330,17 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ),
-			__( 'Google Index Monitor', 'convertrack-click-conversion-analytics' ),
+			__( 'Search & SEO', 'convertrack-click-conversion-analytics' ),
+			__( 'Search & SEO', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-gsc',
 			array( $this, 'render_gsc' )
 		);
 
 		add_submenu_page(
-			self::MENU_SLUG,
-			__( 'Keyword Insights', 'convertrack-click-conversion-analytics' ),
-			__( 'Keyword Insights', 'convertrack-click-conversion-analytics' ),
+			null,
+			__( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ),
+			__( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-gsc-keywords',
 			array( $this, 'render_gsc_keywords' )
@@ -332,8 +348,8 @@ class Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			__( '404 Monitor', 'convertrack-click-conversion-analytics' ),
-			__( '404 Monitor', 'convertrack-click-conversion-analytics' ),
+			__( 'Broken URLs', 'convertrack-click-conversion-analytics' ),
+			__( 'Broken URLs', 'convertrack-click-conversion-analytics' ),
 			'manage_options',
 			'convertrack-404-monitor',
 			array( $this, 'render_404_monitor' )
@@ -347,6 +363,88 @@ class Admin {
 			'convertrack-settings',
 			array( $this, 'render_settings' )
 		);
+	}
+
+	/**
+	 * Keep the Convertrack menu open while viewing a hidden local sub-screen.
+	 *
+	 * @param string $parent_file Current WordPress parent menu file.
+	 * @return string
+	 */
+	public function highlight_parent_menu( $parent_file ) {
+		$page = self::current_admin_page_slug();
+		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels', 'convertrack-gsc-keywords' ), true ) ) {
+			return self::MENU_SLUG;
+		}
+
+		return $parent_file;
+	}
+
+	/**
+	 * Highlight the grouped primary destination for hidden local sub-screens.
+	 *
+	 * @param string $submenu_file Current submenu file.
+	 * @param string $parent_file  Current parent menu file.
+	 * @return string
+	 */
+	public function highlight_submenu( $submenu_file, $parent_file ) {
+		if ( self::MENU_SLUG !== $parent_file ) {
+			return $submenu_file;
+		}
+
+		$page = self::current_admin_page_slug();
+		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels' ), true ) ) {
+			return 'convertrack-pages';
+		}
+		if ( 'convertrack-gsc-keywords' === $page ) {
+			return 'convertrack-gsc';
+		}
+
+		return $submenu_file;
+	}
+
+	/**
+	 * Supply an accessible browser title for submenu pages hidden from the
+	 * WordPress sidebar. WordPress otherwise renders these with a blank title.
+	 *
+	 * @param string $admin_title Complete browser title.
+	 * @param string $title       Current admin screen title.
+	 * @return string
+	 */
+	public function hidden_page_admin_title( $admin_title, $title ) {
+		if ( '' !== trim( (string) $title ) ) {
+			return $admin_title;
+		}
+
+		$page   = self::current_admin_page_slug();
+		$titles = array(
+			'convertrack-heatmaps'     => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
+			'convertrack-funnels'      => __( 'Journeys', 'convertrack-click-conversion-analytics' ),
+			'convertrack-gsc-keywords' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ),
+		);
+
+		if ( ! isset( $titles[ $page ] ) ) {
+			return $admin_title;
+		}
+
+		return $titles[ $page ] . ' ' . ltrim( $admin_title );
+	}
+
+	/**
+	 * Return the current Convertrack admin page slug at every admin lifecycle
+	 * stage, including the early menu-header filters.
+	 *
+	 * @return string
+	 */
+	private static function current_admin_page_slug() {
+		if ( ! empty( $GLOBALS['plugin_page'] ) ) {
+			return sanitize_key( $GLOBALS['plugin_page'] );
+		}
+		if ( isset( $_GET['page'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return sanitize_key( wp_unslash( $_GET['page'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		return '';
 	}
 
 	/**

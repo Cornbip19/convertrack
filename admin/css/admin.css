@@ -5,6 +5,7 @@
 	--cvtrk-navy-2: #123d66;
 	--cvtrk-teal: #0f98a2;
 	--cvtrk-teal-dark: #087882;
+	--cvtrk-teal-hover: #065f66;
 	--cvtrk-teal-soft: #e7f6f7;
 	--cvtrk-amber: #f2a51a;
 	--cvtrk-amber-dark: #9a6409;
@@ -13,22 +14,23 @@
 	--cvtrk-red-dark: #b91f34;
 	--cvtrk-red-soft: #fff0f2;
 	--cvtrk-green: #168a68;
+	--cvtrk-green-dark: #116a50;
 	--cvtrk-green-soft: #e8f6f0;
 	--cvtrk-bg: #f5f7fa;
 	--cvtrk-card: #fff;
 	--cvtrk-card-soft: #f8fbfc;
 	--cvtrk-border: #dde7ed;
-	--cvtrk-border-strong: #c5d3dc;
+	--cvtrk-border-strong: #718798;
 	--cvtrk-ink: #13263a;
 	--cvtrk-secondary: #506779;
 	--cvtrk-muted: #5e7180;
-	--cvtrk-focus: 0 0 0 2px #fff, 0 0 0 4px rgba(15, 152, 162, 0.55);
+	--cvtrk-focus: 0 0 0 2px #fff, 0 0 0 4px #087882;
 	--cvtrk-shadow-sm: 0 1px 2px rgba(11, 42, 74, 0.045);
 	--cvtrk-shadow: 0 10px 24px rgba(11, 42, 74, 0.075);
 	--cvtrk-radius: 8px;
 	--cvtrk-radius-sm: 6px;
 	color: var(--cvtrk-ink);
-	font-size: 13px;
+	font-size: 14px;
 	line-height: 1.45;
 	margin-right: 20px;
 	width: auto;
@@ -306,7 +308,7 @@
 }
 
 .convertrack select {
-	min-height: 34px;
+	min-height: 40px;
 	padding-right: 28px;
 }
 
@@ -316,7 +318,7 @@
 .convertrack input[type="number"],
 .convertrack input[type="password"],
 .convertrack input[type="date"] {
-	min-height: 34px;
+	min-height: 40px;
 }
 
 .convertrack textarea {
@@ -343,7 +345,7 @@
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	min-height: 34px;
+	min-height: 40px;
 	padding: 4px 13px;
 	border-color: var(--cvtrk-border-strong);
 	border-radius: var(--cvtrk-radius-sm);
@@ -366,20 +368,20 @@
 }
 
 .convertrack .button-primary {
-	border-color: var(--cvtrk-teal);
-	background: var(--cvtrk-teal);
-	color: #fff;
-}
-
-.convertrack .button-primary:hover,
-.convertrack .button-primary:focus {
 	border-color: var(--cvtrk-teal-dark);
 	background: var(--cvtrk-teal-dark);
 	color: #fff;
 }
 
+.convertrack .button-primary:hover,
+.convertrack .button-primary:focus {
+	border-color: var(--cvtrk-teal-hover);
+	background: var(--cvtrk-teal-hover);
+	color: #fff;
+}
+
 .convertrack .button-small {
-	min-height: 28px;
+	min-height: 32px;
 	padding: 2px 9px;
 	font-size: 12px;
 }
@@ -1489,10 +1491,10 @@ a.cvtrk-health-card:focus {
 	width: 100%;
 	max-width: 100%;
 	min-width: 0;
+	margin-bottom: 18px;
 }
 
-.cvtrk-gsc-meta,
-.cvtrk-404-meta {
+.cvtrk-gsc-meta {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px 16px;
@@ -2181,9 +2183,6 @@ a.cvtrk-health-card:focus {
 }
 
 .cvtrk-kw-meta {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
 	margin-top: 12px;
 }
 
@@ -2660,4 +2659,1039 @@ a.cvtrk-health-card:focus {
 .convertrack .cvtrk-sort-btn:focus-visible {
 	outline: 2px solid transparent;
 	box-shadow: var(--cvtrk-focus);
+}
+
+/* ====================================================================
+   Modern product shell and accessible interaction layer
+   ==================================================================== */
+
+.cvtrk-header {
+	min-height: 64px;
+	margin: 16px 0 10px;
+	padding: 12px 16px;
+	background: #fff;
+	box-shadow: none;
+}
+
+.cvtrk-brand-block {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 14px;
+}
+
+.cvtrk-logo {
+	width: 156px;
+}
+
+.cvtrk-tagline {
+	font-size: 12px;
+}
+
+.cvtrk-live {
+	min-height: 40px;
+	color: var(--cvtrk-secondary);
+}
+
+.cvtrk-dot {
+	background: var(--cvtrk-green-dark);
+}
+
+.cvtrk-page-head {
+	align-items: center;
+	margin-bottom: 20px;
+	padding: 2px 0;
+}
+
+.cvtrk-page-title,
+.cvtrk-page-head h1 {
+	margin: 0;
+	padding: 0;
+	color: var(--cvtrk-ink);
+	font-size: clamp(22px, 2vw, 24px);
+	font-weight: 650;
+	line-height: 1.2;
+}
+
+.cvtrk-page-desc {
+	font-size: 14px;
+	line-height: 1.55;
+}
+
+.cvtrk-card-head h2,
+.convertrack h2.title {
+	font-size: 17px;
+	line-height: 1.3;
+}
+
+.cvtrk-card-sub,
+.convertrack .description,
+.cvtrk-updated,
+.cvtrk-page-head-meta {
+	font-size: 12px;
+}
+
+.cvtrk-kpi-label,
+.cvtrk-kpi-delta,
+.cvtrk-mini-field span,
+.cvtrk-badge,
+.cvtrk-sub,
+.cvtrk-health-meta {
+	font-size: 12px;
+}
+
+/* One compact, grouped local navigation appears only where a section has
+   genuine sibling views. The WordPress submenu remains the global nav. */
+.cvtrk-subnav,
+.cvtrk-section-nav {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	margin: 0 0 20px;
+	padding: 4px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+	overflow-x: auto;
+	-webkit-overflow-scrolling: touch;
+}
+
+.cvtrk-subnav a,
+.cvtrk-subnav button,
+.cvtrk-section-nav a,
+.cvtrk-section-nav button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	min-height: 40px;
+	padding: 7px 13px;
+	border: 0;
+	border-radius: var(--cvtrk-radius-sm);
+	background: transparent;
+	color: var(--cvtrk-secondary);
+	font-size: 14px;
+	font-weight: 550;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.cvtrk-subnav a:hover,
+.cvtrk-subnav button:hover,
+.cvtrk-section-nav a:hover,
+.cvtrk-section-nav button:hover {
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-navy);
+}
+
+.cvtrk-subnav .is-active,
+.cvtrk-subnav [aria-current="page"],
+.cvtrk-subnav [aria-selected="true"],
+.cvtrk-section-nav .is-active,
+.cvtrk-section-nav [aria-current="page"],
+.cvtrk-section-nav [aria-selected="true"] {
+	background: var(--cvtrk-teal-dark);
+	color: #fff;
+}
+
+/* Dashboard hierarchy. */
+.cvtrk-primary-kpis,
+.cvtrk-kpis-primary {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(170px, 1fr));
+	gap: 14px;
+	margin: 0 0 14px;
+}
+
+.cvtrk-primary-kpis .cvtrk-kpi,
+.cvtrk-kpis-primary .cvtrk-kpi {
+	min-height: 112px;
+	padding: 18px;
+}
+
+.cvtrk-primary-kpis .cvtrk-kpi-value,
+.cvtrk-kpis-primary .cvtrk-kpi-value {
+	font-size: 28px;
+}
+
+.cvtrk-secondary-metrics,
+.cvtrk-metric-strip {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(140px, 1fr));
+	gap: 1px;
+	margin: 0 0 18px;
+	padding: 1px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: var(--cvtrk-border);
+	overflow: hidden;
+}
+
+.cvtrk-secondary-metric,
+.cvtrk-metric-strip-item {
+	display: grid;
+	gap: 3px;
+	min-width: 0;
+	padding: 12px 14px;
+	background: #fff;
+}
+
+.cvtrk-secondary-metric strong,
+.cvtrk-metric-strip-item strong {
+	color: var(--cvtrk-ink);
+	font-size: 18px;
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-secondary-metric span,
+.cvtrk-metric-strip-item span {
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+}
+
+.cvtrk-dashboard-priority,
+.cvtrk-dashboard-main {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+	gap: 16px;
+	align-items: start;
+}
+
+/* Native details are used for progressive disclosure and action menus. */
+.cvtrk-disclosure,
+.cvtrk-more-analytics {
+	margin: 0 0 16px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+}
+
+.cvtrk-disclosure > summary,
+.cvtrk-more-analytics > summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	min-height: 48px;
+	padding: 11px 15px;
+	color: var(--cvtrk-navy);
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+	list-style: none;
+}
+
+.cvtrk-disclosure > summary::-webkit-details-marker,
+.cvtrk-more-analytics > summary::-webkit-details-marker,
+.cvtrk-action-menu > summary::-webkit-details-marker,
+.cvtrk-export-menu > summary::-webkit-details-marker {
+	display: none;
+}
+
+.cvtrk-disclosure > summary::after,
+.cvtrk-more-analytics > summary::after {
+	content: "+";
+	font-size: 20px;
+	font-weight: 400;
+}
+
+.cvtrk-disclosure[open] > summary::after,
+.cvtrk-more-analytics[open] > summary::after {
+	content: "−";
+}
+
+.cvtrk-disclosure-content,
+.cvtrk-more-analytics-content {
+	padding: 0 15px 15px;
+}
+
+.cvtrk-action-menu,
+.cvtrk-export-menu,
+.cvtrk-overflow-menu {
+	position: relative;
+	display: inline-block;
+}
+
+.cvtrk-action-menu > summary,
+.cvtrk-export-menu > summary,
+.cvtrk-overflow-menu > summary {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 6px 13px;
+	border: 1px solid var(--cvtrk-border-strong);
+	border-radius: var(--cvtrk-radius-sm);
+	background: #fff;
+	color: var(--cvtrk-navy);
+	font-size: 13px;
+	font-weight: 550;
+	cursor: pointer;
+	list-style: none;
+}
+
+.cvtrk-action-menu-panel,
+.cvtrk-export-menu-panel,
+.cvtrk-overflow-menu-panel {
+	position: absolute;
+	top: calc(100% + 6px);
+	right: 0;
+	z-index: 50;
+	display: grid;
+	min-width: 190px;
+	padding: 6px;
+	border: 1px solid var(--cvtrk-border-strong);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+	box-shadow: 0 14px 34px rgba(11, 42, 74, 0.16);
+}
+
+.cvtrk-action-menu-panel a,
+.cvtrk-export-menu-panel a,
+.cvtrk-overflow-menu-panel button,
+.cvtrk-overflow-menu-panel a {
+	display: flex;
+	align-items: center;
+	min-height: 38px;
+	padding: 7px 10px;
+	border: 0;
+	border-radius: var(--cvtrk-radius-sm);
+	background: transparent;
+	color: var(--cvtrk-ink);
+	text-align: left;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.cvtrk-action-menu-panel a:hover,
+.cvtrk-export-menu-panel a:hover,
+.cvtrk-overflow-menu-panel button:hover,
+.cvtrk-overflow-menu-panel a:hover {
+	background: var(--cvtrk-teal-soft);
+}
+
+.cvtrk-action-menu-panel .cvtrk-mini-field,
+.cvtrk-action-menu-panel .cvtrk-checkbox-field {
+	width: 100%;
+	padding: 7px 8px;
+}
+
+.cvtrk-action-menu-panel .cvtrk-mini-field select {
+	width: 100%;
+}
+
+.cvtrk-heatmap-advanced .cvtrk-action-menu-panel {
+	min-width: 240px;
+}
+
+/* Data views and pagination. */
+.cvtrk-data-toolbar,
+.cvtrk-pages-toolbar {
+	display: grid;
+	grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(130px, auto));
+	gap: 10px;
+	align-items: end;
+	margin-bottom: 14px;
+}
+
+.cvtrk-pagination {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 14px;
+}
+
+.cvtrk-pagination-status,
+.cvtrk-result-count {
+	margin-right: auto;
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+}
+
+.cvtrk-row-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.cvtrk-table-wrap:focus-visible {
+	outline: 2px solid var(--cvtrk-teal-dark);
+	outline-offset: 2px;
+}
+
+.cvtrk-table caption {
+	padding: 0 0 10px;
+	color: var(--cvtrk-secondary);
+	font-size: 13px;
+	text-align: left;
+}
+
+.cvtrk-text-summary,
+.cvtrk-chart-summary {
+	margin: 10px 0 0;
+	padding: 10px 12px;
+	border-left: 3px solid var(--cvtrk-teal-dark);
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+}
+
+/* Settings and integration onboarding. */
+.cvtrk-settings-layout {
+	display: grid;
+	grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+	gap: 20px;
+	align-items: start;
+}
+
+.cvtrk-settings-nav {
+	position: sticky;
+	top: 46px;
+	display: grid;
+	gap: 3px;
+	padding: 8px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+}
+
+.cvtrk-settings-nav a {
+	display: flex;
+	align-items: center;
+	min-height: 38px;
+	padding: 7px 10px;
+	border-radius: var(--cvtrk-radius-sm);
+	color: var(--cvtrk-secondary);
+	font-weight: 550;
+	text-decoration: none;
+}
+
+.cvtrk-settings-nav a:hover,
+.cvtrk-settings-nav a:focus {
+	background: var(--cvtrk-teal-soft);
+	color: var(--cvtrk-navy);
+}
+
+.cvtrk-settings-content {
+	min-width: 0;
+	max-width: 920px;
+}
+
+.cvtrk-settings-section {
+	scroll-margin-top: 54px;
+	margin: 0 0 16px;
+	padding: 20px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+}
+
+.cvtrk-settings-section > h2 {
+	margin-top: 0;
+}
+
+.cvtrk-advanced-disclosure {
+	margin-top: 14px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: var(--cvtrk-card-soft);
+}
+
+.cvtrk-advanced-disclosure > summary {
+	min-height: 44px;
+	padding: 10px 12px;
+	color: var(--cvtrk-navy);
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.cvtrk-advanced-disclosure[open] > summary {
+	border-bottom: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-advanced-disclosure > :not(summary) {
+	margin-right: 14px;
+	margin-left: 14px;
+}
+
+.cvtrk-settings-links {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.cvtrk-save-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 20;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 16px;
+	padding: 12px 14px;
+	border: 1px solid var(--cvtrk-border-strong);
+	border-radius: var(--cvtrk-radius);
+	background: rgba(255, 255, 255, 0.97);
+	box-shadow: 0 -8px 24px rgba(11, 42, 74, 0.08);
+}
+
+.cvtrk-danger-zone {
+	margin-top: 18px;
+	padding: 16px;
+	border: 1px solid #d79aa4;
+	border-radius: var(--cvtrk-radius);
+	border-color: #d79aa4;
+	background: #fffafb;
+}
+
+.cvtrk-danger-zone h3 {
+	margin-top: 0;
+}
+
+.cvtrk-danger-zone > h2,
+.cvtrk-danger-zone > h3 {
+	color: var(--cvtrk-red-dark);
+}
+
+.cvtrk-setup-steps {
+	display: grid;
+	grid-template-columns: repeat(5, minmax(120px, 1fr));
+	gap: 8px;
+	margin: 0 0 16px;
+	padding: 0;
+	list-style: none;
+	counter-reset: setup-step;
+}
+
+.cvtrk-setup-steps li {
+	position: relative;
+	min-height: 58px;
+	padding: 10px 10px 10px 42px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	counter-increment: setup-step;
+}
+
+.cvtrk-setup-steps li::before {
+	content: counter(setup-step);
+	position: absolute;
+	left: 10px;
+	top: 10px;
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 50%;
+	background: var(--cvtrk-teal-dark);
+	color: #fff;
+	font-weight: 700;
+}
+
+/* Accessible semantic colors. */
+.cvtrk-kpi-delta.is-up,
+.cvtrk-health-icon.is-good,
+.cvtrk-badge.is-good,
+.cvtrk-status-success,
+.cvtrk-notice-success strong {
+	color: var(--cvtrk-green-dark);
+}
+
+.cvtrk-notice-success {
+	border-left-color: var(--cvtrk-green-dark);
+}
+
+.cvtrk-segment.is-active,
+.cvtrk-gsc-stat.is-active {
+	background: var(--cvtrk-teal-dark);
+}
+
+/* Dialogs are scroll-safe at high zoom; JavaScript owns focus trapping and
+   inert background behavior. */
+.cvtrk-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: grid;
+	place-items: center;
+	padding: 20px;
+}
+
+.cvtrk-modal-dialog {
+	position: relative;
+	z-index: 1;
+	width: min(520px, 100%);
+	max-height: calc(100vh - 40px);
+	overflow: auto;
+	overscroll-behavior: contain;
+}
+
+.cvtrk-dialog-field {
+	display: grid;
+	gap: 6px;
+	margin: 16px 0;
+	text-align: left;
+}
+
+.cvtrk-dialog-error {
+	margin: 8px 0 0;
+	color: var(--cvtrk-red-dark);
+	font-size: 12px;
+}
+
+/* Contextual subviews, onboarding, heatmap workspace, and redirect editor. */
+.cvtrk-subview-nav {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	margin: 0 0 14px;
+	padding: 4px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+}
+
+.cvtrk-subview-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 40px;
+	padding: 7px 14px;
+	border-radius: var(--cvtrk-radius-sm);
+	color: var(--cvtrk-secondary);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.cvtrk-subview-link:hover,
+.cvtrk-subview-link:focus {
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-navy);
+}
+
+.cvtrk-subview-link.is-active,
+.cvtrk-subview-link[aria-current="page"] {
+	background: var(--cvtrk-teal-dark);
+	color: #fff;
+}
+
+.cvtrk-404-view-panel:not(.is-active) {
+	display: none;
+}
+
+.cvtrk-section-head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 14px;
+	margin-bottom: 16px;
+}
+
+.cvtrk-section-head h2 {
+	margin: 0 0 4px;
+	font-size: 18px;
+}
+
+.cvtrk-section-head p {
+	margin: 0;
+	color: var(--cvtrk-secondary);
+}
+
+.cvtrk-gsc-setup {
+	margin: 0 0 18px;
+	padding: 18px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+}
+
+.cvtrk-setup-progress {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.cvtrk-setup-progress li {
+	display: inline-flex;
+	align-items: center;
+	min-height: 32px;
+	padding: 5px 10px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: 999px;
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cvtrk-setup-progress li.is-current {
+	border-color: var(--cvtrk-teal-dark);
+	background: var(--cvtrk-teal-soft);
+	color: var(--cvtrk-navy);
+}
+
+.cvtrk-setup-progress li.is-complete {
+	border-color: var(--cvtrk-green-dark);
+	color: var(--cvtrk-green-dark);
+}
+
+.cvtrk-pages-controls {
+	display: grid;
+	grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(120px, auto));
+	gap: 10px;
+	width: min(100%, 820px);
+}
+
+.cvtrk-heatmap-workspace {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+	gap: 16px;
+	align-items: start;
+}
+
+.cvtrk-heatmap-detail-panel {
+	display: grid;
+	gap: 0;
+	min-width: 0;
+}
+
+.cvtrk-confidence {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+	padding: 4px 9px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: 999px;
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cvtrk-empty-state {
+	padding: 28px 18px;
+	border: 1px dashed var(--cvtrk-border-strong);
+	border-radius: var(--cvtrk-radius);
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-secondary);
+	text-align: center;
+}
+
+.cvtrk-empty-state strong {
+	display: block;
+	margin-bottom: 5px;
+	color: var(--cvtrk-ink);
+	font-size: 15px;
+}
+
+.cvtrk-empty-state p {
+	margin: 0;
+}
+
+.cvtrk-dialog-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	display: grid;
+	place-items: center;
+	padding: 20px;
+	background: rgba(11, 42, 74, 0.52);
+}
+
+.cvtrk-dialog {
+	width: min(540px, 100%);
+	max-height: calc(100vh - 40px);
+	overflow: auto;
+	border: 1px solid var(--cvtrk-border-strong);
+	border-radius: var(--cvtrk-radius);
+	background: #fff;
+	box-shadow: 0 20px 54px rgba(11, 42, 74, 0.24);
+}
+
+.cvtrk-dialog-head,
+.cvtrk-dialog-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 14px 16px;
+}
+
+.cvtrk-dialog-head {
+	border-bottom: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-dialog-head h2 {
+	margin: 0;
+	font-size: 18px;
+}
+
+.cvtrk-dialog-close {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	border: 0;
+	border-radius: var(--cvtrk-radius-sm);
+	background: transparent;
+	color: var(--cvtrk-secondary);
+	font-size: 24px;
+	cursor: pointer;
+}
+
+.cvtrk-dialog-close:hover {
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-navy);
+}
+
+.cvtrk-dialog-body {
+	padding: 16px;
+}
+
+.cvtrk-dialog-actions {
+	justify-content: flex-end;
+	border-top: 1px solid var(--cvtrk-border);
+}
+
+.cvtrk-field-error {
+	margin: 8px 0 0;
+	color: var(--cvtrk-red-dark);
+	font-size: 12px;
+}
+
+/* Summary metadata is information, not a collection of status badges. Keep
+   it aligned in a quiet, responsive strip so it cannot collide with the
+   cards above or break into uneven floating pills. */
+.cvtrk-summary-meta {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 1px;
+	width: 100%;
+	min-width: 0;
+	padding: 1px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: var(--cvtrk-border);
+	overflow: hidden;
+	box-sizing: border-box;
+}
+
+.cvtrk-summary-meta-item {
+	display: grid;
+	align-content: center;
+	gap: 2px;
+	min-width: 0;
+	min-height: 58px;
+	padding: 9px 12px;
+	background: #fff;
+}
+
+.cvtrk-summary-meta-item.is-warning {
+	background: var(--cvtrk-amber-soft);
+}
+
+.cvtrk-summary-meta-label {
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.35;
+}
+
+.cvtrk-summary-meta-value {
+	min-width: 0;
+	color: var(--cvtrk-ink);
+	font-size: 14px;
+	font-weight: 650;
+	line-height: 1.35;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.cvtrk-summary-meta-item.is-warning .cvtrk-summary-meta-value {
+	color: var(--cvtrk-amber-dark);
+}
+
+/* Keep compact status chips consistent wherever they remain appropriate
+   (tables, filters, and event metadata). */
+.cvtrk-badge,
+.cvtrk-timeline-meta {
+	min-height: 24px;
+	padding: 3px 9px;
+	box-sizing: border-box;
+}
+
+.cvtrk-badge-group,
+.cvtrk-timeline-metas {
+	align-items: center;
+	gap: 6px;
+}
+
+/* The final focus rule is deliberately solid so the visible portion clears
+   WCAG non-text contrast on both white cards and the admin canvas. */
+.convertrack a:focus-visible,
+.convertrack button:focus-visible,
+.convertrack .button:focus-visible,
+.convertrack .button-primary:focus-visible,
+.convertrack select:focus-visible,
+.convertrack input:focus-visible,
+.convertrack textarea:focus-visible,
+.convertrack summary:focus-visible,
+.convertrack [tabindex]:focus-visible {
+	outline: 2px solid transparent;
+	box-shadow: var(--cvtrk-focus);
+}
+
+@media (max-width: 1100px) {
+	.cvtrk-primary-kpis,
+	.cvtrk-kpis-primary,
+	.cvtrk-secondary-metrics,
+	.cvtrk-metric-strip {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.cvtrk-dashboard-priority,
+	.cvtrk-dashboard-main {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-heatmap-workspace {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-setup-steps {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media (max-width: 782px) {
+	.convertrack select,
+	.convertrack input[type="text"],
+	.convertrack input[type="url"],
+	.convertrack input[type="search"],
+	.convertrack input[type="number"],
+	.convertrack input[type="password"],
+	.convertrack input[type="date"],
+	.convertrack .button,
+	.convertrack .button-primary,
+	.cvtrk-subnav a,
+	.cvtrk-subnav button,
+	.cvtrk-section-nav a,
+	.cvtrk-section-nav button {
+		min-height: 44px;
+	}
+
+	.cvtrk-settings-layout {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-settings-nav {
+		position: static;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.cvtrk-data-toolbar,
+	.cvtrk-pages-toolbar,
+	.cvtrk-pages-controls {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-summary-meta {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.cvtrk-subview-nav {
+		display: flex;
+		width: 100%;
+		overflow-x: auto;
+	}
+
+	.cvtrk-subview-link {
+		min-height: 44px;
+	}
+
+	.cvtrk-action-menu,
+	.cvtrk-export-menu,
+	.cvtrk-overflow-menu,
+	.cvtrk-action-menu > summary,
+	.cvtrk-export-menu > summary,
+	.cvtrk-overflow-menu > summary {
+		width: 100%;
+	}
+
+	.cvtrk-action-menu-panel,
+	.cvtrk-export-menu-panel,
+	.cvtrk-overflow-menu-panel {
+		position: static;
+		width: 100%;
+		margin-top: 6px;
+	}
+}
+
+@media (max-width: 480px) {
+	.cvtrk-primary-kpis,
+	.cvtrk-kpis-primary,
+	.cvtrk-secondary-metrics,
+	.cvtrk-metric-strip,
+	.cvtrk-settings-nav,
+	.cvtrk-setup-steps {
+		grid-template-columns: 1fr;
+	}
+
+	.cvtrk-page-head h1,
+	.cvtrk-page-title {
+		font-size: 22px;
+	}
+
+	.cvtrk-summary-meta {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (forced-colors: active) {
+	.cvtrk-card,
+	.cvtrk-kpi,
+	.cvtrk-subnav,
+	.cvtrk-section-nav,
+	.cvtrk-settings-section,
+	.cvtrk-notice,
+	.convertrack .button,
+	.convertrack input,
+	.convertrack select,
+	.convertrack textarea {
+		border: 1px solid CanvasText;
+	}
+
+	.cvtrk-dot,
+	.cvtrk-badge-dot,
+	.cvtrk-hour-seg,
+	.cvtrk-swatch {
+		forced-color-adjust: none;
+	}
+}
+
+[dir="rtl"] .convertrack .cvtrk-card-head,
+[dir="rtl"] .convertrack .cvtrk-page-head,
+[dir="rtl"] .convertrack .cvtrk-toolbar {
+	direction: rtl;
+}
+
+[dir="rtl"] .cvtrk-action-menu-panel,
+[dir="rtl"] .cvtrk-export-menu-panel,
+[dir="rtl"] .cvtrk-overflow-menu-panel {
+	right: auto;
+	left: 0;
 }

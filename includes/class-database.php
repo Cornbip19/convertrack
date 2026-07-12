@@ -872,6 +872,137 @@ class Database {
 	}
 
 	/**
+	 * Searchable, sortable and paginated page statistics over a date range.
+	 *
+	 * Finished days come from the daily rollup while the current day comes from
+	 * raw events, matching top_pages() without loading the full result set into
+	 * PHP. Current WordPress post data and retained event URLs/titles provide the
+	 * searchable page identity without changing the analytics schema.
+	 *
+	 * @param array $args Query args: range, page, per_page, search, orderby, order.
+	 * @return array Rows plus page, per_page, total and total_pages.
+	 */
+	public static function paged_pages( $args = array() ) {
+		global $wpdb;
+
+		$args = wp_parse_args(
+			$args,
+			array(
+				'range'    => 7,
+				'page'     => 1,
+				'per_page' => 25,
+				'search'   => '',
+				'orderby'  => 'pageviews',
+				'order'    => 'desc',
+			)
+		);
+
+		$days     = max( 1, min( 365, (int) $args['range'] ) );
+		$page     = max( 1, (int) $args['page'] );
+		$per_page = max( 1, min( 100, (int) $args['per_page'] ) );
+		$search   = trim( sanitize_text_field( (string) $args['search'] ) );
+		$orderby  = sanitize_key( (string) $args['orderby'] );
+		$order    = 'asc' === sanitize_key( (string) $args['order'] ) ? 'ASC' : 'DESC';
+
+		$allowed_orderby = array( 'pageviews', 'clicks', 'conversions', 'title' );
+		if ( ! in_array( $orderby, $allowed_orderby, true ) ) {
+			$orderby = 'pageviews';
+		}
+
+		$today  = self::today();
+		$start  = self::date_days_ago( $days - 1 );
+		$daily  = self::daily_table();
+		$events = self::events_table();
+		$posts  = $wpdb->posts;
+
+		$metrics_sql = "SELECT combined.post_id,
+		                       SUM(combined.clicks) AS clicks,
+		                       SUM(combined.pageviews) AS pageviews,
+		                       SUM(combined.conversions) AS conversions
+		                FROM (
+		                    SELECT post_id, SUM(clicks) AS clicks,
+		                           SUM(pageviews) AS pageviews,
+		                           SUM(conversions) AS conversions
+		                    FROM $daily
+		                    WHERE stat_date >= %s AND stat_date < %s
+		                    GROUP BY post_id
+		                    UNION ALL
+		                    SELECT post_id,
+		                           SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) AS clicks,
+		                           SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) AS pageviews,
+		                           SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) AS conversions
+		                    FROM $events
+		                    WHERE created_at >= %s
+		                    GROUP BY post_id
+		                ) combined
+		                GROUP BY combined.post_id";
+		$metrics_params = array( $start, $today, $today . ' 00:00:00' );
+
+		$title_sql = "CASE
+		                  WHEN metrics.post_id = 0 THEN '(unknown / global)'
+		                  WHEN COALESCE(posts.post_title, '') <> '' THEN posts.post_title
+		                  ELSE CONCAT('#', metrics.post_id)
+		              END";
+		$where_sql    = '';
+		$where_params = array();
+
+		if ( '' !== $search ) {
+			$like = '%' . $wpdb->esc_like( $search ) . '%';
+			$where_sql = "WHERE (
+				$title_sql LIKE %s
+				OR posts.post_name LIKE %s
+				OR posts.guid LIKE %s
+				OR EXISTS (
+					SELECT 1 FROM $events known_page
+					WHERE known_page.post_id = metrics.post_id
+					  AND known_page.created_at >= %s
+					  AND (known_page.page_title LIKE %s OR known_page.page_url LIKE %s)
+					LIMIT 1
+				)
+			)";
+			$where_params = array( $like, $like, $like, $start . ' 00:00:00', $like, $like );
+		}
+
+		$count_sql    = "SELECT COUNT(*)
+		                 FROM ($metrics_sql) metrics
+		                 LEFT JOIN $posts posts ON posts.ID = metrics.post_id
+		                 $where_sql";
+		$count_params = array_merge( $metrics_params, $where_params );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$total = (int) $wpdb->get_var( $wpdb->prepare( $count_sql, $count_params ) );
+
+		$sort_sql = 'title' === $orderby ? 'sort_title' : 'metrics.' . $orderby;
+		$offset   = ( $page - 1 ) * $per_page;
+		$rows_sql = "SELECT metrics.post_id, metrics.clicks, metrics.pageviews, metrics.conversions,
+		                    $title_sql AS sort_title
+		             FROM ($metrics_sql) metrics
+		             LEFT JOIN $posts posts ON posts.ID = metrics.post_id
+		             $where_sql
+		             ORDER BY $sort_sql $order, sort_title ASC, metrics.post_id ASC
+		             LIMIT %d OFFSET %d";
+		$rows_params = array_merge( $metrics_params, $where_params, array( $per_page, $offset ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results( $wpdb->prepare( $rows_sql, $rows_params ), ARRAY_A );
+
+		foreach ( $rows as &$row ) {
+			unset( $row['sort_title'] );
+			$row['post_id']     = (int) $row['post_id'];
+			$row['clicks']      = (int) $row['clicks'];
+			$row['pageviews']   = (int) $row['pageviews'];
+			$row['conversions'] = (int) $row['conversions'];
+		}
+		unset( $row );
+
+		return array(
+			'rows'        => $rows,
+			'page'        => $page,
+			'per_page'    => $per_page,
+			'total'       => $total,
+			'total_pages' => $total > 0 ? (int) ceil( $total / $per_page ) : 0,
+		);
+	}
+
+	/**
 	 * Traffic by source/channel over a range (rollups + today live), merged.
 	 *
 	 * @param int $days  Days back.

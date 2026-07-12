@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.3
+Stable tag: 2.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,13 +65,13 @@ The optional **404 Monitor** feature runs locally. It stores requested missing U
 1. Upload the `convertrack` folder to `/wp-content/plugins/`, or install the zip from the Plugins screen.
 2. Activate the plugin.
 3. Open **Convertrack → Settings** to configure tracked elements, conversions and retention.
-4. Watch live data on **Convertrack → Overview**.
+4. Watch live data on **Convertrack → Dashboard**.
 
 For high-traffic sites: (1) disable WP-Cron and trigger `wp-cron.php` from a real system cron so rollups and cleanup run on schedule, and (2) run a persistent object cache (Redis or Memcached) — Convertrack then keeps its rate-limit counters and short stat caches in memory instead of the database.
 
-Optional: open **Convertrack -> Google Index Monitor** to configure Google OAuth, connect Search Console, scan the sitemap, and run indexing checks.
+Optional: open **Convertrack -> Search & SEO -> Indexing** to configure Google OAuth, connect Search Console, scan the sitemap, and run indexing checks.
 
-Optional: open **Convertrack -> 404 Monitor** to capture frontend 404s, refresh valid URL candidates, review recommendations, approve internal 301 redirects, export CSVs, and configure retention or spike alerts.
+Optional: open **Convertrack -> Broken URLs** to capture frontend 404s, refresh valid URL candidates, review recommendations, approve internal 301 redirects, export CSVs, and configure retention or spike alerts.
 
 == Frequently Asked Questions ==
 
@@ -98,6 +98,14 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.3.0 =
+* Reorganized the admin into five task-focused destinations: Dashboard, Analytics, Search & SEO, Broken URLs, and Settings, while keeping every existing admin URL compatible.
+* Redesigned Dashboard around four primary KPIs, a supporting metric strip, one performance trend, Needs Attention, Top Content, and a progressive More Analytics section.
+* Added the admin-only paginated `/convertrack/v1/stats/pages` data view with server-side search, sorting, result totals, and 25/50/100-row pagination for Content & CTAs.
+* Added a focused heatmap workspace, connected-state Search Console onboarding, Broken URL review subviews, and structured Settings with advanced disclosures, a sticky save action, and a separate Danger Zone.
+* Improved accessibility with one contextual H1 per screen, larger controls and text, AA-compliant action colors, solid focus indicators, explicit table actions, focus-managed dialogs, concise live regions, and visible retryable errors.
+* Preserved public collection/heartbeat endpoints, analytics storage, frontend tracking behavior, existing settings, and module data.
 
 = 2.2.3 =
 * Fixed 2.2.2 regression: type/status badges in the Keyword Insights and 404 Monitor tables could shatter into one-letter-per-line vertical stacks, making rows enormously tall. Table cells now wrap only at word boundaries and pills never break mid-word.
