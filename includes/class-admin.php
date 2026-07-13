@@ -484,6 +484,9 @@ class Admin {
 			return;
 		}
 
+		$admin_script_path    = plugin_dir_path( CONVERTRACK_FILE ) . 'admin/js/admin.js';
+		$admin_script_version = file_exists( $admin_script_path ) ? filemtime( $admin_script_path ) : CONVERTRACK_VERSION;
+
 		wp_enqueue_style(
 			'convertrack-admin',
 			CONVERTRACK_URL . 'admin/css/admin.css',
@@ -495,7 +498,7 @@ class Admin {
 			'convertrack-admin',
 			CONVERTRACK_URL . 'admin/js/admin.js',
 			array(),
-			CONVERTRACK_VERSION,
+			$admin_script_version,
 			true
 		);
 
@@ -751,6 +754,7 @@ class Admin {
 					'kwEnableFailed'        => __( 'Could not enable Keyword Insights:', 'convertrack-click-conversion-analytics' ),
 					'kwClose'               => __( 'Close', 'convertrack-click-conversion-analytics' ),
 					'loadError'             => __( 'Something went wrong while loading this data.', 'convertrack-click-conversion-analytics' ),
+					'noAttentionNeeded'     => __( 'No setup or health issues need attention right now.', 'convertrack-click-conversion-analytics' ),
 					'pageWord'              => __( 'Page', 'convertrack-click-conversion-analytics' ),
 					'kwSelected'            => __( 'selected', 'convertrack-click-conversion-analytics' ),
 					'kwNoneSelected'        => __( 'No keywords selected', 'convertrack-click-conversion-analytics' ),

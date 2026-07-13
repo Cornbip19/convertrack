@@ -33,7 +33,10 @@
 				return r.json().catch( function () {
 					return null;
 				} ).then( function ( body ) {
-					throw new Error( ( body && body.message ) || 'HTTP ' + r.status );
+					var requestError = new Error( ( body && body.message ) || 'HTTP ' + r.status );
+					requestError.cvtrkPublic = true;
+					requestError.status = r.status;
+					throw requestError;
 				} );
 			}
 			return r.json();
@@ -114,6 +117,19 @@
 
 	function num( v ) {
 		return ( Number( v ) || 0 ).toLocaleString();
+	}
+
+	function errorMessage( error, fallback ) {
+		if ( error && error.cvtrkPublic && error.message ) {
+			return error.message;
+		}
+		return fallback || I18N.loadError || 'Something went wrong while loading this data.';
+	}
+
+	function reportUnexpectedError( context, error ) {
+		if ( error && ! error.cvtrkPublic && window.console && typeof window.console.error === 'function' ) {
+			window.console.error( '[Convertrack] ' + context, error );
+		}
 	}
 
 	function empty( box, msg ) {
@@ -578,10 +594,10 @@
 
 		var attentionCards = cards.filter( function ( item ) { return item.show; } );
 		if ( ! attentionCards.length ) {
-			var clear = el( 'div', 'cvtrk-empty cvtrk-health-clear' );
-			clear.appendChild( svgIcon( 'indexed', 'cvtrk-empty-icon' ) );
-			clear.appendChild( el( 'p', null, I18N.noAttentionNeeded || 'No setup or health issues need attention right now.' ) );
-			box.appendChild( clear );
+			var clearState = el( 'div', 'cvtrk-empty cvtrk-health-clear' );
+			clearState.appendChild( svgIcon( 'indexed', 'cvtrk-empty-icon' ) );
+			clearState.appendChild( el( 'p', null, I18N.noAttentionNeeded || 'No setup or health issues need attention right now.' ) );
+			box.appendChild( clearState );
 			return;
 		}
 		attentionCards.forEach( function ( item ) {
@@ -2197,12 +2213,26 @@
 		regionNodes( keys ).forEach( function ( node ) { setBusy( node, on ); } );
 	}
 
-	function showRegionsError( keys, error, retry ) {
-		var message = ( error && error.message ) || I18N.loadError || 'Something went wrong while loading this data.';
+	function showRegionsError( keys, error, retry, fallback, context ) {
+		var message = errorMessage( error, fallback );
+		reportUnexpectedError( context || 'Could not load a data region.', error );
 		regionNodes( keys ).forEach( function ( node ) {
 			setBusy( node, false );
 			errorState( node, message, retry );
 		} );
+	}
+
+	function renderRegionSafely( key, renderer, retry ) {
+		try {
+			renderer();
+			return true;
+		} catch ( error ) {
+			reportUnexpectedError( 'Could not render the "' + key + '" region.', error );
+			var node = attr( key );
+			setBusy( node, false );
+			errorState( node, I18N.loadError || 'Something went wrong while loading this data.', retry );
+			return false;
+		}
 	}
 
 	function loadActive() {
@@ -2211,13 +2241,15 @@
 		api( '/stats/active' )
 			.then( function ( data ) {
 				setBusy( sessions, false );
-				setLive( data.active );
-				renderSessions( data.sessions );
-			} )
-			.catch( function ( err ) {
+				renderRegionSafely( 'active-sessions', function () {
+					setLive( data.active );
+					renderSessions( data.sessions );
+				}, loadActive );
+			}, function ( err ) {
 				setBusy( sessions, false );
+				reportUnexpectedError( 'Could not load live visitors.', err );
 				if ( sessions ) {
-					errorState( sessions, ( err && err.message ) || 'Could not load live visitors.', loadActive );
+					errorState( sessions, errorMessage( err, 'Could not load live visitors.' ), loadActive );
 				}
 			} );
 	}
@@ -2235,7 +2267,7 @@
 		var timelineType = attr( 'timeline-type' );
 		var timelineFilter = attr( 'timeline-filter' );
 		var timelineSort = attr( 'timeline-sort' );
-		var overviewRegions = [ 'chart', 'hourly-chart', 'engagement-chart', 'top-buttons', 'top-pages', 'top-sources', 'top-search-terms', 'top-countries', 'event-timeline', 'active-sessions', 'overview-health' ];
+		var overviewRegions = [ 'chart', 'hourly-chart', 'engagement-chart', 'top-buttons', 'top-pages', 'top-sources', 'top-search-terms', 'top-countries', 'event-timeline', 'overview-health' ];
 		if ( rangeSel ) {
 			var initialRange = getUrlParam( 'range', rangeSel.value );
 			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
@@ -2250,34 +2282,48 @@
 			api( '/stats/summary?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
 					setRegionsBusy( overviewRegions, false );
-					renderCards( data.totals );
-					set( 'avg_duration', formatDuration( data.avg_session_seconds ) );
-					renderChart( data.series );
-					renderHourlyChart( data.activity_hours );
-					renderEngagement( data.engagement );
-					renderButtons( data.top_buttons );
-					renderPages( data.top_pages, null );
-					renderSources( data.top_sources );
-					renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled );
-					renderCountries( data.top_countries, data.geo_enabled );
-					renderTimeline( data.recent_events || [] );
-					setLastUpdated();
-					setLive( data.active );
-					toggleConvHint( data.totals );
-					renderOverviewHealth( data, null, null );
+					try {
+						renderCards( data.totals );
+						set( 'avg_duration', formatDuration( data.avg_session_seconds ) );
+						setLastUpdated();
+						setLive( data.active );
+						toggleConvHint( data.totals );
+					} catch ( error ) {
+						reportUnexpectedError( 'Could not render dashboard metrics.', error );
+						var updated = attr( 'last-updated' );
+						if ( updated ) {
+							updated.textContent = I18N.loadError || 'Could not display dashboard metrics.';
+						}
+					}
+					renderRegionSafely( 'chart', function () { renderChart( data.series ); }, load );
+					renderRegionSafely( 'hourly-chart', function () { renderHourlyChart( data.activity_hours ); }, load );
+					renderRegionSafely( 'engagement-chart', function () { renderEngagement( data.engagement ); }, load );
+					renderRegionSafely( 'top-buttons', function () { renderButtons( data.top_buttons ); }, load );
+					renderRegionSafely( 'top-pages', function () { renderPages( data.top_pages, null ); }, load );
+					renderRegionSafely( 'top-sources', function () { renderSources( data.top_sources ); }, load );
+					renderRegionSafely( 'top-search-terms', function () { renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled ); }, load );
+					renderRegionSafely( 'top-countries', function () { renderCountries( data.top_countries, data.geo_enabled ); }, load );
+					renderRegionSafely( 'event-timeline', function () { renderTimeline( data.recent_events || [] ); }, load );
+					renderRegionSafely( 'overview-health', function () { renderOverviewHealth( data, null, null ); }, load );
 					Promise.all( [
 						api( '/404/summary' ).catch( function ( err ) {
-							return { _loadError: ( err && err.message ) || ( I18N.loadError || 'Could not load 404 data.' ) };
+							reportUnexpectedError( 'Could not load 404 dashboard health.', err );
+							return { _loadError: errorMessage( err, 'Could not load 404 data.' ) };
 						} ),
 						api( '/gsc/summary' ).catch( function ( err ) {
-							return { _loadError: ( err && err.message ) || ( I18N.loadError || 'Could not load indexing data.' ) };
+							reportUnexpectedError( 'Could not load indexing dashboard health.', err );
+							return { _loadError: errorMessage( err, 'Could not load indexing data.' ) };
 						} )
 					] ).then( function ( moduleData ) {
-						renderOverviewHealth( data, moduleData[ 0 ], moduleData[ 1 ] );
+						renderRegionSafely( 'overview-health', function () {
+							renderOverviewHealth( data, moduleData[ 0 ], moduleData[ 1 ] );
+						}, load );
+					} ).catch( function ( error ) {
+						reportUnexpectedError( 'Could not update dashboard health.', error );
+						errorState( attr( 'overview-health' ), I18N.loadError || 'Something went wrong while loading this data.', load );
 					} );
-				} )
-				.catch( function ( err ) {
-					showRegionsError( overviewRegions, err, load );
+				}, function ( err ) {
+					showRegionsError( overviewRegions, err, load, 'Could not load dashboard data.', 'Dashboard summary request failed.' );
 					var updated = attr( 'last-updated' );
 					if ( updated ) {
 						updated.textContent = I18N.loadError || 'Could not load dashboard data.';
@@ -2643,14 +2689,17 @@
 			api( '/stats/funnels?range=' + encodeURIComponent( range ) )
 				.then( function ( data ) {
 					setRegionsBusy( boxes, false );
-					renderFunnelCards( data );
-					renderFunnelPaths( data.paths );
-					renderFunnelDropoffs( data.dropoffs );
-					renderFunnelSources( data.sources );
-					renderFunnelButtons( data.buttons );
-				} )
-				.catch( function ( err ) {
-					showRegionsError( boxes, err, load );
+					try {
+						renderFunnelCards( data );
+					} catch ( error ) {
+						reportUnexpectedError( 'Could not render journey metrics.', error );
+					}
+					renderRegionSafely( 'funnel-paths', function () { renderFunnelPaths( data.paths ); }, load );
+					renderRegionSafely( 'funnel-dropoffs', function () { renderFunnelDropoffs( data.dropoffs ); }, load );
+					renderRegionSafely( 'funnel-sources', function () { renderFunnelSources( data.sources ); }, load );
+					renderRegionSafely( 'funnel-buttons', function () { renderFunnelButtons( data.buttons ); }, load );
+				}, function ( err ) {
+					showRegionsError( boxes, err, load, 'Could not load journey data.', 'Journey request failed.' );
 				} );
 		}
 

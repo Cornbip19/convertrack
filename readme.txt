@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.0
+Stable tag: 2.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,12 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.3.1 =
+* Fixed the Dashboard health renderer error that displayed `clear is not a function` across multiple data panels.
+* Isolated client-side rendering failures from REST request failures so one broken widget now shows a scoped, retryable error without replacing unrelated dashboard regions.
+* Added automatic admin-script cache busting so browsers load the corrected JavaScript immediately after an update.
+* Made the "No setup or health issues need attention right now." dashboard message translatable.
 
 = 2.3.0 =
 * Reorganized the admin into five task-focused destinations: Dashboard, Analytics, Search & SEO, Broken URLs, and Settings, while keeping every existing admin URL compatible.
