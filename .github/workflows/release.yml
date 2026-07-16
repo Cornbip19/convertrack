@@ -19,16 +19,21 @@ jobs:
           # The WP 5.8.x test suite only supports PHPUnit up to 7.x (PHPUnit 9
           # support arrived with the 5.9 suite), so this leg pins PHPUnit 7.5;
           # yoast/phpunit-polyfills lets the same test code run on both.
+          # PHPUnit installs from phar (with the polyfills from a pinned tag)
+          # because Composer's security-advisory policy refuses to resolve the
+          # old PHPUnit lines these WordPress suites require.
           - wp: '5.8.3'
             php: '7.4'
             tests_ref: 'tags/5.8.3'
             core_url: 'https://wordpress.org/wordpress-5.8.3.tar.gz'
-            phpunit: '^7.5'
+            phpunit_phar: '7.5'
+            polyfills_tag: '1.1.5'
           - wp: 'latest'
             php: '8.3'
             tests_ref: 'trunk'
             core_url: 'https://wordpress.org/latest.tar.gz'
-            phpunit: '^9.6'
+            phpunit_phar: '9.6'
+            polyfills_tag: '4.0.0'
     services:
       mysql:
         image: mysql:8.0
@@ -57,10 +62,16 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install development dependencies
+      - name: Install test toolchain (PHPUnit phar + polyfills)
+        shell: bash
         run: |
-          composer require --dev --no-interaction --update-with-all-dependencies "phpunit/phpunit:${{ matrix.phpunit }}"
-          composer install --no-interaction --prefer-dist
+          set -euo pipefail
+          curl --fail --location --silent --show-error "https://phar.phpunit.de/phpunit-${{ matrix.phpunit_phar }}.phar" -o phpunit.phar
+          php phpunit.phar --version
+          mkdir -p vendor/yoast
+          curl --fail --location --silent --show-error "https://codeload.github.com/Yoast/PHPUnit-Polyfills/tar.gz/refs/tags/${{ matrix.polyfills_tag }}" | tar -xz
+          mv PHPUnit-Polyfills-* vendor/yoast/phpunit-polyfills
+          test -f vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php
           if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
       - name: Verify tag and version equality
@@ -107,7 +118,7 @@ jobs:
       - name: Run WordPress integration tests
         env:
           WP_TESTS_DIR: /tmp/wordpress-tests-lib
-        run: vendor/bin/phpunit -c phpunit.xml.dist
+        run: php phpunit.phar -c phpunit.xml.dist
 
   package:
     name: Inspect and package release
