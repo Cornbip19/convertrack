@@ -37,6 +37,8 @@ class Settings {
 			'sitemap_submit_cooldown_hours' => 24,
 			'recheck_min_hours'             => 24,
 			'recheck_max_hours'             => 72,
+			'log_retention_days'            => 30,
+			'queue_retention_days'          => 90,
 		);
 	}
 
@@ -100,6 +102,8 @@ class Settings {
 			'sitemap_submit_cooldown_hours' => self::clamp_int( $input, 'sitemap_submit_cooldown_hours', 1, 168, $d['sitemap_submit_cooldown_hours'] ),
 			'recheck_min_hours'             => self::clamp_int( $input, 'recheck_min_hours', 1, 168, $d['recheck_min_hours'] ),
 			'recheck_max_hours'             => self::clamp_int( $input, 'recheck_max_hours', 1, 336, $d['recheck_max_hours'] ),
+			'log_retention_days'            => self::clamp_int( $input, 'log_retention_days', 1, 365, isset( $input['log_retention_days'] ) ? $d['log_retention_days'] : self::get( 'log_retention_days', $d['log_retention_days'] ) ),
+			'queue_retention_days'          => self::clamp_int( $input, 'queue_retention_days', 7, 730, isset( $input['queue_retention_days'] ) ? $d['queue_retention_days'] : self::get( 'queue_retention_days', $d['queue_retention_days'] ) ),
 		);
 
 		if ( empty( $clean['selected_post_types'] ) ) {
@@ -152,13 +156,6 @@ class Settings {
 			&& '' !== self::get( 'property_url' )
 			&& '' !== self::get( 'sitemap_url' )
 			&& Credentials::is_connected();
-	}
-
-	/**
-	 * Reset cache.
-	 */
-	public static function flush_cache() {
-		self::$cache = null;
 	}
 
 	/**

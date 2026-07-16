@@ -98,6 +98,7 @@ class Rest_Controller {
 		$data['credentials'] = Credentials::public_status();
 		$data['sitemaps'] = Database::sitemap_options();
 		$data['history']  = Database::summary_history( 30 );
+		$data['sitemap_scan'] = Sitemap_Scanner::state();
 		$data['last_batch_error'] = get_option( Processor::LAST_ERROR_OPTION ) ?: null; // phpcs:ignore Universal.Operators.DisallowShortTernary.Found
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -215,13 +216,14 @@ class Rest_Controller {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function scan_sitemap() {
-		$result = Sitemap_Scanner::scan();
+		$result = Sitemap_Scanner::request_scan( 'manual' );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
-		// Backstop for the admin-driven loop: continue inspecting in the background.
-		Cron::kick_processing();
+		// The admin request only queues work; every remote fetch runs in a bounded
+		// background step so a large or hostile sitemap cannot hold wp-admin open.
+		Cron::kick_scan();
 		$result['remaining'] = Database::due_count();
 
 		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result ), 200 ) );

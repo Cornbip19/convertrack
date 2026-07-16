@@ -27,6 +27,8 @@ class Admin {
 		add_filter( 'plugin_action_links_' . CONVERTRACK_BASENAME, array( $this, 'action_links' ) );
 		add_action( 'admin_post_convertrack_seed_demo', array( $this, 'handle_seed_demo' ) );
 		add_action( 'admin_post_convertrack_reset_data', array( $this, 'handle_reset_data' ) );
+		add_action( 'admin_post_convertrack_delete_operational_data', array( $this, 'handle_delete_operational_data' ) );
+		add_action( 'admin_post_convertrack_privacy_scrub', array( $this, 'handle_privacy_scrub' ) );
 		add_action( 'admin_post_convertrack_export', array( $this, 'handle_export' ) );
 		add_action( 'admin_init', array( $this, 'register_privacy' ) );
 	}
@@ -38,7 +40,7 @@ class Admin {
 		if ( ! function_exists( 'wp_add_privacy_policy_content' ) ) {
 			return;
 		}
-		$content = __( 'Convertrack records anonymous interaction analytics — pageviews, clicks on buttons and links, the traffic source, and a "currently online" count. It stores a random visitor identifier in the browser\'s local storage and keeps all data in this site\'s own database. It does not collect names, email addresses, or IP addresses, and by default it does not send any visitor data to third parties. Visitors whose browser sends a "Do Not Track" signal are not tracked by default.', 'convertrack-click-conversion-analytics' );
+		$content = __( 'Convertrack records first-party interaction analytics — pageviews, clicks on configured button-like controls, privacy-safe heatmap coordinates, the traffic source, and a "currently online" count. It never reads form or editable-control values. Page and link query strings are removed by default; an administrator may explicitly retain non-sensitive parameter names, while credential, email, session, reset, and order-key parameters are always removed. Convertrack stores a random visitor identifier in browser local storage and keeps analytics in this site\'s own database. It does not store IP addresses and by default sends no visitor data to third parties. Global Privacy Control and a denied WordPress Consent API statistics purpose are respected; Do Not Track is respected by default.', 'convertrack-click-conversion-analytics' );
 
 		if ( Settings::get( 'track_search_keywords' ) ) {
 			$content .= ' ' . __( 'Search keyword tracking is enabled: Convertrack stores search terms from UTM term parameters, this site search query parameter, and search-engine referrer query strings when browsers provide them. Search engines often hide organic search queries, in which case no keyword is stored.', 'convertrack-click-conversion-analytics' );
@@ -77,10 +79,10 @@ class Admin {
 
 		switch ( $type ) {
 			case 'pages':
-				fputcsv( $out, array( 'Page', 'URL', 'Clicks', 'Pageviews', 'Conversions' ) );
+				CSV::write( $out, array( 'Page', 'URL', 'Clicks', 'Pageviews', 'Conversions' ) );
 				foreach ( Database::top_pages( $range, 1000 ) as $r ) {
 					$pid = (int) $r['post_id'];
-					fputcsv( $out, array(
+					CSV::write( $out, array(
 						$pid > 0 ? get_the_title( $pid ) : '(unknown / global)',
 						$pid > 0 ? get_permalink( $pid ) : '',
 						(int) $r['clicks'], (int) $r['pageviews'], (int) $r['conversions'],
@@ -89,23 +91,23 @@ class Admin {
 				break;
 
 			case 'sources':
-				fputcsv( $out, array( 'Source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
+				CSV::write( $out, array( 'Source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
 				foreach ( Database::top_sources( $range, 1000 ) as $r ) {
-					fputcsv( $out, array( $r['source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
+					CSV::write( $out, array( $r['source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
 				}
 				break;
 
 			case 'keywords':
-				fputcsv( $out, array( 'Keyword', 'Keyword source', 'Traffic source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
+				CSV::write( $out, array( 'Keyword', 'Keyword source', 'Traffic source', 'Pageviews', 'Clicks', 'Conversions', 'Visitors' ) );
 				if ( Settings::get( 'track_search_keywords' ) ) {
 					foreach ( Database::top_search_terms( $range, 1000, $post ) as $r ) {
-						fputcsv( $out, array( $r['keyword'], $r['keyword_source'], $r['traffic_source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
+						CSV::write( $out, array( $r['keyword'], $r['keyword_source'], $r['traffic_source'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'], (int) $r['visitors'] ) );
 					}
 				}
 				break;
 
 			case 'countries':
-				fputcsv( $out, array( 'Country code', 'Country', 'Visitors', 'Pageviews', 'Clicks', 'Conversions' ) );
+				CSV::write( $out, array( 'Country code', 'Country', 'Visitors', 'Pageviews', 'Clicks', 'Conversions' ) );
 				foreach ( Database::top_countries( $range, 1000 ) as $r ) {
 					$code = (string) $r['country'];
 					$name = $code;
@@ -115,26 +117,26 @@ class Admin {
 							$name = $display;
 						}
 					}
-					fputcsv( $out, array( $code, $name, (int) $r['visitors'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
+					CSV::write( $out, array( $code, $name, (int) $r['visitors'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
 				}
 				break;
 
 			case 'daily':
-				fputcsv( $out, array( 'Date', 'Pageviews', 'Clicks', 'Conversions' ) );
+				CSV::write( $out, array( 'Date', 'Pageviews', 'Clicks', 'Conversions' ) );
 				foreach ( Database::clicks_timeseries( $range ) as $date => $r ) {
-					fputcsv( $out, array( $date, (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
+					CSV::write( $out, array( $date, (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
 				}
 				break;
 
 			case 'buttons':
 			default:
-				fputcsv( $out, array( 'Button', 'Selector', 'Clicks', 'Conversions' ) );
+				CSV::write( $out, array( 'Button', 'Selector', 'Clicks', 'Conversions' ) );
 				foreach ( Database::top_buttons( $range, 1000, $post ) as $r ) {
 					$label = trim( (string) $r['element_text'] );
 					if ( '' === $label ) {
 						$label = (string) $r['element_selector'];
 					}
-					fputcsv( $out, array( $label, (string) $r['element_selector'], (int) $r['clicks'], (int) $r['conversions'] ) );
+					CSV::write( $out, array( $label, (string) $r['element_selector'], (int) $r['clicks'], (int) $r['conversions'] ) );
 				}
 				break;
 		}
@@ -153,6 +155,10 @@ class Admin {
 		}
 		check_admin_referer( 'convertrack_seed_demo' );
 		$rows = Database::seed_demo();
+		if ( is_wp_error( $rows ) ) {
+			$this->store_action_error( $rows );
+			$this->redirect_settings( 'error' );
+		}
 		wp_safe_redirect( add_query_arg( array( 'cvtrk_notice' => 'seeded', 'cvtrk_rows' => (int) $rows ), admin_url( 'admin.php?page=convertrack-settings' ) ) );
 		exit;
 	}
@@ -165,8 +171,60 @@ class Admin {
 			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
 		}
 		check_admin_referer( 'convertrack_reset_data' );
-		Database::reset_all();
+		$confirmation = isset( $_POST['confirmation'] ) ? sanitize_text_field( wp_unslash( $_POST['confirmation'] ) ) : '';
+		if ( 'RESET ANALYTICS' !== $confirmation ) {
+			wp_die( esc_html__( 'Type RESET ANALYTICS exactly to confirm.', 'convertrack-click-conversion-analytics' ), '', array( 'response' => 400 ) );
+		}
+		$result = Data_Management::reset_analytics();
+		if ( is_wp_error( $result ) ) {
+			$this->store_action_error( $result );
+			$this->redirect_settings( 'error' );
+		}
 		wp_safe_redirect( add_query_arg( array( 'cvtrk_notice' => 'reset' ), admin_url( 'admin.php?page=convertrack-settings' ) ) );
+		exit;
+	}
+
+	/** Permanently remove all module operational rows, preserving configuration. */
+	public function handle_delete_operational_data() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
+		}
+		check_admin_referer( 'convertrack_delete_operational_data' );
+		$confirmation = isset( $_POST['confirmation'] ) ? sanitize_text_field( wp_unslash( $_POST['confirmation'] ) ) : '';
+		if ( 'DELETE CONVERTRACK' !== $confirmation ) {
+			wp_die( esc_html__( 'Type DELETE CONVERTRACK exactly to confirm.', 'convertrack-click-conversion-analytics' ), '', array( 'response' => 400 ) );
+		}
+		$result = Data_Management::delete_operational_data();
+		if ( is_wp_error( $result ) ) {
+			$this->store_action_error( $result );
+			$this->redirect_settings( 'error' );
+		}
+		$this->redirect_settings( 'operational-reset' );
+	}
+
+	/** Queue a dry-run or live historical privacy scrub. */
+	public function handle_privacy_scrub() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Permission denied.', 'convertrack-click-conversion-analytics' ) );
+		}
+		check_admin_referer( 'convertrack_privacy_scrub' );
+		$mode   = isset( $_POST['scrub_mode'] ) ? sanitize_key( wp_unslash( $_POST['scrub_mode'] ) ) : 'dry-run';
+		$result = Privacy_Scrubber::start( 'apply' !== $mode );
+		if ( is_wp_error( $result ) ) {
+			$this->store_action_error( $result );
+			$this->redirect_settings( 'error' );
+		}
+		$this->redirect_settings( 'scrub-started' );
+	}
+
+	/** Store a short-lived administrator-only action error. */
+	private function store_action_error( $error ) {
+		set_transient( 'convertrack_action_error_' . get_current_user_id(), $error->get_error_message(), MINUTE_IN_SECONDS );
+	}
+
+	/** Redirect to Settings with a display-only result code. */
+	private function redirect_settings( $notice ) {
+		wp_safe_redirect( add_query_arg( array( 'cvtrk_notice' => sanitize_key( $notice ) ), admin_url( 'admin.php?page=convertrack-settings' ) ) );
 		exit;
 	}
 
@@ -456,7 +514,7 @@ class Admin {
 			Settings::OPTION,
 			array(
 				'type'              => 'array',
-				'sanitize_callback' => array( __NAMESPACE__ . '\\Settings', 'sanitize' ),
+				'sanitize_callback' => array( __NAMESPACE__ . '\\Settings', 'sanitize_registered' ),
 				'default'           => Settings::defaults(),
 			)
 		);

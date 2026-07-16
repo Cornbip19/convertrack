@@ -22,7 +22,7 @@ class Frontend {
 	 * Enqueue and configure the tracker when this request should be tracked.
 	 */
 	public function enqueue() {
-		if ( ! Settings::get( 'enabled' ) || $this->should_skip() ) {
+		if ( ! Settings::get( 'enabled' ) || ! Database::schema_is_healthy() || ! Ingestion_Guard::schema_is_healthy() || $this->should_skip() ) {
 			return;
 		}
 
@@ -44,12 +44,21 @@ class Frontend {
 	 * @return array
 	 */
 	private function config() {
-		$post_id = (int) get_queried_object_id();
+		// Resolve taxonomy/archive/search/home identities while WordPress still
+		// has the public main query. The REST request cannot safely reconstruct
+		// this context, so the compact identity is integrity-bound below.
+		$identity = Page_Identity::current();
 
 		return array(
 			'collectUrl'   => esc_url_raw( rest_url( Rest_Controller::REST_NAMESPACE . '/collect' ) ),
 			'heartbeatUrl' => esc_url_raw( rest_url( Rest_Controller::REST_NAMESPACE . '/heartbeat' ) ),
-			'postId'       => $post_id,
+			'collectorToken' => Ingestion_Guard::issue_token(),
+			'postId'       => (int) $identity['post_id'],
+			'pageKey'      => (string) $identity['page_key'],
+			'objectType'   => (string) $identity['object_type'],
+			'objectId'     => (int) $identity['object_id'],
+			'pageIdentityToken' => Ingestion_Guard::issue_page_identity_token( $identity ),
+			'allowedQueryParams' => Collector::allowed_query_params(),
 			'selectors'    => Settings::lines_to_array( Settings::get( 'track_selectors' ) ),
 			'conversionSelectors' => Settings::lines_to_array( Settings::get( 'conversion_selectors' ) ),
 			'conversionUrls'      => Settings::lines_to_array( Settings::get( 'conversion_urls' ) ),
@@ -76,6 +85,12 @@ class Frontend {
 		}
 
 		if ( isset( $_GET['convertrack_no_track'] ) && '1' === sanitize_text_field( wp_unslash( $_GET['convertrack_no_track'] ) ) ) {
+			return true;
+		}
+
+		// Global Privacy Control is an explicit opt-out. WordPress Consent API
+		// integrations expose wp_has_consent() when available.
+		if ( Ingestion_Guard::privacy_opted_out() ) {
 			return true;
 		}
 

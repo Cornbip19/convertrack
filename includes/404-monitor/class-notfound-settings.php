@@ -37,12 +37,17 @@ class Settings {
 			'recommendation_batch'   => 50,
 			'retention_days'         => 180,
 			'ignore_query_params'    => "utm_source\nutm_medium\nutm_campaign\nutm_term\nutm_content\ngclid\nfbclid\nmsclkid",
+			'query_param_allowlist'  => '',
 			'ignore_patterns'        => "/wp-admin\n/wp-login.php\n/wp-json\n/feed\n/favicon.ico",
 			'exclude_post_types'     => array( 'attachment' ),
 			'exclude_taxonomies'     => array(),
 			'email_notifications'    => 0,
 			'spike_threshold'        => 50,
 			'spike_window_minutes'   => 60,
+			'capture_ip_per_hour'    => 300,
+			'capture_global_per_hour'=> 10000,
+			'capture_new_paths_per_hour' => 1000,
+			'override_valid_content' => 0,
 		);
 	}
 
@@ -113,12 +118,17 @@ class Settings {
 			'recommendation_batch'  => self::clamp_int( $input, 'recommendation_batch', 5, 500, $d['recommendation_batch'] ),
 			'retention_days'        => self::clamp_int( $input, 'retention_days', 1, 3650, $d['retention_days'] ),
 			'ignore_query_params'   => self::sanitize_key_lines( isset( $input['ignore_query_params'] ) ? wp_unslash( $input['ignore_query_params'] ) : $d['ignore_query_params'] ),
+			'query_param_allowlist' => self::sanitize_key_lines( isset( $input['query_param_allowlist'] ) ? wp_unslash( $input['query_param_allowlist'] ) : $d['query_param_allowlist'] ),
 			'ignore_patterns'       => self::sanitize_lines( isset( $input['ignore_patterns'] ) ? wp_unslash( $input['ignore_patterns'] ) : $d['ignore_patterns'] ),
 			'exclude_post_types'    => self::sanitize_post_types( isset( $input['exclude_post_types'] ) ? (array) $input['exclude_post_types'] : array(), true ),
 			'exclude_taxonomies'    => self::sanitize_taxonomies( isset( $input['exclude_taxonomies'] ) ? (array) $input['exclude_taxonomies'] : array(), true ),
 			'email_notifications'   => empty( $input['email_notifications'] ) ? 0 : 1,
 			'spike_threshold'       => self::clamp_int( $input, 'spike_threshold', 5, 10000, $d['spike_threshold'] ),
 			'spike_window_minutes'  => self::clamp_int( $input, 'spike_window_minutes', 5, 1440, $d['spike_window_minutes'] ),
+			'capture_ip_per_hour'   => self::clamp_int( $input, 'capture_ip_per_hour', 10, 100000, $d['capture_ip_per_hour'] ),
+			'capture_global_per_hour' => self::clamp_int( $input, 'capture_global_per_hour', 100, 1000000, $d['capture_global_per_hour'] ),
+			'capture_new_paths_per_hour' => self::clamp_int( $input, 'capture_new_paths_per_hour', 10, 100000, $d['capture_new_paths_per_hour'] ),
+			'override_valid_content' => empty( $input['override_valid_content'] ) ? 0 : 1,
 		);
 
 		return $clean;
@@ -307,4 +317,3 @@ class Settings {
 		return array_values( array_unique( $out ) );
 	}
 }
-

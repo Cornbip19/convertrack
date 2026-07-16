@@ -19,7 +19,7 @@ class Compatibility {
 	public static function status() {
 		$tools = self::detected_tools();
 		return array(
-			'has_redirect_tool' => ! empty( $tools ),
+			'has_redirect_tool' => self::has_redirect_tool(),
 			'tools'             => $tools,
 			'htaccess_hint'     => self::htaccess_hint(),
 		);
@@ -31,7 +31,12 @@ class Compatibility {
 	 * @return bool
 	 */
 	public static function has_redirect_tool() {
-		return ! empty( self::detected_tools() );
+		foreach ( self::external_redirects( 50 ) as $row ) {
+			if ( self::row_is_active( $row ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -40,19 +45,14 @@ class Compatibility {
 	 * @return array
 	 */
 	public static function detected_tools() {
+		global $wpdb;
 		$tools = array();
 
 		if ( self::plugin_active( 'redirection/redirection.php' ) || class_exists( '\Redirection' ) || class_exists( '\Red_Item' ) ) {
 			$tools[] = array( 'key' => 'redirection', 'label' => 'Redirection' );
 		}
-		if ( defined( 'RANK_MATH_VERSION' ) || class_exists( '\RankMath' ) || self::plugin_active( 'seo-by-rank-math/rank-math.php' ) ) {
+		if ( ( defined( 'RANK_MATH_VERSION' ) || class_exists( '\RankMath' ) || self::plugin_active( 'seo-by-rank-math/rank-math.php' ) ) && Database::table_exists( $wpdb->prefix . 'rank_math_redirections' ) ) {
 			$tools[] = array( 'key' => 'rank_math', 'label' => 'Rank Math' );
-		}
-		if ( defined( 'WPSEO_VERSION' ) || self::plugin_active( 'wordpress-seo/wp-seo.php' ) || self::plugin_active( 'wordpress-seo-premium/wp-seo-premium.php' ) ) {
-			$tools[] = array( 'key' => 'yoast', 'label' => 'Yoast SEO' );
-		}
-		if ( defined( 'SEOPRESS_VERSION' ) || self::plugin_active( 'wp-seopress/seopress.php' ) || self::plugin_active( 'wp-seopress-pro/seopress-pro.php' ) ) {
-			$tools[] = array( 'key' => 'seopress', 'label' => 'SEOPress' );
 		}
 
 		return $tools;
@@ -76,10 +76,14 @@ class Compatibility {
 		}
 
 		foreach ( self::redirection_rows( 500, $path ) as $row ) {
-			return $row;
+			if ( self::row_is_active( $row ) ) {
+				return $row;
+			}
 		}
 		foreach ( self::rank_math_rows( 500, $path ) as $row ) {
-			return $row;
+			if ( self::row_is_active( $row ) ) {
+				return $row;
+			}
 		}
 
 		return null;
@@ -245,6 +249,17 @@ class Compatibility {
 	}
 
 	/**
+	 * Whether a read-only external rule is actually enabled.
+	 *
+	 * @param array $row External row.
+	 * @return bool
+	 */
+	private static function row_is_active( array $row ) {
+		$status = isset( $row['status'] ) ? strtolower( trim( (string) $row['status'] ) ) : '';
+		return in_array( $status, array( 'active', 'enabled', '1', 'publish', 'published' ), true );
+	}
+
+	/**
 	 * Table column names.
 	 *
 	 * @param string $table Table.
@@ -281,4 +296,3 @@ class Compatibility {
 		return '';
 	}
 }
-

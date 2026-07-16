@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 
 class Database {
 
-	const DB_VERSION        = '1.0.0';
+	const DB_VERSION        = '1.1.0';
 	const DB_VERSION_OPTION = 'convertrack_gsc_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_gsc_summary';
 	const HISTORY_OPTION    = 'convertrack_gsc_status_history';
@@ -44,6 +44,13 @@ class Database {
 	 */
 	public static function install() {
 		global $wpdb;
+		$lock_option = 'convertrack_gsc_schema_lock';
+		$lock_owner  = \Convertrack\Owner_Lock::acquire( $lock_option, 300 );
+		if ( false === $lock_owner ) {
+			return new \WP_Error( 'convertrack_gsc_migration_locked', __( 'Another Google Search Console schema migration is already running.', 'convertrack-click-conversion-analytics' ) );
+		}
+
+		try {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
 		$charset_collate = $wpdb->get_charset_collate();
@@ -74,6 +81,9 @@ class Database {
 			user_canonical varchar(2048) NOT NULL DEFAULT '',
 			inspection_result_link varchar(2048) NOT NULL DEFAULT '',
 			in_sitemap tinyint(1) NOT NULL DEFAULT 0,
+			scan_generation varchar(64) NOT NULL DEFAULT '',
+			last_seen_at datetime NULL DEFAULT NULL,
+			retired_at datetime NULL DEFAULT NULL,
 			last_checked_at datetime NULL DEFAULT NULL,
 			last_submitted_at datetime NULL DEFAULT NULL,
 			attempt_count int(10) unsigned NOT NULL DEFAULT 0,
@@ -88,7 +98,10 @@ class Database {
 			KEY index_status (index_status),
 			KEY next_check_at (next_check_at),
 			KEY priority_next (priority, next_check_at),
-			KEY sitemap_hash (sitemap_hash)
+			KEY sitemap_hash (sitemap_hash),
+			KEY scan_generation (scan_generation),
+			KEY last_seen_at (last_seen_at),
+			KEY retired_at (retired_at)
 		) $charset_collate;";
 
 		$sql[] = "CREATE TABLE $logs (
@@ -116,25 +129,48 @@ class Database {
 			return new \WP_Error( 'convertrack_gsc_db_missing', __( 'Google Search Console tables could not be created.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		update_option( self::DB_VERSION_OPTION, self::DB_VERSION, false );
+		$verified = self::verify_schema();
+		if ( is_wp_error( $verified ) ) {
+			return $verified;
+		}
+
+		if ( ! update_option( self::DB_VERSION_OPTION, self::DB_VERSION, false ) && self::DB_VERSION !== get_option( self::DB_VERSION_OPTION ) ) {
+			return new \WP_Error( 'convertrack_gsc_db_version_write', __( 'The Google Search Console schema version could not be saved.', 'convertrack-click-conversion-analytics' ) );
+		}
 		Logger::info( 'database', 'GSC database migration completed.', array( 'version' => self::DB_VERSION ) );
 		return true;
+		} finally {
+			\Convertrack\Owner_Lock::release( $lock_option, $lock_owner );
+		}
 	}
 
 	/**
 	 * Upgrade when needed.
 	 */
 	public static function maybe_upgrade() {
-		if ( get_option( self::DB_VERSION_OPTION ) !== self::DB_VERSION ) {
-			$result = self::install();
-			if ( is_wp_error( $result ) ) {
+		if ( get_option( self::DB_VERSION_OPTION ) === self::DB_VERSION ) {
+			return true;
+		}
+		$result = self::install();
+		if ( is_wp_error( $result ) ) {
+			// A live owner is not a schema failure. Let that request finish and
+			// allow the next administrator request to verify the completed work.
+			if ( 'convertrack_gsc_migration_locked' !== $result->get_error_code() ) {
 				$settings            = Settings::all();
 				$settings['enabled'] = 0;
 				Settings::save( $settings );
-				Logger::error( 'database', 'GSC database migration failed.', array( 'error' => $result->get_error_message() ) );
-				set_transient( 'convertrack_gsc_migration_error', $result->get_error_message(), HOUR_IN_SECONDS );
 			}
+			Logger::error( 'database', 'GSC database migration failed.', array( 'error' => $result->get_error_message() ) );
+			set_transient( 'convertrack_gsc_migration_error', $result->get_error_message(), HOUR_IN_SECONDS );
+			return $result;
 		}
+		delete_transient( 'convertrack_gsc_migration_error' );
+		return true;
+	}
+
+	/** Whether the verified schema watermark and current structure agree. */
+	public static function schema_is_healthy() {
+		return self::DB_VERSION === get_option( self::DB_VERSION_OPTION ) && ! is_wp_error( self::verify_schema() );
 	}
 
 	/**
@@ -151,45 +187,75 @@ class Database {
 	 *
 	 * @param string $url  URL.
 	 * @param array  $args Metadata.
-	 * @return int|false
+	 * Existing rows are patch-updated: fields omitted from $args are preserved.
+	 *
+	 * @return int|\WP_Error
 	 */
 	public static function upsert_url( $url, array $args = array() ) {
 		global $wpdb;
 
 		$url = self::normalize_url( $url );
 		if ( '' === $url ) {
-			return false;
+			return new \WP_Error( 'convertrack_gsc_invalid_url', __( 'The queue URL is invalid.', 'convertrack-click-conversion-analytics' ) );
 		}
 
 		$table = self::queue_table();
 		$hash  = md5( strtolower( $url ) );
 		$now   = current_time( 'mysql' );
 
-		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT id,index_status FROM $table WHERE url_hash = %s", $hash ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT id,index_status,retired_at FROM $table WHERE url_hash = %s", $hash ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-		$data = array(
-			'url'          => $url,
-			'post_id'      => isset( $args['post_id'] ) ? absint( $args['post_id'] ) : 0,
-			'post_type'    => isset( $args['post_type'] ) ? sanitize_key( $args['post_type'] ) : '',
-			'sitemap_url'  => isset( $args['sitemap_url'] ) ? esc_url_raw( $args['sitemap_url'] ) : '',
-			'sitemap_hash' => ! empty( $args['sitemap_url'] ) ? md5( strtolower( esc_url_raw( $args['sitemap_url'] ) ) ) : '',
-			'in_sitemap'   => empty( $args['in_sitemap'] ) ? 0 : 1,
-			'updated_at'   => $now,
-		);
+		$data = array( 'url' => $url, 'updated_at' => $now );
+		if ( array_key_exists( 'post_id', $args ) ) {
+			$data['post_id'] = absint( $args['post_id'] );
+		}
+		if ( array_key_exists( 'post_type', $args ) ) {
+			$data['post_type'] = sanitize_key( $args['post_type'] );
+		}
+		if ( array_key_exists( 'sitemap_url', $args ) ) {
+			$data['sitemap_url']  = esc_url_raw( $args['sitemap_url'] );
+			$data['sitemap_hash'] = '' !== $data['sitemap_url'] ? md5( strtolower( $data['sitemap_url'] ) ) : '';
+		}
+		if ( array_key_exists( 'in_sitemap', $args ) ) {
+			$data['in_sitemap'] = empty( $args['in_sitemap'] ) ? 0 : 1;
+		}
+		if ( array_key_exists( 'priority', $args ) ) {
+			$data['priority'] = min( 1, absint( $args['priority'] ) );
+		}
+		if ( array_key_exists( 'scan_generation', $args ) ) {
+			$data['scan_generation'] = self::truncate( sanitize_text_field( $args['scan_generation'] ), 64 );
+		}
+		if ( array_key_exists( 'last_seen_at', $args ) ) {
+			$data['last_seen_at'] = sanitize_text_field( $args['last_seen_at'] );
+		}
 
 		if ( $existing ) {
-			if ( ! in_array( $existing['index_status'], array( 'ignored', 'checking' ), true ) && empty( $args['preserve_status'] ) ) {
-				$data['index_status']  = ! empty( $args['index_status'] ) ? sanitize_key( $args['index_status'] ) : 'queued';
+			$reviving = ! empty( $existing['retired_at'] ) || 'retired' === $existing['index_status'];
+			if ( $reviving ) {
+				$data['retired_at'] = null;
+			}
+			if ( ! in_array( $existing['index_status'], array( 'ignored', 'checking' ), true ) && ( $reviving || empty( $args['preserve_status'] ) ) && array_key_exists( 'index_status', $args ) ) {
+				$data['index_status']  = sanitize_key( $args['index_status'] );
 				$data['next_check_at'] = isset( $args['next_check_at'] ) ? sanitize_text_field( $args['next_check_at'] ) : $now;
 			}
 
-			$wpdb->update( $table, $data, array( 'id' => (int) $existing['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$updated = $wpdb->update( $table, $data, array( 'id' => (int) $existing['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( false === $updated ) {
+				return new \WP_Error( 'convertrack_gsc_queue_update_failed', $wpdb->last_error ? $wpdb->last_error : __( 'The GSC queue row could not be updated.', 'convertrack-click-conversion-analytics' ) );
+			}
 			self::clear_summary_cache();
 			return (int) $existing['id'];
 		}
 
+		$data = wp_parse_args(
+			$data,
+			array(
+				'post_id' => 0, 'post_type' => '', 'sitemap_url' => '', 'sitemap_hash' => '',
+				'in_sitemap' => 0, 'scan_generation' => '', 'last_seen_at' => null,
+			)
+		);
 		$data['url_hash']      = $hash;
-		$data['priority']      = isset( $args['priority'] ) ? absint( $args['priority'] ) : 0;
+		$data['priority']      = isset( $data['priority'] ) ? $data['priority'] : 0;
 		$data['index_status']  = ! empty( $args['index_status'] ) ? sanitize_key( $args['index_status'] ) : 'queued';
 		$data['next_check_at'] = isset( $args['next_check_at'] ) ? sanitize_text_field( $args['next_check_at'] ) : $now;
 		$data['created_at']    = $now;
@@ -197,7 +263,7 @@ class Database {
 		$inserted = $wpdb->insert( $table, $data ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		self::clear_summary_cache();
 
-		return $inserted ? (int) $wpdb->insert_id : false;
+		return $inserted ? (int) $wpdb->insert_id : new \WP_Error( 'convertrack_gsc_queue_insert_failed', $wpdb->last_error ? $wpdb->last_error : __( 'The GSC queue row could not be inserted.', 'convertrack-click-conversion-analytics' ) );
 	}
 
 	/**
@@ -216,6 +282,8 @@ class Database {
 			"SELECT * FROM $table
 			WHERE index_status <> 'ignored'
 				AND index_status <> 'checking'
+				AND index_status <> 'retired'
+				AND retired_at IS NULL
 				AND (next_check_at IS NULL OR next_check_at <= %s)
 			ORDER BY priority DESC, COALESCE(next_check_at, '1970-01-01 00:00:00') ASC, id ASC
 			LIMIT %d",
@@ -229,7 +297,7 @@ class Database {
 	/**
 	 * Count rows currently due for processing (same criteria as due_batch()).
 	 *
-	 * @return int
+	 * @return int|\WP_Error
 	 */
 	public static function due_count() {
 		global $wpdb;
@@ -240,6 +308,8 @@ class Database {
 			"SELECT COUNT(*) FROM $table
 			WHERE index_status <> 'ignored'
 				AND index_status <> 'checking'
+				AND index_status <> 'retired'
+				AND retired_at IS NULL
 				AND (next_check_at IS NULL OR next_check_at <= %s)",
 			$now
 		);
@@ -254,7 +324,7 @@ class Database {
 	 * upsert_url(), so a fatal mid-batch would otherwise strand them forever.
 	 *
 	 * @param int $minutes Age in minutes before a checking row is considered stale.
-	 * @return int
+	 * @return int|\WP_Error
 	 */
 	public static function release_stale_checking( $minutes = 15 ) {
 		global $wpdb;
@@ -276,6 +346,9 @@ class Database {
 		if ( $result ) {
 			self::clear_summary_cache();
 		}
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_stale_checking_failed', $wpdb->last_error );
+		}
 		return (int) $result;
 	}
 
@@ -285,7 +358,7 @@ class Database {
 	 * @param int $id Row id.
 	 */
 	public static function mark_queued( $id ) {
-		self::update_row(
+		return self::update_row(
 			$id,
 			array(
 				'index_status'  => 'queued',
@@ -314,7 +387,7 @@ class Database {
 	 * @param int $id Row id.
 	 */
 	public static function mark_checking( $id ) {
-		self::update_row(
+		return self::update_row(
 			$id,
 			array(
 				'index_status' => 'checking',
@@ -355,9 +428,16 @@ class Database {
 			$data['last_submitted_at'] = $now;
 		}
 
-		$wpdb->query( $wpdb->prepare( "UPDATE $table SET attempt_count = attempt_count + 1 WHERE id = %d", (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$wpdb->update( $table, $data, array( 'id' => (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$incremented = $wpdb->query( $wpdb->prepare( "UPDATE $table SET attempt_count = attempt_count + 1 WHERE id = %d", (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $incremented ) {
+			return new \WP_Error( 'convertrack_gsc_attempt_update_failed', $wpdb->last_error );
+		}
+		$updated = $wpdb->update( $table, $data, array( 'id' => (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( false === $updated ) {
+			return new \WP_Error( 'convertrack_gsc_result_write_failed', $wpdb->last_error );
+		}
 		self::clear_summary_cache();
+		return true;
 	}
 
 	/**
@@ -372,8 +452,11 @@ class Database {
 		$table = self::queue_table();
 		$now   = current_time( 'mysql' );
 
-		$wpdb->query( $wpdb->prepare( "UPDATE $table SET attempt_count = attempt_count + 1 WHERE id = %d", (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		self::update_row(
+		$incremented = $wpdb->query( $wpdb->prepare( "UPDATE $table SET attempt_count = attempt_count + 1 WHERE id = %d", (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $incremented ) {
+			return new \WP_Error( 'convertrack_gsc_attempt_update_failed', $wpdb->last_error );
+		}
+		return self::update_row(
 			$id,
 			array(
 				'index_status'  => 'error',
@@ -390,11 +473,29 @@ class Database {
 	 * @param int $id Row id.
 	 */
 	public static function mark_pending_due_to_quota( $id ) {
-		self::update_row(
+		return self::update_row(
 			$id,
 			array(
 				'index_status'  => 'pending_due_to_quota',
 				'next_check_at' => self::mysql_time( DAY_IN_SECONDS ),
+				'updated_at'    => current_time( 'mysql' ),
+			)
+		);
+	}
+
+	/**
+	 * Pause one row after a temporary Google rate limit.
+	 *
+	 * @param int $id    Row id.
+	 * @param int $delay Retry delay in seconds.
+	 * @return true|\WP_Error
+	 */
+	public static function mark_rate_limited( $id, $delay ) {
+		return self::update_row(
+			$id,
+			array(
+				'index_status'  => 'pending_due_to_rate_limit',
+				'next_check_at' => self::mysql_time( max( MINUTE_IN_SECONDS, min( DAY_IN_SECONDS, (int) $delay ) ) ),
 				'updated_at'    => current_time( 'mysql' ),
 			)
 		);
@@ -417,6 +518,8 @@ class Database {
 				SET index_status = 'pending_due_to_quota', next_check_at = %s, updated_at = %s
 				WHERE index_status <> 'ignored'
 					AND index_status <> 'checking'
+					AND index_status <> 'retired'
+					AND retired_at IS NULL
 					AND (next_check_at IS NULL OR next_check_at <= %s)",
 				$next,
 				$now,
@@ -429,13 +532,41 @@ class Database {
 	}
 
 	/**
+	 * Pause all currently due work after a temporary rate limit.
+	 *
+	 * @param int $delay Retry delay in seconds.
+	 * @return int|\WP_Error
+	 */
+	public static function mark_due_rate_limited( $delay ) {
+		global $wpdb;
+		$table = self::queue_table();
+		$now   = current_time( 'mysql' );
+		$next  = self::mysql_time( max( MINUTE_IN_SECONDS, min( DAY_IN_SECONDS, (int) $delay ) ) );
+		$result = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $table SET index_status = 'pending_due_to_rate_limit', next_check_at = %s, updated_at = %s
+				WHERE retired_at IS NULL AND index_status NOT IN ('ignored','checking','retired')
+					AND (next_check_at IS NULL OR next_check_at <= %s)",
+				$next,
+				$now,
+				$now
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_rate_limit_write_failed', $wpdb->last_error );
+		}
+		self::clear_summary_cache();
+		return (int) $result;
+	}
+
+	/**
 	 * Update a URL after sitemap submission.
 	 *
 	 * @param int    $id     Row id.
 	 * @param string $status Status.
 	 */
 	public static function mark_submitted( $id, $status = 'pending_from_sitemap' ) {
-		self::update_row(
+		return self::update_row(
 			$id,
 			array(
 				'index_status'      => sanitize_key( $status ),
@@ -449,14 +580,49 @@ class Database {
 	/**
 	 * Mark all nonignored URLs for a full audit.
 	 *
-	 * @return int
+	 * @return int|\WP_Error
 	 */
 	public static function schedule_full_audit() {
 		global $wpdb;
 		$table = self::queue_table();
 		$now   = current_time( 'mysql' );
 
-		$result = $wpdb->query( $wpdb->prepare( "UPDATE $table SET next_check_at = %s, updated_at = %s WHERE index_status <> 'ignored'", $now, $now ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE $table SET next_check_at = %s, updated_at = %s WHERE retired_at IS NULL AND index_status NOT IN ('ignored','retired')", $now, $now ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_full_audit_failed', $wpdb->last_error );
+		}
+		self::clear_summary_cache();
+		return (int) $result;
+	}
+
+	/**
+	 * Retire queue rows not observed by a completely successful scan.
+	 *
+	 * @param string $generation Successful scan generation.
+	 * @return int|\WP_Error
+	 */
+	public static function retire_unseen( $generation ) {
+		global $wpdb;
+		$table      = self::queue_table();
+		$generation = self::truncate( sanitize_text_field( $generation ), 64 );
+		if ( '' === $generation ) {
+			return new \WP_Error( 'convertrack_gsc_bad_generation', __( 'The sitemap scan generation is missing.', 'convertrack-click-conversion-analytics' ) );
+		}
+		$now = current_time( 'mysql' );
+		$result = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $table
+				SET index_status = IF(index_status = 'ignored', 'ignored', 'retired'), in_sitemap = 0,
+					retired_at = %s, next_check_at = NULL, updated_at = %s
+				WHERE retired_at IS NULL AND (scan_generation = '' OR scan_generation <> %s)",
+				$now,
+				$now,
+				$generation
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_retire_failed', $wpdb->last_error );
+		}
 		self::clear_summary_cache();
 		return (int) $result;
 	}
@@ -476,6 +642,9 @@ class Database {
 		$per_page = max( 1, min( 100, isset( $args['per_page'] ) ? (int) $args['per_page'] : 25 ) );
 		$offset   = ( $page - 1 ) * $per_page;
 
+		if ( empty( $args['status'] ) || 'retired' !== $args['status'] ) {
+			$where[] = 'retired_at IS NULL';
+		}
 		if ( ! empty( $args['status'] ) && 'all' !== $args['status'] ) {
 			if ( 'needs_indexing' === $args['status'] ) {
 				// Combined view of pages Google knows about but has not indexed —
@@ -535,7 +704,7 @@ class Database {
 		global $wpdb;
 		$table = self::queue_table();
 
-		$rows = $wpdb->get_results( "SELECT sitemap_hash, MIN(sitemap_url) AS sitemap_url, COUNT(*) AS total FROM $table WHERE sitemap_hash <> '' GROUP BY sitemap_hash ORDER BY sitemap_url ASC", ARRAY_A ); // phpcs:ignore WordPress.DB
+		$rows = $wpdb->get_results( "SELECT sitemap_hash, MIN(sitemap_url) AS sitemap_url, COUNT(*) AS total FROM $table WHERE sitemap_hash <> '' AND retired_at IS NULL GROUP BY sitemap_hash ORDER BY sitemap_url ASC", ARRAY_A ); // phpcs:ignore WordPress.DB
 		$out  = array();
 
 		foreach ( (array) $rows as $row ) {
@@ -577,7 +746,7 @@ class Database {
 			'errors'                  => 0,
 		);
 
-		$rows = $wpdb->get_results( "SELECT index_status, COUNT(*) AS total FROM $table GROUP BY index_status", ARRAY_A ); // phpcs:ignore WordPress.DB
+		$rows = $wpdb->get_results( "SELECT index_status, COUNT(*) AS total FROM $table WHERE retired_at IS NULL GROUP BY index_status", ARRAY_A ); // phpcs:ignore WordPress.DB
 		foreach ( (array) $rows as $row ) {
 			$status = (string) $row['index_status'];
 			$total  = (int) $row['total'];
@@ -626,10 +795,10 @@ class Database {
 		$table = self::logs_table();
 
 		if ( ! self::table_exists( $table ) ) {
-			return;
+			return new \WP_Error( 'convertrack_gsc_logs_missing', __( 'The GSC log table is unavailable.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		$wpdb->insert(
+		$result = $wpdb->insert(
 			$table,
 			array(
 				'level'      => sanitize_key( $level ),
@@ -639,6 +808,38 @@ class Database {
 				'created_at' => current_time( 'mysql' ),
 			)
 		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return $result ? true : new \WP_Error( 'convertrack_gsc_log_write_failed', $wpdb->last_error );
+	}
+
+	/**
+	 * Bounded retention for logs and retired queue records.
+	 *
+	 * @param int $batch Maximum rows removed from each surface.
+	 * @return array|\WP_Error
+	 */
+	public static function cleanup( $batch = 500 ) {
+		global $wpdb;
+		$batch       = max( 1, min( 5000, (int) $batch ) );
+		$log_cutoff  = self::mysql_time( - max( 1, (int) Settings::get( 'log_retention_days', 30 ) ) * DAY_IN_SECONDS );
+		$row_cutoff  = self::mysql_time( - max( 7, (int) Settings::get( 'queue_retention_days', 90 ) ) * DAY_IN_SECONDS );
+		$logs        = self::logs_table();
+		$queue       = self::queue_table();
+
+		$deleted_logs = $wpdb->query( $wpdb->prepare( "DELETE FROM $logs WHERE created_at < %s ORDER BY id ASC LIMIT %d", $log_cutoff, $batch ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $deleted_logs ) {
+			return new \WP_Error( 'convertrack_gsc_log_cleanup_failed', $wpdb->last_error );
+		}
+		$deleted_queue = $wpdb->query( $wpdb->prepare( "DELETE FROM $queue WHERE retired_at IS NOT NULL AND retired_at < %s ORDER BY id ASC LIMIT %d", $row_cutoff, $batch ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $deleted_queue ) {
+			return new \WP_Error( 'convertrack_gsc_queue_cleanup_failed', $wpdb->last_error );
+		}
+
+		if ( $deleted_queue ) {
+			self::clear_summary_cache();
+		}
+		update_option( 'convertrack_gsc_last_cleanup', current_time( 'mysql' ), false );
+		return array( 'logs' => (int) $deleted_logs, 'queue' => (int) $deleted_queue );
 	}
 
 	/**
@@ -654,6 +855,8 @@ class Database {
 	 * Keyed by site-local date, so repeated calls in the same day just refresh
 	 * that day's entry (keeping the latest counts). Capped to the most recent
 	 * HISTORY_MAX_DAYS days. Stored in an option — no schema/migration needed.
+	 *
+	 * @return true|\WP_Error
 	 */
 	public static function record_snapshot() {
 		$today   = gmdate( 'Y-m-d', (int) current_time( 'timestamp' ) );
@@ -681,7 +884,11 @@ class Database {
 			$history = array_slice( $history, -self::HISTORY_MAX_DAYS, null, true );
 		}
 
-		update_option( self::HISTORY_OPTION, $history, false );
+		$updated = update_option( self::HISTORY_OPTION, $history, false );
+		if ( ! $updated && get_option( self::HISTORY_OPTION ) !== $history ) {
+			return new \WP_Error( 'convertrack_gsc_history_write_failed', __( 'The indexing history snapshot could not be saved.', 'convertrack-click-conversion-analytics' ) );
+		}
+		return true;
 	}
 
 	/**
@@ -753,8 +960,12 @@ class Database {
 	 */
 	private static function update_row( $id, array $data ) {
 		global $wpdb;
-		$wpdb->update( self::queue_table(), $data, array( 'id' => (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$result = $wpdb->update( self::queue_table(), $data, array( 'id' => (int) $id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_queue_update_failed', $wpdb->last_error );
+		}
 		self::clear_summary_cache();
+		return true;
 	}
 
 	/**
@@ -794,8 +1005,54 @@ class Database {
 	private static function next_scheduled_check() {
 		global $wpdb;
 		$table = self::queue_table();
-		$value = $wpdb->get_var( "SELECT MIN(next_check_at) FROM $table WHERE index_status <> 'ignored' AND next_check_at IS NOT NULL" ); // phpcs:ignore WordPress.DB
+		$value = $wpdb->get_var( "SELECT MIN(next_check_at) FROM $table WHERE retired_at IS NULL AND index_status NOT IN ('ignored','retired') AND next_check_at IS NOT NULL" ); // phpcs:ignore WordPress.DB
 		return $value ? (string) $value : '';
+	}
+
+	/**
+	 * Verify the additive schema before advancing the module DB version.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private static function verify_schema() {
+		global $wpdb;
+
+		$required = array(
+			self::queue_table() => array(
+				'columns' => array( 'id', 'url_hash', 'url', 'sitemap_url', 'sitemap_hash', 'in_sitemap', 'scan_generation', 'last_seen_at', 'retired_at', 'index_status', 'next_check_at' ),
+				'indexes' => array( 'PRIMARY', 'url_hash', 'scan_generation', 'last_seen_at', 'retired_at' ),
+			),
+			self::logs_table() => array(
+				'columns' => array( 'id', 'level', 'source', 'message', 'created_at' ),
+				'indexes' => array( 'PRIMARY', 'level_created', 'source_created' ),
+			),
+		);
+
+		foreach ( $required as $table => $expect ) {
+			$columns = $wpdb->get_col( "SHOW COLUMNS FROM $table", 0 ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$indexes = $wpdb->get_col( "SHOW INDEX FROM $table", 2 ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$missing_columns = array_diff( $expect['columns'], array_map( 'strval', (array) $columns ) );
+			$missing_indexes = array_diff( $expect['indexes'], array_unique( array_map( 'strval', (array) $indexes ) ) );
+			if ( ! empty( $missing_columns ) || ! empty( $missing_indexes ) ) {
+				return new \WP_Error(
+					'convertrack_gsc_db_incomplete',
+					sprintf(
+						/* translators: 1: table, 2: columns, 3: indexes. */
+						__( 'GSC schema verification failed for %1$s. Missing columns: %2$s. Missing indexes: %3$s.', 'convertrack-click-conversion-analytics' ),
+						$table,
+						implode( ', ', $missing_columns ),
+						implode( ', ', $missing_indexes )
+					)
+				);
+			}
+
+			$status = $wpdb->get_row( $wpdb->prepare( 'SHOW TABLE STATUS LIKE %s', $table ), ARRAY_A );
+			if ( is_array( $status ) && ! empty( $status['Engine'] ) && 'innodb' !== strtolower( $status['Engine'] ) ) {
+				return new \WP_Error( 'convertrack_gsc_db_engine', sprintf( /* translators: %s: table. */ __( 'GSC table %s must use InnoDB.', 'convertrack-click-conversion-analytics' ), $table ) );
+			}
+		}
+
+		return true;
 	}
 
 	/**

@@ -85,6 +85,7 @@ class Keywords_Cron {
 		}
 
 		Keywords_Database::prune_custom_range();
+		Keywords_Database::cleanup_staging();
 
 		$auto_sync = (string) Keywords_Settings::get( 'auto_sync', 'weekly' );
 		if ( 'manual' === $auto_sync ) {
@@ -125,7 +126,8 @@ class Keywords_Cron {
 		}
 
 		if ( isset( $state['status'] ) && 'running' === $state['status'] ) {
-			self::kick_sync( MINUTE_IN_SECONDS );
+			$delay = ! empty( $state['next_retry_at'] ) ? max( MINUTE_IN_SECONDS, (int) $state['next_retry_at'] - time() ) : MINUTE_IN_SECONDS;
+			self::kick_sync( $delay );
 		}
 	}
 
@@ -153,7 +155,8 @@ class Keywords_Cron {
 	}
 
 	/**
-	 * Seconds since the newest completed range sync (PHP_INT_MAX when never synced).
+	 * Seconds since the stalest configured range sync (PHP_INT_MAX when any
+	 * configured range has never completed).
 	 *
 	 * @return int
 	 */
@@ -163,19 +166,23 @@ class Keywords_Cron {
 			return PHP_INT_MAX;
 		}
 
-		$newest = 0;
-		foreach ( $last_sync as $entry ) {
-			$time = isset( $entry['time'] ) ? strtotime( (string) $entry['time'] ) : 0;
-			if ( $time > $newest ) {
-				$newest = $time;
+		$oldest = PHP_INT_MAX;
+		foreach ( (array) Keywords_Settings::get( 'sync_ranges', array() ) as $range ) {
+			if ( empty( $last_sync[ $range ]['time'] ) ) {
+				return PHP_INT_MAX;
 			}
+			$time = strtotime( (string) $last_sync[ $range ]['time'] );
+			if ( ! $time ) {
+				return PHP_INT_MAX;
+			}
+			$oldest = min( $oldest, $time );
 		}
 
-		if ( ! $newest ) {
+		if ( PHP_INT_MAX === $oldest ) {
 			return PHP_INT_MAX;
 		}
 
-		return max( 0, (int) ( current_time( 'timestamp' ) - $newest ) );
+		return max( 0, (int) ( current_time( 'timestamp' ) - $oldest ) );
 	}
 
 	/**

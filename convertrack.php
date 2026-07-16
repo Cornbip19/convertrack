@@ -3,9 +3,11 @@
  * Plugin Name:       Convertrack — Click & Conversion Analytics
  * Plugin URI:        https://github.com/Cornbip19/convertrack
  * Description:       Tracks clicks on every button and link across your site, measures page conversion, and shows how many visitors are on the site right now. Built to scale to large sites and to update itself from GitHub.
- * Version:           2.3.1
+ * Version:           2.4.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
+ * Tested up to:      7.0
+ * Update URI:        https://github.com/Cornbip19/convertrack
  * Author:            Cornbip19
  * Author URI:        https://github.com/Cornbip19
  * License:           GPL-2.0-or-later
@@ -37,7 +39,7 @@ if ( isset( $GLOBALS['wp_version'] ) && version_compare( $GLOBALS['wp_version'],
 	return;
 }
 
-define( 'CONVERTRACK_VERSION', '2.3.1' );
+define( 'CONVERTRACK_VERSION', '2.4.0' );
 define( 'CONVERTRACK_FILE', __FILE__ );
 define( 'CONVERTRACK_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CONVERTRACK_URL', plugin_dir_url( __FILE__ ) );
@@ -50,9 +52,20 @@ define( 'CONVERTRACK_GITHUB_REPO', 'convertrack' );
 
 require_once CONVERTRACK_DIR . 'includes/class-database.php';
 require_once CONVERTRACK_DIR . 'includes/class-settings.php';
+require_once CONVERTRACK_DIR . 'includes/class-page-identity.php';
+require_once CONVERTRACK_DIR . 'includes/class-rollup-manager.php';
+require_once CONVERTRACK_DIR . 'includes/class-csv.php';
+require_once CONVERTRACK_DIR . 'includes/class-privacy-scrubber.php';
+require_once CONVERTRACK_DIR . 'includes/class-site-health.php';
+require_once CONVERTRACK_DIR . 'includes/class-manifest.php';
+require_once CONVERTRACK_DIR . 'includes/class-owner-lock.php';
+require_once CONVERTRACK_DIR . 'includes/class-safe-sitemap-fetcher.php';
+require_once CONVERTRACK_DIR . 'includes/class-lifecycle.php';
+require_once CONVERTRACK_DIR . 'includes/class-data-management.php';
 require_once CONVERTRACK_DIR . 'includes/class-activator.php';
 require_once CONVERTRACK_DIR . 'includes/class-deactivator.php';
 require_once CONVERTRACK_DIR . 'includes/class-geo.php';
+require_once CONVERTRACK_DIR . 'includes/class-ingestion-guard.php';
 require_once CONVERTRACK_DIR . 'includes/class-collector.php';
 require_once CONVERTRACK_DIR . 'includes/class-presence.php';
 require_once CONVERTRACK_DIR . 'includes/class-rest-controller.php';

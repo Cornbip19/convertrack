@@ -4,12 +4,12 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 
 ## What it does
 
-- **Click tracking** — every click on a link, button, input, block button, or any element you configure is recorded with its label, CSS path, page, and target.
+- **Click tracking** — configured button-like clicks store a bounded static label and structural path; heatmap-only clicks store coordinates and a structural path without arbitrary text, href parameters, or form values.
 - **Conversion measurement** — mark elements (e.g. `.cvtrk-convert`) or destination URLs (e.g. `/thank-you`) as conversions and watch conversion rate per page.
 - **Live visitor count** — a real-time counter of how many distinct visitors are currently on the site, and what they're viewing.
 - **Search keywords** — optional reporting for supported UTM terms, WordPress site searches, and visible search-referrer queries.
 - **Scales** — events are batched in the browser via `navigator.sendBeacon`, written in bulk, and rolled up into a compact daily-aggregates table by a background job so dashboards stay fast at any size.
-- **Privacy-friendly** — no IP addresses or personal data stored; Do Not Track supported; logged-in users / roles / URLs can be excluded.
+- **Privacy-friendly** — form/editable values are never read, URL queries are stripped by default, IPs are not stored, and GPC, WordPress Consent API, Do Not Track, role, and URL exclusions are supported.
 - **Google Index Monitor** - optional Search Console OAuth integration that scans sitemaps and checks URL indexing status in background batches.
 - **404 Monitor** - captures real frontend 404s, recommends likely destinations, and creates internal 301 redirects only after approval or explicit high-confidence automation.
 
@@ -20,7 +20,7 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 | Bootstrap | `convertrack.php` |
 | Data + schema + rollups | `includes/class-database.php` |
 | Settings | `includes/class-settings.php` |
-| Ingestion (validation, rate limit) | `includes/class-collector.php` |
+| Ingestion (validation, tokens, atomic quotas) | `includes/class-collector.php`, `includes/class-ingestion-guard.php` |
 | Presence / live count | `includes/class-presence.php` |
 | REST API | `includes/class-rest-controller.php` |
 | Front-end tracker | `public/js/convertrack.js` |

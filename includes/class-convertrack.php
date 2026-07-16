@@ -120,11 +120,13 @@ final class Plugin {
 	 * Instantiate components and register hooks.
 	 */
 	private function boot() {
-		// Keep schema current after plugin updates without needing reactivation.
-		Database::maybe_upgrade();
-		\Convertrack\GSC\Database::maybe_upgrade();
-		\Convertrack\GSC\Keywords_Database::maybe_upgrade();
-		\Convertrack\NotFound\Database::maybe_upgrade();
+		// Schema changes can be expensive. Run them only in an administrator or
+		// explicit CLI context, never while serving public traffic.
+		add_action( 'admin_init', array( $this, 'maybe_upgrade_schema' ), 1 );
+		add_action( 'admin_notices', array( $this, 'schema_admin_notice' ) );
+		Privacy_Scrubber::register();
+		Site_Health::register();
+		Lifecycle::register();
 
 		load_plugin_textdomain( 'convertrack-click-conversion-analytics', false, dirname( CONVERTRACK_BASENAME ) . '/languages' );
 
@@ -167,5 +169,40 @@ final class Plugin {
 			$this->updater = new Updater( CONVERTRACK_FILE, CONVERTRACK_GITHUB_OWNER, CONVERTRACK_GITHUB_REPO, CONVERTRACK_SLUG );
 			$this->updater->register();
 		}
+	}
+
+	/**
+	 * Upgrade every module schema in a controlled administrator request.
+	 */
+	public function maybe_upgrade_schema() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$results = array(
+			'secret'   => Settings::migrate_secret(),
+			'core'     => Database::maybe_upgrade(),
+			'ingestion'=> Ingestion_Guard::maybe_upgrade(),
+			'gsc'      => \Convertrack\GSC\Database::maybe_upgrade(),
+			'keywords' => \Convertrack\GSC\Keywords_Database::maybe_upgrade(),
+			'notfound' => \Convertrack\NotFound\Database::maybe_upgrade(),
+		);
+		foreach ( $results as $module => $result ) {
+			if ( is_wp_error( $result ) ) {
+				update_option( 'convertrack_' . $module . '_schema_error', $result->get_error_message(), false );
+			} else {
+				delete_option( 'convertrack_' . $module . '_schema_error' );
+			}
+		}
+	}
+
+	/**
+	 * Surface actionable schema failures instead of allowing silent data loss.
+	 */
+	public function schema_admin_notice() {
+		if ( ! current_user_can( 'manage_options' ) || Database::schema_is_healthy() ) {
+			return;
+		}
+		$message = get_option( Database::SCHEMA_ERROR_OPTION, __( 'The analytics database schema is incomplete.', 'convertrack-click-conversion-analytics' ) );
+		echo '<div class="notice notice-error"><p><strong>' . esc_html__( 'Convertrack collection is paused.', 'convertrack-click-conversion-analytics' ) . '</strong> ' . esc_html( $message ) . ' ' . esc_html__( 'Reload this page to retry the migration, then review the database user permissions if it continues.', 'convertrack-click-conversion-analytics' ) . '</p></div>';
 	}
 }

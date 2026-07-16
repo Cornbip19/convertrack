@@ -19,6 +19,9 @@ if ( empty( $roles ) ) {
 $cvtrk_updater = isset( convertrack()->updater ) ? convertrack()->updater : null;
 $repo_url      = 'https://github.com/' . CONVERTRACK_GITHUB_OWNER . '/' . CONVERTRACK_GITHUB_REPO;
 $check_url     = wp_nonce_url( self_admin_url( 'update-core.php?force-check=1' ), 'upgrade-core' );
+$token_is_set  = '' !== Settings::github_token();
+$scrub_state   = get_option( Privacy_Scrubber::STATE_OPTION, array() );
+$storage_health= Database::schema_is_healthy() ? Database::storage_health() : array();
 $latest        = __( 'unknown', 'convertrack-click-conversion-analytics' );
 if ( $cvtrk_updater ) {
 	$release = $cvtrk_updater->get_release();
@@ -52,7 +55,16 @@ if ( $cvtrk_updater ) {
 			?>
 			<div class="cvtrk-notice"><?php printf( esc_html__( 'Inserted %d sample events across the last 7 days — open Dashboard to see the populated reports.', 'convertrack-click-conversion-analytics' ), (int) $cvtrk_rows ); ?></div>
 		<?php elseif ( 'reset' === $cvtrk_n ) : ?>
-			<div class="cvtrk-notice"><?php esc_html_e( 'All tracked data was deleted.', 'convertrack-click-conversion-analytics' ); ?></div>
+			<div class="cvtrk-notice"><?php esc_html_e( 'Analytics events, live sessions, rollups, and analytics worker state were deleted. Module configuration and operational module data were preserved.', 'convertrack-click-conversion-analytics' ); ?></div>
+		<?php elseif ( 'operational-reset' === $cvtrk_n ) : ?>
+			<div class="cvtrk-notice"><?php esc_html_e( 'All Convertrack operational rows were deleted. Configuration, OAuth credentials, schema versions, and the updater secret were preserved.', 'convertrack-click-conversion-analytics' ); ?></div>
+		<?php elseif ( 'scrub-started' === $cvtrk_n ) : ?>
+			<div class="cvtrk-notice"><?php esc_html_e( 'The historical privacy scrub was queued. It runs in bounded background batches; progress is shown in Data Management.', 'convertrack-click-conversion-analytics' ); ?></div>
+		<?php elseif ( 'error' === $cvtrk_n ) :
+			$cvtrk_error = get_transient( 'convertrack_action_error_' . get_current_user_id() );
+			delete_transient( 'convertrack_action_error_' . get_current_user_id() );
+			?>
+			<div class="notice notice-error inline"><p><?php esc_html_e( 'The requested operation did not complete. No success was recorded.', 'convertrack-click-conversion-analytics' ); ?></p><?php if ( $cvtrk_error ) : ?><details><summary><?php esc_html_e( 'Technical detail', 'convertrack-click-conversion-analytics' ); ?></summary><p><code><?php echo esc_html( $cvtrk_error ); ?></code></p></details><?php endif; ?></div>
 		<?php endif; ?>
 	<?php endif; ?>
 
@@ -182,6 +194,13 @@ if ( $cvtrk_updater ) {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="cvtrk-query-allowlist"><?php esc_html_e( 'Retained URL parameters', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<textarea id="cvtrk-query-allowlist" class="large-text code" rows="3" name="convertrack_settings[query_param_allowlist]"><?php echo esc_textarea( $s['query_param_allowlist'] ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Optional parameter names, one per line. Page and link query strings are removed by default. Credential, email, session, reset, order-key, and other sensitive parameter names are always removed even if listed here.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><?php esc_html_e( 'Respect Do Not Track', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<label>
@@ -189,6 +208,10 @@ if ( $cvtrk_updater ) {
 								<?php esc_html_e( 'Do not track visitors whose browser sends a Do-Not-Track signal.', 'convertrack-click-conversion-analytics' ); ?>
 							</label>
 						</td>
+					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Global privacy signals', 'convertrack-click-conversion-analytics' ); ?></th>
+						<td><p class="description"><?php esc_html_e( 'Global Privacy Control and a denied WordPress Consent API statistics purpose are always respected.', 'convertrack-click-conversion-analytics' ); ?></p></td>
 					</tr>
 					<tr>
 						<th scope="row"><?php esc_html_e( 'Visitor location', 'convertrack-click-conversion-analytics' ); ?></th>
@@ -226,6 +249,14 @@ if ( $cvtrk_updater ) {
 							<input type="number" id="cvtrk-retention" min="1" max="3650" name="convertrack_settings[retention_days]" value="<?php echo esc_attr( $s['retention_days'] ); ?>" />
 							<?php esc_html_e( 'days', 'convertrack-click-conversion-analytics' ); ?>
 							<p class="description"><?php esc_html_e( 'Raw events older than this are deleted. Daily aggregates are kept for long-term trends.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cvtrk-aggregate-retention"><?php esc_html_e( 'Detailed aggregate retention', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<input type="number" id="cvtrk-aggregate-retention" min="32" max="3650" name="convertrack_settings[aggregate_retention_days]" value="<?php echo esc_attr( $s['aggregate_retention_days'] ); ?>" />
+							<?php esc_html_e( 'days', 'convertrack-click-conversion-analytics' ); ?>
+							<p class="description"><?php esc_html_e( 'Daily selector, source, geography, keyword, visitor, and session dimensions older than this are deleted in bounded batches. Default: 400 days.', 'convertrack-click-conversion-analytics' ); ?></p>
 						</td>
 					</tr>
 				</table>
@@ -331,8 +362,11 @@ if ( $cvtrk_updater ) {
 						<tr>
 							<th scope="row"><label for="cvtrk-token"><?php esc_html_e( 'GitHub token', 'convertrack-click-conversion-analytics' ); ?></label></th>
 							<td>
-								<input type="password" id="cvtrk-token" class="regular-text" autocomplete="off" name="convertrack_settings[github_token]" value="<?php echo esc_attr( $s['github_token'] ); ?>" />
-								<p class="description"><?php esc_html_e( 'Only needed if the repository is private. Use a fine-scoped personal access token with read access to the repo.', 'convertrack-click-conversion-analytics' ); ?></p>
+								<input type="password" id="cvtrk-token" class="regular-text" autocomplete="new-password" name="convertrack_settings[github_token]" value="" placeholder="<?php echo esc_attr( $token_is_set ? __( 'Stored securely - enter a value only to replace it', 'convertrack-click-conversion-analytics' ) : __( 'No token stored', 'convertrack-click-conversion-analytics' ) ); ?>" />
+								<p class="description"><?php esc_html_e( 'Only needed for a private repository. The saved token is non-autoloaded and is never rendered back into HTML. A CONVERTRACK_GITHUB_TOKEN constant takes precedence.', 'convertrack-click-conversion-analytics' ); ?></p>
+								<?php if ( $token_is_set && ! defined( 'CONVERTRACK_GITHUB_TOKEN' ) ) : ?>
+									<label><input type="checkbox" name="convertrack_settings[github_token_clear]" value="1" /> <?php esc_html_e( 'Remove the stored token', 'convertrack-click-conversion-analytics' ); ?></label>
+								<?php endif; ?>
 							</td>
 						</tr>
 					<?php endif; ?>
@@ -350,7 +384,7 @@ if ( $cvtrk_updater ) {
 		<div class="cvtrk-card-head">
 			<div>
 				<h2 id="cvtrk-settings-data-title"><?php esc_html_e( 'Data Management', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Preview the dashboard with sample events or permanently remove analytics data.', 'convertrack-click-conversion-analytics' ); ?></span>
+			<span class="cvtrk-card-sub"><?php esc_html_e( 'Inspect storage, scrub legacy sensitive data, or perform explicitly scoped deletion.', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -363,13 +397,48 @@ if ( $cvtrk_updater ) {
 			</div>
 			<p class="description"><?php esc_html_e( 'Sample data lets you preview the dashboard without waiting for live traffic.', 'convertrack-click-conversion-analytics' ); ?></p>
 
+			<h3><?php esc_html_e( 'Historical privacy scrub', 'convertrack-click-conversion-analytics' ); ?></h3>
+			<p><?php esc_html_e( 'Removes legacy URL queries, redacts credential-like path segments, clears editable-control text, replaces client titles with public WordPress titles, and merges legacy query-specific 404 rows. It is resumable and never scans the full history in this request.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<?php if ( is_array( $scrub_state ) && ! empty( $scrub_state['status'] ) ) : ?>
+				<p class="description"><?php printf( esc_html__( 'Status: %1$s; stage: %2$s; scanned: %3$d; changed or would change: %4$d.', 'convertrack-click-conversion-analytics' ), esc_html( $scrub_state['status'] ), esc_html( isset( $scrub_state['stage'] ) ? $scrub_state['stage'] : '-' ), (int) ( isset( $scrub_state['scanned'] ) ? $scrub_state['scanned'] : 0 ), (int) ( isset( $scrub_state['changed'] ) ? $scrub_state['changed'] : 0 ) ); ?></p>
+			<?php endif; ?>
+			<div class="cvtrk-tools">
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="convertrack_privacy_scrub" />
+					<input type="hidden" name="scrub_mode" value="dry-run" />
+					<?php wp_nonce_field( 'convertrack_privacy_scrub' ); ?>
+					<button type="submit" class="button"><?php esc_html_e( 'Queue privacy scrub dry run', 'convertrack-click-conversion-analytics' ); ?></button>
+				</form>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="convertrack_privacy_scrub" />
+					<input type="hidden" name="scrub_mode" value="apply" />
+					<?php wp_nonce_field( 'convertrack_privacy_scrub' ); ?>
+					<button type="submit" class="button"><?php esc_html_e( 'Queue privacy scrub', 'convertrack-click-conversion-analytics' ); ?></button>
+				</form>
+			</div>
+
+			<?php if ( ! empty( $storage_health['events'] ) ) : ?>
+				<p class="description"><?php printf( esc_html__( 'Estimated analytics events: %1$d; data: %2$s; indexes: %3$s; rollup backlog: %4$d day(s).', 'convertrack-click-conversion-analytics' ), (int) $storage_health['events']['rows_estimate'], esc_html( size_format( $storage_health['events']['data_bytes'] ) ), esc_html( size_format( $storage_health['events']['index_bytes'] ) ), (int) $storage_health['rollup_backlog_days'] ); ?></p>
+			<?php endif; ?>
+
 			<div class="cvtrk-danger-zone">
 				<h3><?php esc_html_e( 'Danger Zone', 'convertrack-click-conversion-analytics' ); ?></h3>
-				<p><?php esc_html_e( 'Resetting data permanently deletes all events, sessions, and rollups. This cannot be undone.', 'convertrack-click-conversion-analytics' ); ?></p>
-				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('<?php echo esc_js( __( 'Delete ALL tracked data? This cannot be undone.', 'convertrack-click-conversion-analytics' ) ); ?>');">
+				<p><?php esc_html_e( 'Reset analytics deletes events, presence sessions, analytics rollups, and their worker state. It preserves Search, Keyword, Broken URL, settings, credentials, and updater data.', 'convertrack-click-conversion-analytics' ); ?></p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<input type="hidden" name="action" value="convertrack_reset_data" />
 					<?php wp_nonce_field( 'convertrack_reset_data' ); ?>
-					<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Reset all data', 'convertrack-click-conversion-analytics' ); ?></button>
+					<label for="cvtrk-reset-confirm"><?php esc_html_e( 'Type RESET ANALYTICS', 'convertrack-click-conversion-analytics' ); ?></label>
+					<input id="cvtrk-reset-confirm" name="confirmation" type="text" autocomplete="off" required pattern="RESET ANALYTICS" />
+					<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Reset analytics data', 'convertrack-click-conversion-analytics' ); ?></button>
+				</form>
+				<hr />
+				<p><?php esc_html_e( 'Delete operational data empties every Convertrack table, including active redirects, GSC/Keyword queues and analysis, Broken URL history/logs, and ingestion metrics. Settings, schema versions, OAuth credentials, and the updater secret are preserved.', 'convertrack-click-conversion-analytics' ); ?></p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="convertrack_delete_operational_data" />
+					<?php wp_nonce_field( 'convertrack_delete_operational_data' ); ?>
+					<label for="cvtrk-delete-confirm"><?php esc_html_e( 'Type DELETE CONVERTRACK', 'convertrack-click-conversion-analytics' ); ?></label>
+					<input id="cvtrk-delete-confirm" name="confirmation" type="text" autocomplete="off" required pattern="DELETE CONVERTRACK" />
+					<button type="submit" class="button button-link-delete"><?php esc_html_e( 'Delete all operational data', 'convertrack-click-conversion-analytics' ); ?></button>
 				</form>
 			</div>
 		</div>

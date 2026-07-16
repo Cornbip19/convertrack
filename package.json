@@ -1,0 +1,15 @@
+{
+  "name": "convertrack",
+  "version": "2.4.0",
+  "private": true,
+  "description": "Local quality checks for the Convertrack WordPress plugin.",
+  "scripts": {
+    "check:js": "node --check public/js/convertrack.js && node --check admin/js/admin.js",
+    "test:tracker": "node --test tests/tracker-lifecycle.test.js",
+    "test:admin": "node --test tests/admin-client.test.js",
+    "test": "npm run check:js && npm run test:tracker && npm run test:admin"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

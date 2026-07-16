@@ -64,7 +64,8 @@ class Updater {
 		add_filter( 'plugins_api', array( $this, 'plugin_info' ), 20, 3 );
 		add_filter( 'upgrader_source_selection', array( $this, 'fix_source_dir' ), 10, 4 );
 		add_filter( 'http_request_args', array( $this, 'authorize_request' ), 10, 2 );
-		add_action( 'upgrader_process_complete', array( $this, 'clear_cache' ), 10, 0 );
+		add_filter( 'upgrader_pre_download', array( $this, 'verify_download' ), 10, 4 );
+		add_action( 'upgrader_process_complete', array( $this, 'clear_cache' ), 10, 2 );
 
 		// Honor the "force check" button on the Updates screen. Require admin
 		// context and a valid upgrade-core nonce so this cannot be tripped via
@@ -167,13 +168,22 @@ class Updater {
 
 		$desired = trailingslashit( $remote_source ) . $this->slug;
 		if ( untrailingslashit( $source ) === untrailingslashit( $desired ) ) {
-			return $source;
+			$source = trailingslashit( $source );
+		} elseif ( $wp_filesystem && $wp_filesystem->move( $source, $desired, true ) ) {
+			$source = trailingslashit( $desired );
+		} else {
+			return new \WP_Error( 'convertrack_source_normalization', __( 'Convertrack could not normalize the extracted update folder; the existing plugin was left unchanged.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		if ( $wp_filesystem && $wp_filesystem->move( $source, $desired, true ) ) {
-			return trailingslashit( $desired );
+		$main = trailingslashit( $source ) . basename( $this->file );
+		if ( ! $wp_filesystem || ! $wp_filesystem->exists( $main ) ) {
+			return new \WP_Error( 'convertrack_package_invalid', __( 'The update package does not contain the Convertrack main plugin file.', 'convertrack-click-conversion-analytics' ) );
 		}
-
+		$release = $this->get_release();
+		$headers = get_file_data( $main, array( 'Version' => 'Version' ) );
+		if ( empty( $release['version'] ) || empty( $headers['Version'] ) || $headers['Version'] !== $release['version'] ) {
+			return new \WP_Error( 'convertrack_package_version', __( 'The extracted plugin version does not match the verified release.', 'convertrack-click-conversion-analytics' ) );
+		}
 		return $source;
 	}
 
@@ -188,11 +198,11 @@ class Updater {
 		if ( ! empty( $hook_extra['plugin'] ) ) {
 			return $hook_extra['plugin'] === $this->basename;
 		}
-		// Manual install from our zip: folder looks like owner-repo-<ref>.
+		// Manual GitHub source archives use exactly owner-repo-<hex ref>. Do not
+		// claim arbitrary convertrack-* folders belonging to another package.
 		$folder  = strtolower( basename( untrailingslashit( $source ) ) );
-		$pattern = strtolower( $this->owner . '-' . $this->repo );
-		$alt     = strtolower( $this->repo );
-		return 0 === strpos( $folder, $pattern ) || 0 === strpos( $folder, $alt . '-' );
+		$pattern = '/^' . preg_quote( strtolower( $this->owner . '-' . $this->repo ), '/' ) . '-[a-f0-9]{7,64}$/';
+		return (bool) preg_match( $pattern, $folder );
 	}
 
 	/**
@@ -203,16 +213,25 @@ class Updater {
 	 * @return array
 	 */
 	public function authorize_request( $args, $url ) {
-		$token = trim( (string) Settings::get( 'github_token' ) );
+		$token = Settings::github_token();
 		if ( '' === $token ) {
 			return $args;
 		}
-		$host = wp_parse_url( $url, PHP_URL_HOST );
-		if ( in_array( $host, array( 'api.github.com', 'codeload.github.com', 'github.com' ), true ) ) {
+		$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+		$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+		$prefix = '/repos/' . rawurlencode( $this->owner ) . '/' . rawurlencode( $this->repo );
+		$unsafe_path = preg_match( '#(?:^|/)\.{1,2}(?:/|$)#', $path ) || preg_match( '/%(?:2f|5c)/i', $path );
+		$ours = ! $unsafe_path
+			&& 'api.github.com' === $host
+			&& ( 0 === strcasecmp( $path, $prefix ) || 0 === stripos( $path, $prefix . '/' ) );
+		if ( $ours ) {
 			if ( ! isset( $args['headers'] ) || ! is_array( $args['headers'] ) ) {
 				$args['headers'] = array();
 			}
-			$args['headers']['Authorization'] = 'token ' . $token;
+			$args['headers']['Authorization'] = 'Bearer ' . $token;
+			if ( preg_match( '#^' . preg_quote( $prefix, '#' ) . '/releases/assets/\d+$#i', $path ) ) {
+				$args['headers']['Accept'] = 'application/octet-stream';
+			}
 		}
 		return $args;
 	}
@@ -220,8 +239,47 @@ class Updater {
 	/**
 	 * Clear the cached release (after updates / forced checks).
 	 */
-	public function clear_cache() {
-		delete_transient( $this->cache_key );
+	public function clear_cache( $upgrader = null, $hook_extra = array() ) {
+		unset( $upgrader );
+		$is_single = ! empty( $hook_extra['plugin'] ) && $hook_extra['plugin'] === $this->basename;
+		$is_bulk   = ! empty( $hook_extra['plugins'] ) && in_array( $this->basename, (array) $hook_extra['plugins'], true );
+		if ( $is_single || $is_bulk ) {
+			delete_transient( $this->cache_key );
+		}
+	}
+
+	/**
+	 * Download our package and verify the GitHub-provided SHA-256 digest before
+	 * WordPress extracts it.
+	 *
+	 * @param mixed  $reply      Existing short-circuit value.
+	 * @param string $package    Package URL.
+	 * @param object $upgrader   Upgrader instance.
+	 * @param array  $hook_extra Upgrade context.
+	 * @return mixed
+	 */
+	public function verify_download( $reply, $package, $upgrader, $hook_extra ) {
+		unset( $upgrader );
+		if ( false !== $reply || empty( $hook_extra['plugin'] ) || $hook_extra['plugin'] !== $this->basename ) {
+			return $reply;
+		}
+		$release = $this->get_release();
+		if ( empty( $release['package'] ) || ! hash_equals( (string) $release['package'], (string) $package ) || empty( $release['sha256'] ) ) {
+			return new \WP_Error( 'convertrack_release_unverified', __( 'The Convertrack release is missing an exact package or SHA-256 digest.', 'convertrack-click-conversion-analytics' ) );
+		}
+		if ( ! function_exists( 'download_url' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		$file = $this->download_release_asset( $release );
+		if ( is_wp_error( $file ) ) {
+			return $file;
+		}
+		$actual = hash_file( 'sha256', $file );
+		if ( ! is_string( $actual ) || ! hash_equals( strtolower( $release['sha256'] ), strtolower( $actual ) ) ) {
+			wp_delete_file( $file );
+			return new \WP_Error( 'convertrack_release_checksum', __( 'The Convertrack package checksum did not match the release manifest.', 'convertrack-click-conversion-analytics' ) );
+		}
+		return $file;
 	}
 
 	/* --------------------------------------------------------------------- */
@@ -234,7 +292,14 @@ class Updater {
 	public function get_release() {
 		$cached = get_transient( $this->cache_key );
 		if ( is_array( $cached ) ) {
-			return empty( $cached['version'] ) ? null : $cached;
+			if ( empty( $cached['version'] ) ) {
+				return null;
+			}
+			if ( ! empty( $cached['package'] ) && ! empty( $cached['asset_api'] ) && ! empty( $cached['sha256'] ) && preg_match( '/^[a-f0-9]{64}$/i', (string) $cached['sha256'] ) ) {
+				return $cached;
+			}
+			// Never trust a pre-hardening transient that lacks verification data.
+			delete_transient( $this->cache_key );
 		}
 
 		$url      = sprintf( 'https://api.github.com/repos/%s/%s/releases/latest', rawurlencode( $this->owner ), rawurlencode( $this->repo ) );
@@ -261,6 +326,12 @@ class Updater {
 			return null;
 		}
 
+		$package = $this->resolve_package( $body );
+		if ( empty( $package['url'] ) || empty( $package['asset_api'] ) || empty( $package['sha256'] ) ) {
+			set_transient( $this->cache_key, array( 'version' => '' ), HOUR_IN_SECONDS );
+			return null;
+		}
+
 		$release = array(
 			'version'      => ltrim( $body['tag_name'], 'vV' ),
 			'tag'          => $body['tag_name'],
@@ -268,7 +339,9 @@ class Updater {
 			'body'         => isset( $body['body'] ) ? $body['body'] : '',
 			'published_at' => isset( $body['published_at'] ) ? $body['published_at'] : '',
 			'html_url'     => isset( $body['html_url'] ) ? $body['html_url'] : '',
-			'package'      => $this->resolve_package( $body ),
+			'package'      => $package['url'],
+			'asset_api'    => $package['asset_api'],
+			'sha256'       => $package['sha256'],
 		);
 
 		set_transient( $this->cache_key, $release, self::CACHE_TTL );
@@ -276,16 +349,15 @@ class Updater {
 	}
 
 	/**
-	 * Choose the best download URL. GitHub lists release assets alphabetically,
-	 * so "first .zip" is not reliable: prefer the asset named exactly
-	 * "{slug}.zip", never pick a wordpress.org build (it has no self-updater),
-	 * and fall back to the auto-generated source zipball.
+	 * Choose only the exact release asset. Both its browser URL and API URL are
+	 * retained: public downloads use the former, while authenticated downloads
+	 * use the API endpoint so a token is never attached to a redirecting browser
+	 * URL.
 	 *
 	 * @param array $body Release payload.
-	 * @return string
+	 * @return array
 	 */
 	private function resolve_package( $body ) {
-		$fallback = '';
 		if ( ! empty( $body['assets'] ) && is_array( $body['assets'] ) ) {
 			foreach ( $body['assets'] as $asset ) {
 				if ( ! isset( $asset['browser_download_url'] ) || ! preg_match( '/\.zip$/i', $asset['browser_download_url'] ) ) {
@@ -293,17 +365,112 @@ class Updater {
 				}
 				$name = isset( $asset['name'] ) ? (string) $asset['name'] : '';
 				if ( $name === $this->slug . '.zip' ) {
-					return esc_url_raw( $asset['browser_download_url'] );
-				}
-				if ( '' === $fallback && false === strpos( $name, 'wordpress-org' ) ) {
-					$fallback = esc_url_raw( $asset['browser_download_url'] );
+					$url    = esc_url_raw( $asset['browser_download_url'] );
+					$api    = isset( $asset['url'] ) ? esc_url_raw( $asset['url'] ) : '';
+					$host   = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+					$path   = rawurldecode( (string) wp_parse_url( $url, PHP_URL_PATH ) );
+					$api_host = strtolower( (string) wp_parse_url( $api, PHP_URL_HOST ) );
+					$api_path = rawurldecode( (string) wp_parse_url( $api, PHP_URL_PATH ) );
+					$digest = isset( $asset['digest'] ) ? strtolower( (string) $asset['digest'] ) : '';
+					$repo_path = preg_quote( $this->owner, '#' ) . '/' . preg_quote( $this->repo, '#' );
+					if (
+						'github.com' !== $host
+						|| ! preg_match( '#^/' . $repo_path . '/releases/download/#i', $path )
+						|| 'api.github.com' !== $api_host
+						|| ! preg_match( '#^/repos/' . $repo_path . '/releases/assets/\d+$#i', $api_path )
+						|| ! preg_match( '/^sha256:([a-f0-9]{64})$/', $digest, $match )
+					) {
+						return array();
+					}
+					return array( 'url' => $url, 'asset_api' => $api, 'sha256' => $match[1] );
 				}
 			}
 		}
-		if ( '' !== $fallback ) {
-			return $fallback;
+		return array();
+	}
+
+	/**
+	 * Download a release asset without exposing a configured token to GitHub's
+	 * browser-download redirect host.
+	 *
+	 * @param array $release Verified release metadata.
+	 * @return string|\WP_Error Temporary filename.
+	 */
+	private function download_release_asset( array $release ) {
+		$token = Settings::github_token();
+		if ( '' === $token ) {
+			return download_url( $release['package'], 300 );
 		}
-		return isset( $body['zipball_url'] ) ? esc_url_raw( $body['zipball_url'] ) : '';
+
+		if ( empty( $release['asset_api'] ) ) {
+			return new \WP_Error( 'convertrack_release_asset_api', __( 'The verified release is missing its GitHub asset endpoint.', 'convertrack-click-conversion-analytics' ) );
+		}
+		$file = wp_tempnam( $this->slug . '.zip' );
+		if ( ! $file ) {
+			return new \WP_Error( 'convertrack_release_tempfile', __( 'WordPress could not create a temporary update file.', 'convertrack-click-conversion-analytics' ) );
+		}
+
+		$response = wp_safe_remote_get(
+			$release['asset_api'],
+			array(
+				'timeout'            => 300,
+				'redirection'        => 0,
+				'reject_unsafe_urls' => true,
+				'stream'             => true,
+				'filename'           => $file,
+				'headers'            => array(
+					'Accept'        => 'application/octet-stream',
+					'Authorization' => 'Bearer ' . $token,
+					'User-Agent'    => 'Convertrack/' . CONVERTRACK_VERSION,
+				),
+			)
+		);
+		if ( is_wp_error( $response ) ) {
+			wp_delete_file( $file );
+			return $response;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code >= 300 && $code < 400 ) {
+			$location = (string) wp_remote_retrieve_header( $response, 'location' );
+			if ( ! $this->is_safe_asset_redirect( $location ) ) {
+				wp_delete_file( $file );
+				return new \WP_Error( 'convertrack_release_redirect', __( 'GitHub returned an unsafe release-asset redirect.', 'convertrack-click-conversion-analytics' ) );
+			}
+			// Deliberately omit Authorization on the signed object-storage URL.
+			$response = wp_safe_remote_get(
+				$location,
+				array(
+					'timeout'            => 300,
+					'redirection'        => 2,
+					'reject_unsafe_urls' => true,
+					'stream'             => true,
+					'filename'           => $file,
+					'headers'            => array( 'User-Agent' => 'Convertrack/' . CONVERTRACK_VERSION ),
+				)
+			);
+			if ( is_wp_error( $response ) ) {
+				wp_delete_file( $file );
+				return $response;
+			}
+			$code = (int) wp_remote_retrieve_response_code( $response );
+		}
+
+		if ( $code < 200 || $code >= 300 || ! file_exists( $file ) || 0 === (int) filesize( $file ) ) {
+			wp_delete_file( $file );
+			return new \WP_Error( 'convertrack_release_download', sprintf( /* translators: %d: HTTP response code. */ __( 'The verified release asset could not be downloaded (HTTP %d).', 'convertrack-click-conversion-analytics' ), $code ) );
+		}
+		return $file;
+	}
+
+	/** Validate GitHub's short-lived release object-storage redirect. */
+	private function is_safe_asset_redirect( $url ) {
+		$parts = wp_parse_url( (string) $url );
+		if ( ! is_array( $parts ) || 'https' !== strtolower( isset( $parts['scheme'] ) ? $parts['scheme'] : '' ) || empty( $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return false;
+		}
+		$host = strtolower( rtrim( $parts['host'], '.' ) );
+		return 'objects.githubusercontent.com' === $host || ( strlen( $host ) > 22 && '.githubusercontent.com' === substr( $host, -22 ) );
 	}
 
 	/**
@@ -322,7 +489,7 @@ class Updater {
 		$item->new_version  = $release['version'];
 		$item->url          = $data['PluginURI'];
 		$item->package      = $release['package'];
-		$item->tested       = isset( $data['RequiresWP'] ) ? $data['RequiresWP'] : '';
+		$item->tested       = isset( $data['Tested'] ) ? $data['Tested'] : '';
 		$item->requires_php = isset( $data['RequiresPHP'] ) ? $data['RequiresPHP'] : '';
 		$item->icons        = array();
 		$item->banners      = array();
@@ -349,7 +516,9 @@ class Updater {
 		if ( ! function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		return get_plugin_data( $this->file, false, false );
+		$data = get_plugin_data( $this->file, false, false );
+		$extra = get_file_data( $this->file, array( 'Tested' => 'Tested up to' ) );
+		return array_merge( $data, $extra );
 	}
 
 	/**

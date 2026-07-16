@@ -7,13 +7,21 @@
 
 namespace Convertrack\NotFound;
 
+use Convertrack\Owner_Lock;
+use Convertrack\Safe_Sitemap_Fetcher;
+
 defined( 'ABSPATH' ) || exit;
+
+require_once dirname( __DIR__ ) . '/class-safe-sitemap-fetcher.php';
+require_once dirname( __DIR__ ) . '/class-owner-lock.php';
 
 class Sitemap_Source {
 
 	const MAX_SITEMAPS = 100;
 	const MAX_DEPTH    = 3;
 	const MAX_URLS     = 5000;
+	const STATE_OPTION = 'convertrack_404_sitemap_scan_state';
+	const LOCK_OPTION  = 'convertrack_404_sitemap_scan_lock';
 
 	/**
 	 * Refresh valid URL cache.
@@ -21,38 +29,124 @@ class Sitemap_Source {
 	 * @return array|\WP_Error
 	 */
 	public static function refresh() {
-		$started = current_time( 'mysql' );
-		$stored  = 0;
-		$errors  = 0;
-
-		foreach ( self::default_sitemaps() as $sitemap ) {
-			$seen = array();
-			$urls = self::scan_sitemap( $sitemap, 0, $seen );
-			if ( is_wp_error( $urls ) ) {
-				$errors++;
-				Logger::warning( 'sitemap', 'Sitemap scan failed.', array( 'sitemap' => $sitemap, 'error' => $urls->get_error_message() ) );
-				continue;
-			}
-			foreach ( $urls as $url ) {
-				if ( Database::upsert_valid_url( $url, array( 'source' => 'sitemap', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 80 ) ) ) {
-					$stored++;
-				}
-			}
-			if ( $stored >= self::MAX_URLS ) {
-				break;
-			}
+		$owner = Owner_Lock::acquire( self::LOCK_OPTION, 300 );
+		if ( false === $owner ) {
+			return new \WP_Error( 'convertrack_404_sitemap_busy', __( 'A 404 sitemap scan is already running.', 'convertrack-click-conversion-analytics' ), array( 'status' => 409 ) );
 		}
 
-		$stored += self::refresh_wordpress_objects();
-		Database::mark_valid_urls_stale( $started );
-		update_option( 'convertrack_404_last_sitemap_refresh', current_time( 'mysql' ), false );
-		Logger::info( 'sitemap', '404 Monitor valid URL cache refreshed.', array( 'stored' => $stored, 'errors' => $errors ) );
+		try {
+			$state = get_option( self::STATE_OPTION, array() );
+			if ( ! is_array( $state ) || empty( $state['status'] ) || ! in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
+				$state = Safe_Sitemap_Fetcher::start(
+					self::default_sitemaps(),
+					array(
+						'context'                => '404-monitor',
+						'max_sitemaps'           => self::MAX_SITEMAPS,
+						'max_depth'              => self::MAX_DEPTH,
+						'max_urls'               => self::MAX_URLS,
+						'requests_per_step'      => 3,
+						'request_timeout'        => 8,
+						'step_seconds'           => 10,
+						'total_seconds'          => 180,
+						'max_redirects'          => 3,
+						'max_compressed_bytes'   => 2 * MB_IN_BYTES,
+						'max_decompressed_bytes' => 8 * MB_IN_BYTES,
+						'user_agent'             => 'Convertrack/' . CONVERTRACK_VERSION . ' 404-monitor',
+					)
+				);
+				if ( is_wp_error( $state ) ) {
+					return $state;
+				}
 
-		return array(
-			'stored' => $stored,
-			'errors' => $errors,
-			'total'  => Database::valid_url_count(),
+				$state['convertrack_started_at'] = current_time( 'mysql' );
+				$state['convertrack_stored']     = self::refresh_wordpress_objects( $owner );
+				$state['convertrack_write_errors'] = 0;
+				update_option( self::STATE_OPTION, $state, false );
+			}
+			$result = self::run_scan_step( $state );
+		} finally {
+			Owner_Lock::release( self::LOCK_OPTION, $owner );
+		}
+
+		if ( ! is_wp_error( $result ) && ! empty( $result['pending'] ) ) {
+			Cron::kick_refresh_step( 30 );
+		}
+		return $result;
+	}
+
+	/**
+	 * Continue a persisted, bounded sitemap scan.
+	 *
+	 * @return array|\WP_Error
+	 */
+	public static function continue_refresh() {
+		$owner = Owner_Lock::acquire( self::LOCK_OPTION, 300 );
+		if ( false === $owner ) {
+			return array( 'stored' => 0, 'errors' => 0, 'total' => Database::valid_url_count(), 'pending' => true, 'busy' => true );
+		}
+		try {
+			$state = get_option( self::STATE_OPTION, array() );
+			if ( ! is_array( $state ) || empty( $state['status'] ) ) {
+				return new \WP_Error( 'convertrack_404_sitemap_state_missing', __( 'No resumable 404 sitemap scan was found.', 'convertrack-click-conversion-analytics' ) );
+			}
+			return self::run_scan_step( $state );
+		} finally {
+			Owner_Lock::release( self::LOCK_OPTION, $owner );
+		}
+	}
+
+	/**
+	 * Execute and persist one safe fetcher step while the owner lock is held.
+	 *
+	 * @param array $state Scan state.
+	 * @return array|\WP_Error
+	 */
+	private static function run_scan_step( array $state ) {
+		$step = Safe_Sitemap_Fetcher::step( $state );
+		if ( is_wp_error( $step ) ) {
+			return $step;
+		}
+		$state = $step['state'];
+		foreach ( (array) $step['url_batch'] as $entry ) {
+			$url = isset( $entry['url'] ) ? $entry['url'] : '';
+			if ( ! self::is_site_url( $url ) ) {
+				continue;
+			}
+			$stored = Database::upsert_valid_url( $url, array( 'source' => 'sitemap', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 80 ) );
+			if ( is_wp_error( $stored ) ) {
+				$state['convertrack_write_errors'] = isset( $state['convertrack_write_errors'] ) ? (int) $state['convertrack_write_errors'] + 1 : 1;
+				continue;
+			}
+			$state['convertrack_stored'] = isset( $state['convertrack_stored'] ) ? (int) $state['convertrack_stored'] + 1 : 1;
+		}
+
+		$terminal = in_array( $state['status'], array( 'completed', 'partial', 'failed' ), true );
+		if ( $terminal && 'completed' === $state['status'] && empty( $state['convertrack_write_errors'] ) ) {
+			$stale = Database::mark_valid_urls_stale( $state['convertrack_started_at'] );
+			if ( is_wp_error( $stale ) ) {
+				$state['convertrack_write_errors'] = 1;
+				$state['partial'] = true;
+				$state['status'] = 'partial';
+			}
+		}
+		if ( $terminal ) {
+			update_option( 'convertrack_404_last_sitemap_refresh', current_time( 'mysql' ), false );
+		}
+		update_option( self::STATE_OPTION, $state, false );
+
+		$errors = count( isset( $state['errors'] ) ? (array) $state['errors'] : array() ) + ( isset( $state['convertrack_write_errors'] ) ? (int) $state['convertrack_write_errors'] : 0 );
+		$result = array(
+			'stored'  => isset( $state['convertrack_stored'] ) ? (int) $state['convertrack_stored'] : 0,
+			'errors'  => $errors,
+			'total'   => Database::valid_url_count(),
+			'pending' => ! $terminal,
+			'status'  => $state['status'],
+			'partial' => ! empty( $state['partial'] ),
 		);
+		if ( $terminal ) {
+			Logger::info( 'sitemap', '404 Monitor valid URL cache refresh reached a terminal state.', $result );
+		}
+		return $result;
 	}
 
 	/**
@@ -75,9 +169,10 @@ class Sitemap_Source {
 	/**
 	 * Refresh candidates from WordPress content, archives and terms.
 	 *
+	 * @param string $owner Sitemap scan lock owner.
 	 * @return int Stored candidates.
 	 */
-	private static function refresh_wordpress_objects() {
+	private static function refresh_wordpress_objects( $owner = '' ) {
 		$stored    = 0;
 		$excluded  = (array) Settings::get( 'exclude_post_types', array() );
 		$post_types = get_post_types( array( 'public' => true ), 'objects' );
@@ -88,7 +183,7 @@ class Sitemap_Source {
 			}
 			if ( ! empty( $object->has_archive ) ) {
 				$archive = get_post_type_archive_link( $post_type );
-				if ( $archive && Database::upsert_valid_url( $archive, array( 'post_type' => $post_type, 'source' => 'post_type_archive', 'tokens' => Matcher::tokens_string( $archive ), 'priority' => 60 ) ) ) {
+				if ( $archive && self::store_candidate( $archive, array( 'post_type' => $post_type, 'source' => 'post_type_archive', 'tokens' => Matcher::tokens_string( $archive ), 'priority' => 60 ) ) ) {
 					$stored++;
 				}
 			}
@@ -115,9 +210,12 @@ class Sitemap_Source {
 					if ( ! $url ) {
 						continue;
 					}
-					if ( Database::upsert_valid_url( $url, array( 'post_id' => (int) $post_id, 'post_type' => $post_type, 'source' => 'post', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 100 ) ) ) {
+					if ( self::store_candidate( $url, array( 'post_id' => (int) $post_id, 'post_type' => $post_type, 'source' => 'post', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 100 ) ) ) {
 						$stored++;
 					}
+				}
+				if ( '' !== $owner ) {
+					Owner_Lock::heartbeat( self::LOCK_OPTION, $owner, 300 );
 				}
 				$page++;
 			} while ( ! empty( $query->posts ) && count( $query->posts ) >= 500 );
@@ -128,123 +226,54 @@ class Sitemap_Source {
 			if ( in_array( $taxonomy, $excluded_tax, true ) ) {
 				continue;
 			}
-			$terms = get_terms(
-				array(
-					'taxonomy'   => $taxonomy,
-					'hide_empty' => false,
-					'number'     => 1000,
-				)
-			);
-			if ( is_wp_error( $terms ) ) {
-				continue;
-			}
-			foreach ( $terms as $term ) {
-				$url = get_term_link( $term );
-				if ( is_wp_error( $url ) ) {
-					continue;
+			$offset = 0;
+			do {
+				$terms = get_terms(
+					array(
+						'taxonomy'   => $taxonomy,
+						'hide_empty' => false,
+						'number'     => 500,
+						'offset'     => $offset,
+						'orderby'    => 'term_id',
+						'order'      => 'ASC',
+					)
+				);
+				if ( is_wp_error( $terms ) ) {
+					break;
 				}
-				if ( Database::upsert_valid_url( $url, array( 'taxonomy' => $taxonomy, 'term_id' => (int) $term->term_id, 'source' => 'taxonomy_archive', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 55 ) ) ) {
-					$stored++;
+				foreach ( $terms as $term ) {
+					$url = get_term_link( $term );
+					if ( is_wp_error( $url ) ) {
+						continue;
+					}
+					if ( self::store_candidate( $url, array( 'taxonomy' => $taxonomy, 'term_id' => (int) $term->term_id, 'source' => 'taxonomy_archive', 'tokens' => Matcher::tokens_string( $url ), 'priority' => 55 ) ) ) {
+						$stored++;
+					}
 				}
-			}
+				if ( '' !== $owner ) {
+					Owner_Lock::heartbeat( self::LOCK_OPTION, $owner, 300 );
+				}
+				$offset += count( $terms );
+			} while ( count( $terms ) >= 500 );
 		}
 
 		return $stored;
 	}
 
 	/**
-	 * Recursive sitemap scan.
+	 * Persist one candidate and surface write failures without counting them.
 	 *
-	 * @param string $sitemap_url Sitemap URL.
-	 * @param int    $depth       Depth.
-	 * @param array  $seen        Seen map.
-	 * @return array|\WP_Error
+	 * @param string $url  Candidate URL.
+	 * @param array  $args Candidate fields.
+	 * @return bool
 	 */
-	private static function scan_sitemap( $sitemap_url, $depth, array &$seen ) {
-		$sitemap_url = esc_url_raw( $sitemap_url );
-		if ( '' === $sitemap_url || $depth > self::MAX_DEPTH || count( $seen ) >= self::MAX_SITEMAPS || isset( $seen[ $sitemap_url ] ) ) {
-			return array();
+	private static function store_candidate( $url, array $args ) {
+		$result = Database::upsert_valid_url( $url, $args );
+		if ( is_wp_error( $result ) ) {
+			Logger::error( 'sitemap', 'Valid URL candidate write failed.', array( 'url' => $url, 'error' => $result->get_error_message() ) );
+			return false;
 		}
-		$seen[ $sitemap_url ] = true;
-
-		$response = wp_remote_get(
-			$sitemap_url,
-			array(
-				'timeout'     => 15,
-				'redirection' => 5,
-				'user-agent'  => 'Convertrack/' . CONVERTRACK_VERSION . ' 404-monitor',
-			)
-		);
-		if ( is_wp_error( $response ) ) {
-			return $response;
-		}
-		$code = (int) wp_remote_retrieve_response_code( $response );
-		if ( $code < 200 || $code >= 300 ) {
-			return new \WP_Error( 'convertrack_404_sitemap_http', sprintf( 'Sitemap returned HTTP %d.', $code ) );
-		}
-
-		$body = wp_remote_retrieve_body( $response );
-		if ( preg_match( '/\.gz($|\?)/i', $sitemap_url ) && function_exists( 'gzdecode' ) ) {
-			$decoded = gzdecode( $body );
-			if ( false !== $decoded ) {
-				$body = $decoded;
-			}
-		}
-		if ( ! function_exists( 'simplexml_load_string' ) ) {
-			return new \WP_Error( 'convertrack_404_simplexml_missing', __( 'SimpleXML is required to parse sitemaps.', 'convertrack-click-conversion-analytics' ) );
-		}
-
-		$previous = libxml_use_internal_errors( true );
-		$xml      = simplexml_load_string( $body, 'SimpleXMLElement', LIBXML_NOCDATA );
-		libxml_clear_errors();
-		libxml_use_internal_errors( $previous );
-		if ( false === $xml ) {
-			return new \WP_Error( 'convertrack_404_bad_sitemap_xml', __( 'The sitemap XML could not be parsed.', 'convertrack-click-conversion-analytics' ) );
-		}
-
-		$out = array();
-		$children = self::xpath_text( $xml, '//*[local-name()="sitemap"]/*[local-name()="loc"]' );
-		if ( ! empty( $children ) ) {
-			foreach ( $children as $child ) {
-				$child_urls = self::scan_sitemap( $child, $depth + 1, $seen );
-				if ( is_wp_error( $child_urls ) ) {
-					continue;
-				}
-				$out = array_merge( $out, $child_urls );
-				if ( count( $out ) >= self::MAX_URLS ) {
-					break;
-				}
-			}
-			return array_slice( array_values( array_unique( $out ) ), 0, self::MAX_URLS );
-		}
-
-		foreach ( self::xpath_text( $xml, '//*[local-name()="url"]/*[local-name()="loc"]' ) as $url ) {
-			if ( self::is_site_url( $url ) ) {
-				$out[] = $url;
-			}
-			if ( count( $out ) >= self::MAX_URLS ) {
-				break;
-			}
-		}
-		return array_values( array_unique( $out ) );
-	}
-
-	/**
-	 * XPath text helper.
-	 *
-	 * @param \SimpleXMLElement $xml XML.
-	 * @param string            $query Query.
-	 * @return array
-	 */
-	private static function xpath_text( $xml, $query ) {
-		$out = array();
-		foreach ( (array) $xml->xpath( $query ) as $item ) {
-			$value = trim( (string) $item );
-			if ( '' !== $value ) {
-				$out[] = $value;
-			}
-		}
-		return array_values( array_unique( $out ) );
+		return (bool) $result;
 	}
 
 	/**
@@ -254,12 +283,6 @@ class Sitemap_Source {
 	 * @return bool
 	 */
 	private static function is_site_url( $url ) {
-		$home = wp_parse_url( home_url( '/' ) );
-		$test = wp_parse_url( $url );
-		if ( empty( $home['host'] ) || empty( $test['host'] ) ) {
-			return false;
-		}
-		return strtolower( preg_replace( '/^www\./', '', $home['host'] ) ) === strtolower( preg_replace( '/^www\./', '', $test['host'] ) );
+		return ! empty( Database::normalize_source( $url ) );
 	}
 }
-

@@ -14,14 +14,15 @@ class Activator {
 	/**
 	 * Create tables, seed defaults and schedule background jobs.
 	 */
-	public static function activate() {
-		Database::install();
+	public static function activate( $network_wide = false ) {
+		$core_install = Database::install();
+		$ingestion_install = Ingestion_Guard::install();
 		$gsc_install = \Convertrack\GSC\Database::install();
 		$keywords_install = \Convertrack\GSC\Keywords_Database::install();
 		$notfound_install = \Convertrack\NotFound\Database::install();
 
 		if ( false === get_option( Settings::OPTION, false ) ) {
-			add_option( Settings::OPTION, Settings::defaults() );
+			add_option( Settings::OPTION, Settings::defaults(), '', false );
 		}
 		if ( false === get_option( \Convertrack\GSC\Settings::OPTION, false ) ) {
 			add_option( \Convertrack\GSC\Settings::OPTION, \Convertrack\GSC\Settings::defaults(), '', false );
@@ -31,6 +32,15 @@ class Activator {
 		}
 		if ( false === get_option( \Convertrack\NotFound\Settings::OPTION, false ) ) {
 			add_option( \Convertrack\NotFound\Settings::OPTION, \Convertrack\NotFound\Settings::defaults(), '', false );
+		}
+		if ( is_wp_error( $core_install ) || is_wp_error( $ingestion_install ) ) {
+			$core_settings            = Settings::all();
+			$core_settings['enabled'] = 0;
+			Settings::save( $core_settings );
+			$message = is_wp_error( $core_install ) ? $core_install->get_error_message() : $ingestion_install->get_error_message();
+			update_option( Database::SCHEMA_STATUS_OPTION, 'unhealthy', false );
+			update_option( Database::SCHEMA_ERROR_OPTION, $message, false );
+			set_transient( 'convertrack_core_migration_error', $message, HOUR_IN_SECONDS );
 		}
 		if ( is_wp_error( $gsc_install ) ) {
 			$gsc_settings            = \Convertrack\GSC\Settings::all();
@@ -58,6 +68,12 @@ class Activator {
 		\Convertrack\GSC\Cron::schedule();
 		\Convertrack\GSC\Keywords_Cron::schedule();
 		\Convertrack\NotFound\Cron::schedule();
+		if ( $network_wide && is_multisite() ) {
+			$network_result = Lifecycle::network_activate();
+			if ( is_wp_error( $network_result ) ) {
+				set_transient( 'convertrack_network_provision_error', $network_result->get_error_message(), HOUR_IN_SECONDS );
+			}
+		}
 
 		// Let permalink/rewrite-dependent REST routes settle.
 		flush_rewrite_rules();

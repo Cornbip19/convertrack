@@ -15,9 +15,10 @@ class Presence {
 	 * Handle a heartbeat ping (keeps a session marked as "on the site now").
 	 *
 	 * @param array $payload Decoded JSON body.
+	 * @param array $context Admission context from Ingestion_Guard.
 	 * @return array|\WP_Error
 	 */
-	public static function heartbeat( array $payload ) {
+	public static function heartbeat( array $payload, array $context = array() ) {
 		if ( ! Settings::get( 'enabled' ) ) {
 			return array( 'ok' => false, 'disabled' => true );
 		}
@@ -33,19 +34,35 @@ class Presence {
 			return array( 'ok' => false, 'ignored' => 'bot' );
 		}
 
-		if ( Collector::is_rate_limited() ) {
-			return new \WP_Error( 'convertrack_rate_limited', 'Too many requests.', array( 'status' => 429 ) );
-		}
-
-		$url     = Collector::sanitize_relative_url( isset( $payload['url'] ) ? $payload['url'] : '' );
-		if ( Collector::is_no_track_url( $url ) ) {
+		$raw_url = isset( $payload['url'] ) && is_scalar( $payload['url'] ) ? (string) $payload['url'] : '';
+		if ( Collector::is_no_track_url( $raw_url ) ) {
 			return array( 'ok' => false, 'ignored' => 'preview' );
 		}
+		$identity = Collector::canonicalize_page(
+			$raw_url,
+			isset( $payload['pid'] ) ? absint( $payload['pid'] ) : 0,
+			array(
+				'page_key'    => isset( $payload['pk'] ) && is_scalar( $payload['pk'] ) ? (string) $payload['pk'] : '',
+				'object_type' => isset( $payload['ot'] ) && is_scalar( $payload['ot'] ) ? (string) $payload['ot'] : '',
+				'object_id'   => isset( $payload['oid'] ) ? absint( $payload['oid'] ) : 0,
+				'token'       => isset( $payload['pit'] ) && is_scalar( $payload['pit'] ) ? (string) $payload['pit'] : '',
+			)
+		);
+		$url      = $identity['url'];
+		if ( '' === $url ) {
+			return new \WP_Error( 'convertrack_bad_url', 'Invalid page URL.', array( 'status' => 400 ) );
+		}
 
-		$post_id = isset( $payload['pid'] ) ? absint( $payload['pid'] ) : 0;
+		$post_id = (int) $identity['post_id'];
 		$country = Geo::current_country();
 
-		Database::touch_session( $session_id, $visitor_id, $url, $post_id, 0, 0, $country );
+		$touched = Database::touch_session( $session_id, $visitor_id, $url, $post_id, 0, 0, $country, false, $identity['page_key'] );
+		if ( is_wp_error( $touched ) ) {
+			return $touched;
+		}
+		if ( false === $touched ) {
+			return new \WP_Error( 'convertrack_session_write_failed', 'The analytics session could not be updated.', array( 'status' => 503 ) );
+		}
 
 		return array( 'ok' => true );
 	}

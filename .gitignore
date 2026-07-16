@@ -10,3 +10,7 @@ Thumbs.db
 # Dependencies (none required at runtime)
 /node_modules/
 /vendor/
+
+# Test runner state
+.phpunit.result.cache
+/wporg/

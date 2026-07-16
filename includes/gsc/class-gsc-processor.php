@@ -9,6 +9,8 @@ namespace Convertrack\GSC;
 
 defined( 'ABSPATH' ) || exit;
 
+require_once dirname( __DIR__ ) . '/class-owner-lock.php';
+
 class Processor {
 
 	const QUOTA_OPTION      = 'convertrack_gsc_quota_usage';
@@ -16,6 +18,7 @@ class Processor {
 	const LAST_ERROR_OPTION = 'convertrack_gsc_last_batch_error';
 	const LOCK_TIMEOUT      = 120;
 	const PERMISSION_ABORT_THRESHOLD = 3;
+	const SITEMAP_SUBMISSIONS_OPTION = 'convertrack_gsc_sitemap_submissions';
 
 	/**
 	 * Process a batch of URLs.
@@ -29,7 +32,8 @@ class Processor {
 			return new \WP_Error( 'convertrack_gsc_not_ready', __( 'Google Index Monitor is not connected or enabled.', 'convertrack-click-conversion-analytics' ), array( 'status' => 409 ) );
 		}
 
-		if ( ! self::acquire_lock() ) {
+		$owner = \Convertrack\Owner_Lock::acquire( self::LOCK_OPTION, self::LOCK_TIMEOUT );
+		if ( false === $owner ) {
 			return array(
 				'processed'     => 0,
 				'errors'        => 0,
@@ -44,19 +48,20 @@ class Processor {
 		}
 
 		try {
-			return self::run_batch( (int) $limit );
+			return self::run_batch( (int) $limit, $owner );
 		} finally {
-			delete_option( self::LOCK_OPTION );
+			\Convertrack\Owner_Lock::release( self::LOCK_OPTION, $owner );
 		}
 	}
 
 	/**
 	 * Inspect due URLs against the Google Search Console API.
 	 *
-	 * @param int $limit Optional cap on URLs inspected this call.
+	 * @param int    $limit Optional cap on URLs inspected this call.
+	 * @param string $owner Lock owner token.
 	 * @return array
 	 */
-	private static function run_batch( $limit ) {
+	private static function run_batch( $limit, $owner ) {
 		$daily_limit = (int) Settings::get( 'daily_quota_limit', 2000 );
 		$used        = self::quota_used();
 		if ( $used >= $daily_limit ) {
@@ -80,9 +85,20 @@ class Processor {
 			$batch_size = max( 1, min( $batch_size, $limit ) );
 		}
 
-		Database::release_stale_checking();
+		$released = Database::release_stale_checking();
+		if ( is_wp_error( $released ) ) {
+			return $released;
+		}
 
 		$rows              = Database::due_batch( $batch_size );
+		if ( empty( $rows ) ) {
+			return array(
+				'processed' => 0, 'errors' => 0, 'remaining' => 0,
+				'quota_reached' => false, 'rate_limited' => false, 'budget_reached' => false,
+				'aborted' => false, 'abort_reason' => '', 'last_error' => '',
+				'quota' => self::quota_state(),
+			);
+		}
 		$processed         = 0;
 		$errors            = 0;
 		$permission_streak = 0;
@@ -90,12 +106,25 @@ class Processor {
 		$aborted           = false;
 		$abort_reason      = '';
 		$last_error        = '';
+		$rate_limited      = false;
+		$budget_reached    = false;
+		$batch_started     = microtime( true );
+		$request_budget    = max( 1, min( 100, (int) apply_filters( 'convertrack_gsc_inspection_request_budget', 50 ) ) );
+		$wall_budget       = max( 5, min( 60, (int) apply_filters( 'convertrack_gsc_inspection_wall_seconds', 20 ) ) );
+		$submitted_sitemaps = array();
 
 		Logger::info( 'processor', 'GSC inspection batch started.', array( 'requested' => $batch_size, 'found' => count( $rows ) ) );
 
 		foreach ( $rows as $row ) {
-			// Heartbeat so a live batch can't outlast LOCK_TIMEOUT and be taken over.
-			update_option( self::LOCK_OPTION, time(), false );
+			if ( ( $processed + $errors ) >= $request_budget || ( microtime( true ) - $batch_started ) >= $wall_budget ) {
+				$budget_reached = true;
+				break;
+			}
+			if ( ! \Convertrack\Owner_Lock::heartbeat( self::LOCK_OPTION, $owner, self::LOCK_TIMEOUT ) ) {
+				$aborted      = true;
+				$abort_reason = __( 'The inspection worker lost ownership of its lease.', 'convertrack-click-conversion-analytics' );
+				break;
+			}
 
 			if ( self::quota_used() >= $daily_limit ) {
 				Database::mark_pending_due_to_quota( (int) $row['id'] );
@@ -105,7 +134,12 @@ class Processor {
 				break;
 			}
 
-			Database::mark_checking( (int) $row['id'] );
+			$claimed = Database::mark_checking( (int) $row['id'] );
+			if ( is_wp_error( $claimed ) ) {
+				$aborted      = true;
+				$abort_reason = $claimed->get_error_message();
+				break;
+			}
 			$result = API::inspect_url( $row['url'] );
 
 			if ( is_wp_error( $result ) && self::is_auth_error( $result ) ) {
@@ -122,18 +156,32 @@ class Processor {
 			self::increment_quota();
 
 			if ( is_wp_error( $result ) ) {
-				if ( API::is_quota_error( $result ) ) {
+				if ( API::is_daily_quota_error( $result ) ) {
 					Database::mark_pending_due_to_quota( (int) $row['id'] );
 					Database::mark_due_pending_due_to_quota();
 					Logger::warning( 'processor', 'Google API quota was reached.', array( 'url' => $row['url'], 'error' => $result->get_error_message() ) );
 					$quota_reached = true;
 					break;
 				}
+				if ( API::is_rate_limit_error( $result ) ) {
+					$delay = API::retry_after_seconds( $result, 5 * MINUTE_IN_SECONDS );
+					Database::mark_rate_limited( (int) $row['id'], $delay );
+					Database::mark_due_rate_limited( $delay );
+					self::remember_rate_limit( $delay );
+					Logger::warning( 'processor', 'Google temporarily rate limited URL inspection.', array( 'retry_after' => $delay, 'error' => $result->get_error_message() ) );
+					$rate_limited = true;
+					break;
+				}
 
 				$errors++;
 				$last_error        = $result->get_error_message();
 				$permission_streak = API::is_permission_error( $result ) ? $permission_streak + 1 : 0;
-				Database::save_error( (int) $row['id'], $last_error, self::error_retry_delay( $row ) );
+				$saved_error = Database::save_error( (int) $row['id'], $last_error, self::error_retry_delay( $row ) );
+				if ( is_wp_error( $saved_error ) ) {
+					$aborted      = true;
+					$abort_reason = $saved_error->get_error_message();
+					break;
+				}
 				Logger::error( 'processor', 'URL inspection failed.', array( 'url' => $row['url'], 'error' => $last_error ) );
 
 				if ( $permission_streak >= self::PERMISSION_ABORT_THRESHOLD ) {
@@ -162,8 +210,13 @@ class Processor {
 			}
 
 			$permission_streak = 0;
-			$result = self::post_process_result( $row, $result );
-			Database::save_inspection_result( (int) $row['id'], $result );
+			$result = self::post_process_result( $row, $result, $submitted_sitemaps );
+			$saved = Database::save_inspection_result( (int) $row['id'], $result );
+			if ( is_wp_error( $saved ) ) {
+				$aborted      = true;
+				$abort_reason = $saved->get_error_message();
+				break;
+			}
 			$processed++;
 		}
 
@@ -173,47 +226,36 @@ class Processor {
 
 		$remaining = Database::due_count();
 
-		update_option( 'convertrack_gsc_last_sync_time', current_time( 'mysql' ), false );
+		$sync_time = current_time( 'mysql' );
+		$sync_saved = update_option( 'convertrack_gsc_last_sync_time', $sync_time, false );
+		if ( ! $sync_saved && get_option( 'convertrack_gsc_last_sync_time' ) !== $sync_time ) {
+			$aborted      = true;
+			$abort_reason = __( 'The indexing sync watermark could not be saved.', 'convertrack-click-conversion-analytics' );
+		}
 		Database::clear_summary_cache();
-		if ( 0 === $remaining || $aborted || $quota_reached ) {
+		if ( 0 === $remaining || $aborted || $quota_reached || $rate_limited ) {
 			// Snapshot recomputes the full summary — only do it at run boundaries,
 			// not on every small chunk of an admin-driven loop.
-			Database::record_snapshot();
+			$snapshot = Database::record_snapshot();
+			if ( is_wp_error( $snapshot ) ) {
+				$aborted      = true;
+				$abort_reason = $snapshot->get_error_message();
+			}
 		}
-		Logger::info( 'processor', 'GSC inspection batch completed.', array( 'processed' => $processed, 'errors' => $errors ) );
+		Logger::info( 'processor', 'GSC inspection batch completed.', array( 'processed' => $processed, 'errors' => $errors, 'budget_reached' => $budget_reached ) );
 
 		return array(
 			'processed'     => $processed,
 			'errors'        => $errors,
 			'remaining'     => $remaining,
 			'quota_reached' => $quota_reached,
+			'rate_limited'  => $rate_limited,
+			'budget_reached' => $budget_reached,
 			'aborted'       => $aborted,
 			'abort_reason'  => $abort_reason,
 			'last_error'    => $last_error,
 			'quota'         => self::quota_state(),
 		);
-	}
-
-	/**
-	 * Acquire the batch lock so concurrent runs (admin loop + cron) can't overlap.
-	 *
-	 * add_option() is atomic — it fails when the row already exists. A lock older
-	 * than LOCK_TIMEOUT is treated as abandoned and taken over.
-	 *
-	 * @return bool
-	 */
-	private static function acquire_lock() {
-		if ( add_option( self::LOCK_OPTION, time(), '', 'no' ) ) {
-			return true;
-		}
-
-		$held = (int) get_option( self::LOCK_OPTION );
-		if ( $held && ( time() - $held ) < self::LOCK_TIMEOUT ) {
-			return false;
-		}
-
-		update_option( self::LOCK_OPTION, time(), false );
-		return true;
 	}
 
 	/**
@@ -256,13 +298,25 @@ class Processor {
 	}
 
 	/**
+	 * Persist a temporary rate-limit window separately from daily usage.
+	 *
+	 * @param int $delay Retry delay seconds.
+	 */
+	private static function remember_rate_limit( $delay ) {
+		$state                       = self::quota_state();
+		$state['state']              = 'rate_limited';
+		$state['rate_limited_until'] = time() + max( MINUTE_IN_SECONDS, (int) $delay );
+		update_option( self::QUOTA_OPTION, $state, false );
+	}
+
+	/**
 	 * Reconcile API result with sitemap and Indexing API rules.
 	 *
 	 * @param array $row    Queue row.
 	 * @param array $result Parsed API result.
 	 * @return array
 	 */
-	private static function post_process_result( array $row, array $result ) {
+	private static function post_process_result( array $row, array $result, array &$submitted_sitemaps ) {
 		$status = isset( $result['index_status'] ) ? $result['index_status'] : 'not_indexed';
 		if ( 'indexed' === $status ) {
 			return $result;
@@ -280,10 +334,16 @@ class Processor {
 
 		if ( self::should_submit_sitemap( $row, $status ) ) {
 			$sitemap = ! empty( $row['sitemap_url'] ) ? $row['sitemap_url'] : Settings::get( 'sitemap_url' );
+			$key     = md5( strtolower( (string) $sitemap ) );
+			if ( isset( $submitted_sitemaps[ $key ] ) ) {
+				return $result;
+			}
+			$submitted_sitemaps[ $key ] = true;
 			$submit  = API::submit_sitemap( $sitemap );
 			if ( is_wp_error( $submit ) ) {
 				Logger::warning( 'sitemap-submit', 'Sitemap resubmission failed.', array( 'sitemap' => $sitemap, 'error' => $submit->get_error_message() ) );
 			} else {
+				self::remember_sitemap_submission( $sitemap );
 				$result['index_status']  = 'pending_from_sitemap';
 				$result['next_check_at'] = Database::mysql_time( rand( 24, 72 ) * HOUR_IN_SECONDS );
 				$result['submitted']     = true;
@@ -310,17 +370,27 @@ class Processor {
 			return false;
 		}
 
-		if ( empty( $row['last_submitted_at'] ) ) {
-			return true;
-		}
-
-		$last = strtotime( $row['last_submitted_at'] );
-		if ( ! $last ) {
-			return true;
-		}
-
 		$cooldown = max( 1, (int) Settings::get( 'sitemap_submit_cooldown_hours', 24 ) ) * HOUR_IN_SECONDS;
-		return ( time() - $last ) >= $cooldown;
+		$history  = get_option( self::SITEMAP_SUBMISSIONS_OPTION, array() );
+		$history  = is_array( $history ) ? $history : array();
+		$sitemap  = ! empty( $row['sitemap_url'] ) ? $row['sitemap_url'] : Settings::get( 'sitemap_url' );
+		$key      = md5( strtolower( (string) $sitemap ) );
+		$last     = isset( $history[ $key ] ) ? (int) $history[ $key ] : 0;
+		return ! $last || ( time() - $last ) >= $cooldown;
+	}
+
+	/**
+	 * Record successful sitemap submission once for the whole sitemap.
+	 *
+	 * @param string $sitemap Sitemap URL.
+	 */
+	private static function remember_sitemap_submission( $sitemap ) {
+		$history = get_option( self::SITEMAP_SUBMISSIONS_OPTION, array() );
+		$history = is_array( $history ) ? $history : array();
+		$history[ md5( strtolower( (string) $sitemap ) ) ] = time();
+		arsort( $history );
+		$history = array_slice( $history, 0, 100, true );
+		update_option( self::SITEMAP_SUBMISSIONS_OPTION, $history, false );
 	}
 
 	/**
@@ -344,11 +414,19 @@ class Processor {
 		$today = self::quota_date();
 
 		if ( ! is_array( $state ) || empty( $state['date'] ) || $state['date'] !== $today ) {
-			$state = array( 'date' => $today, 'used' => 0 );
+			$state = array( 'date' => $today, 'used' => 0, 'state' => 'available', 'rate_limited_until' => 0 );
+			update_option( self::QUOTA_OPTION, $state, false );
+		}
+		if ( ! empty( $state['rate_limited_until'] ) && (int) $state['rate_limited_until'] <= time() ) {
+			$state['state']              = 'available';
+			$state['rate_limited_until'] = 0;
 			update_option( self::QUOTA_OPTION, $state, false );
 		}
 
 		$state['limit'] = (int) Settings::get( 'daily_quota_limit', 2000 );
+		if ( (int) $state['used'] >= (int) $state['limit'] ) {
+			$state['state'] = 'daily_exhausted';
+		}
 		return $state;
 	}
 

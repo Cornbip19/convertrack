@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.1
+Stable tag: 2.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -28,11 +28,11 @@ Convertrack answers three questions about your site:
 * Clicks are batched in the browser and delivered with `navigator.sendBeacon`, so tracking never blocks navigation.
 * Events are written in bulk and rolled up into a compact daily-aggregates table by a background job, so dashboards stay fast no matter how many pages or events you have.
 * Configurable raw-data retention keeps the database lean; long-term trends live in the aggregates table.
-* Per-IP rate limiting, a bot filter, optional visitor sampling and full-page-cache compatibility keep ingestion cheap under heavy traffic.
+* Atomic per-IP, per-visitor, and site-wide request/event/byte budgets, a bot filter, optional visitor sampling and full-page-cache-compatible site tokens protect ingestion under heavy traffic.
 
 **Privacy-friendly**
 
-All analytics are stored in your site's own database. No IP addresses, names, or email addresses are collected; only a random identifier kept in the visitor's browser storage. By default no data is sent to any third-party service. "Do Not Track" is honored by default, you can exclude logged-in users, roles, or URLs, and consent-management plugins can gate tracking via the `convertrack_skip_tracking` filter.
+All analytics are stored in your site's own database. Form and editable-control values are never read, IP addresses are not stored, and email/token-like free text is discarded. Page and link query strings are stripped by default; administrators can explicitly allow non-sensitive parameter names, but credential, email, session, reset, and order-key parameters are always denied. A random identifier is kept in the visitor's browser storage. By default no data is sent to any third-party service. Global Privacy Control and the WordPress Consent API statistics purpose are supported, "Do Not Track" is honored by default, and the `convertrack_skip_tracking` filter remains available.
 
 The only optional exception is **Visitor location** (off by default): when you turn it on, a visitor's IP address is sent to a geolocation service to look up their country. The IP is never stored — only the 2-letter country code — and a CDN country header (e.g. Cloudflare) is used first when available to avoid the external call.
 
@@ -48,11 +48,11 @@ Installed from WordPress.org, Convertrack updates through your dashboard like an
 
 == Privacy ==
 
-Convertrack is a first-party analytics tool: every event (pageview, click, traffic source, presence heartbeat) is stored only in this site's own database. It does not collect or store IP addresses, names, or email addresses. A random, non-identifying visitor ID is stored in the browser's local storage to distinguish repeat visits.
+Convertrack is a first-party analytics tool: every event (pageview, click, traffic source, presence heartbeat) is stored only in this site's own database. It never reads form or editable-control values, does not store IP addresses, strips URL queries by default, and discards email/token-like free text. A random, non-identifying visitor ID is stored in the browser's local storage to distinguish repeat visits.
 
 By default no visitor data is transmitted to any external or third-party service. The optional **Visitor location** feature (disabled by default) is the single exception: when enabled, a visitor's IP address is sent to a geolocation service (ip-api.com) only to determine their country. The IP address is not stored — only the resulting two-letter country code. If you enable it, disclose this in your privacy policy and gate it behind consent where required.
 
-By default, visitors whose browser sends a "Do Not Track" signal are not tracked. To require explicit cookie/consent before any tracking, return `true` from the `convertrack_skip_tracking` filter until your consent banner is accepted. A suggested privacy-policy paragraph is added to **Settings → Privacy** for inclusion in your site's policy.
+Global Privacy Control is always respected. By default, visitors whose browser sends a "Do Not Track" signal are not tracked. When the WordPress Consent API is present, a denied `statistics` purpose prevents tracking; the `convertrack_skip_tracking` filter remains available for custom consent systems. A suggested privacy-policy paragraph is added to **Settings → Privacy** for inclusion in your site's policy.
 
 The optional **Search keyword tracking** setting stores supported search terms locally in this site's database. It does not contact search providers or Google Search Console.
 
@@ -98,6 +98,18 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.4.0 =
+* Hardened self-updates for the self-hosted build: release packages are now downloaded through a validated GitHub endpoint, verified against the release's SHA-256 digest before extraction, and cross-checked against the release version after extraction. Releases now also publish a `.sha256` checksum and a machine-readable manifest.
+* Every release is now gated by an automated verification pipeline: WordPress 5.8/PHP 7.4 and latest-WordPress/PHP 8.3 integration test runs, JavaScript tests, tag/version consistency checks, and package structure inspection.
+* Added an ingestion guard with per-IP, per-visitor, and site-wide request/event/byte budgets in dedicated tables, plus a bounded compatibility window that keeps cached copies of the previous tracker script working after the update.
+* Rebuilt daily rollups on an owner-leased staging pipeline so aggregates stay atomic and resumable on large or multi-server sites.
+* Schema migrations now run in administrator context, fail closed (collection pauses instead of writing to a mismatched schema), and surface actionable admin notices plus Site Health checks. Collection resumes automatically on the first wp-admin visit after an update.
+* Added multisite support: network activation provisions sites in bounded background batches, new network sites are provisioned automatically, and WP-CLI commands cover provisioning and cleanup.
+* Added a privacy scrubber for retroactive data hygiene, safer CSV exports (formula-injection defense), and consolidated reset/uninstall around a single storage manifest.
+* Sitemap fetching for the Google Index Monitor and 404 Monitor now blocks private, loopback, and redirect-unsafe destinations (SSRF defense).
+* Reworked the frontend tracker lifecycle: bounded retry for transient delivery failures, safer storage handling, and consent gating that fails closed.
+* Added `Update URI` to the plugin header so WordPress.org can never serve a conflicting update to the self-hosted build.
 
 = 2.3.1 =
 * Fixed the Dashboard health renderer error that displayed `clear is not a function` across multiple data panels.

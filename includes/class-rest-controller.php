@@ -18,6 +18,23 @@ class Rest_Controller {
 	 */
 	public function register() {
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+		add_filter( 'rest_post_dispatch', array( $this, 'ingestion_response_headers' ), 10, 3 );
+	}
+
+	/**
+	 * Add standards-based retry guidance to public quota responses.
+	 *
+	 * @param \WP_HTTP_Response $response REST response.
+	 * @param \WP_REST_Server   $server REST server.
+	 * @param \WP_REST_Request  $request Request.
+	 * @return \WP_HTTP_Response
+	 */
+	public function ingestion_response_headers( $response, $server, $request ) {
+		$route = is_object( $request ) && method_exists( $request, 'get_route' ) ? $request->get_route() : '';
+		if ( 0 === strpos( $route, '/' . self::REST_NAMESPACE . '/' ) && is_object( $response ) && method_exists( $response, 'get_status' ) && 429 === (int) $response->get_status() ) {
+			$response->header( 'Retry-After', '60' );
+		}
+		return $response;
 	}
 
 	/**
@@ -147,6 +164,12 @@ class Rest_Controller {
 				'args'                => array(
 					'range' => array( 'default' => 7, 'sanitize_callback' => 'absint' ),
 					'post'  => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
+					'page_key' => array(
+						'default'           => '',
+						'sanitize_callback' => function ( $value ) {
+							return substr( sanitize_text_field( (string) $value ), 0, 191 );
+						},
+					),
 					'device' => array( 'default' => 'all', 'sanitize_callback' => 'sanitize_key' ),
 				),
 			)
@@ -198,14 +221,30 @@ class Rest_Controller {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function collect( $request ) {
+		$schema_error = $this->ingestion_schema_error();
+		if ( is_wp_error( $schema_error ) ) {
+			return $schema_error;
+		}
+		$size_error = $this->validate_body_size( $request, 'collect' );
+		if ( is_wp_error( $size_error ) ) {
+			Ingestion_Guard::record_metric( 'collect', 'rejected', 1 );
+			return $size_error;
+		}
 		$payload = $this->json_body( $request );
-		$result  = Collector::collect( $payload );
+		$context = Ingestion_Guard::admit( $request, 'collect', $payload, strlen( (string) $request->get_body() ) );
+		if ( is_wp_error( $context ) ) {
+			return $context;
+		}
+		$result  = Collector::collect( $payload, $context );
 
 		if ( is_wp_error( $result ) ) {
+			Ingestion_Guard::record_metric( 'collect', 'failed', 1 );
 			return $result;
 		}
+		$accepted = isset( $result['accepted'] ) ? (int) $result['accepted'] : ( isset( $result['stored'] ) ? (int) $result['stored'] : 0 );
+		Ingestion_Guard::record_metric( 'collect', 'accepted', $accepted );
 
-		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result ), 200 ) );
+		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result, array( 'legacy' => ! empty( $context['legacy'] ) ) ), 200 ) );
 	}
 
 	/**
@@ -215,12 +254,28 @@ class Rest_Controller {
 	 * @return \WP_REST_Response|\WP_Error
 	 */
 	public function heartbeat( $request ) {
+		$schema_error = $this->ingestion_schema_error();
+		if ( is_wp_error( $schema_error ) ) {
+			return $schema_error;
+		}
+		$size_error = $this->validate_body_size( $request, 'heartbeat' );
+		if ( is_wp_error( $size_error ) ) {
+			Ingestion_Guard::record_metric( 'heartbeat', 'rejected', 1 );
+			return $size_error;
+		}
 		$payload = $this->json_body( $request );
-		$result  = Presence::heartbeat( $payload );
+		$context = Ingestion_Guard::admit( $request, 'heartbeat', $payload, strlen( (string) $request->get_body() ) );
+		if ( is_wp_error( $context ) ) {
+			return $context;
+		}
+		$result  = Presence::heartbeat( $payload, $context );
 
 		if ( is_wp_error( $result ) ) {
+			Ingestion_Guard::record_metric( 'heartbeat', 'failed', 1 );
 			return $result;
 		}
+		Ingestion_Guard::record_metric( 'heartbeat', 'accepted', 1 );
+		$result['legacy'] = ! empty( $context['legacy'] );
 
 		return $this->no_cache( new \WP_REST_Response( $result, 200 ) );
 	}
@@ -250,10 +305,13 @@ class Rest_Controller {
 	public function stats_summary( $request ) {
 		$range   = (int) $request->get_param( 'range' );
 		$post_id = (int) $request->get_param( 'post' );
+		$aggregate_range = Database::range_metadata( $range, 'aggregate' );
+		$raw_range       = Database::range_metadata( $range, 'raw' );
+		$raw_days        = max( 1, (int) $raw_range['effective_range'] );
 
 		// Cache the heavy aggregate build briefly so repeated polling / multiple
 		// open tabs do not each run the full query set.
-		$cache_key = 'summary_' . $range . '_' . $post_id;
+		$cache_key = 'summary_' . Database::report_cache_generation() . '_' . $range . '_' . $post_id;
 		$data      = wp_cache_get( $cache_key, 'convertrack' );
 
 		if ( false === $data ) {
@@ -267,16 +325,17 @@ class Rest_Controller {
 				'search_keywords_enabled' => (bool) Settings::get( 'track_search_keywords' ),
 				'top_countries'        => Database::top_countries( $range, 10 ),
 				'geo_enabled'          => (bool) Settings::get( 'enable_geo' ),
-				'avg_session_seconds'  => Database::avg_session_seconds( $range ),
+				'avg_session_seconds'  => Database::avg_session_seconds( $raw_days ),
 				'series'               => Database::clicks_timeseries( $range ),
-				'activity_hours'       => Database::activity_by_hour( $range ),
-				'engagement'           => Database::engagement_breakdown( $range ),
+				'activity_hours'       => Database::activity_by_hour( $raw_days ),
+				'engagement'           => Database::engagement_breakdown( $raw_days ),
 			);
 			wp_cache_set( $cache_key, $data, 'convertrack', 15 );
 		}
 
 		$data['active']        = Presence::active_count();
-		$data['recent_events'] = Database::recent_events( $range, 100 );
+		$data['recent_events'] = Database::recent_events( $raw_days, 100 );
+		$data                  = array_merge( $data, $this->mixed_range_metadata( $range, $aggregate_range, $raw_range ) );
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -288,9 +347,10 @@ class Rest_Controller {
 	 * @return \WP_REST_Response
 	 */
 	public function stats_pages( $request ) {
+		$range  = (int) $request->get_param( 'range' );
 		$result = Database::paged_pages(
 			array(
-				'range'    => (int) $request->get_param( 'range' ),
+				'range'    => $range,
 				'page'     => (int) $request->get_param( 'page' ),
 				'per_page' => (int) $request->get_param( 'per_page' ),
 				'search'   => (string) $request->get_param( 'search' ),
@@ -306,6 +366,7 @@ class Rest_Controller {
 			'total'       => (int) $result['total'],
 			'total_pages' => (int) $result['total_pages'],
 		);
+		$data = array_merge( $data, Database::range_metadata( $range, 'aggregate' ) );
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -319,16 +380,33 @@ class Rest_Controller {
 	public function stats_heatmap( $request ) {
 		$range   = max( 1, min( 365, (int) $request->get_param( 'range' ) ) );
 		$post_id = (int) $request->get_param( 'post' );
+		$page_key = substr( sanitize_text_field( (string) $request->get_param( 'page_key' ) ), 0, 191 );
 		$device  = sanitize_key( (string) $request->get_param( 'device' ) );
+		$metadata = Database::range_metadata( $range, 'raw' );
+		$query_range = max( 1, (int) $metadata['effective_range'] );
 
-		$data            = Database::heatmap_data( $post_id, $range, $device );
+		$data            = Database::heatmap_data( $post_id, $query_range, $device, $page_key );
 		if ( ! Settings::get( 'track_search_keywords' ) ) {
 			$data['search_terms'] = array();
 		}
 		$data['search_keywords_enabled'] = (bool) Settings::get( 'track_search_keywords' );
-		$data['post_id'] = $post_id;
-		$data['title']   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
-		$data['url']     = $post_id > 0 ? get_permalink( $post_id ) : '';
+		$page = $this->decorate_pages(
+			array(
+				array(
+					'page_key'   => $page_key,
+					'post_id'    => $post_id,
+					'clicks'     => 0,
+					'pageviews'  => 0,
+					'conversions'=> 0,
+				)
+			)
+		);
+		$page             = reset( $page );
+		$data['page_key'] = $page_key;
+		$data['post_id']  = $post_id;
+		$data['title']    = $page ? $page['title'] : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
+		$data['url']      = $page ? $page['url'] : '';
+		$data             = array_merge( $data, $metadata );
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -415,8 +493,10 @@ class Rest_Controller {
 	 */
 	public function stats_funnels( $request ) {
 		$range = max( 1, min( 365, (int) $request->get_param( 'range' ) ) );
-		$data  = Database::funnel_data( $range, 10 );
+		$metadata = Database::range_metadata( $range, 'raw' );
+		$data  = Database::funnel_data( max( 1, (int) $metadata['effective_range'] ), 10 );
 		$data['range'] = $range;
+		$data = array_merge( $data, $metadata );
 
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
@@ -479,15 +559,54 @@ class Rest_Controller {
 	 * @return array
 	 */
 	private function decorate_pages( $rows ) {
+		$page_keys = array();
+		foreach ( (array) $rows as $row ) {
+			if ( ! empty( $row['page_key'] ) ) {
+				$page_keys[] = (string) $row['page_key'];
+			}
+		}
+		$details = Database::page_identity_details( $page_keys );
 		$out = array();
-		foreach ( $rows as $row ) {
+		foreach ( (array) $rows as $row ) {
 			$post_id = (int) $row['post_id'];
-			$title   = $post_id > 0 ? get_the_title( $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
-			$url     = $post_id > 0 ? get_permalink( $post_id ) : '';
+			$page_key = isset( $row['page_key'] ) ? (string) $row['page_key'] : '';
+			$title    = $post_id > 0 ? get_the_title( $post_id ) : '';
+			$url      = $post_id > 0 ? get_permalink( $post_id ) : '';
+
+			if ( ! $title && ! empty( $row['page_title'] ) ) {
+				$title = (string) $row['page_title'];
+			}
+			if ( ! $url && ! empty( $row['page_url'] ) ) {
+				$url = (string) $row['page_url'];
+			}
+			if ( isset( $details[ $page_key ] ) ) {
+				if ( ! $title ) {
+					$title = $details[ $page_key ]['page_title'];
+				}
+				if ( ! $url ) {
+					$url = $details[ $page_key ]['page_url'];
+				}
+			}
+
+			// Canonical keys end in the normalized site path. This remains useful
+			// after raw detail retention has expired, without inventing labels for
+			// one-way legacy URL hashes.
+			$key_parts = explode( ':', $page_key, 3 );
+			$key_path  = 3 === count( $key_parts ) && 0 === strpos( $key_parts[2], '/' ) ? $key_parts[2] : '';
+			if ( ! $url && '' !== $key_path ) {
+				$url = home_url( $key_path );
+			}
+			if ( ! $title && '' !== $key_path ) {
+				$title = '/' === $key_path ? get_bloginfo( 'name' ) : $key_path;
+			}
+			if ( ! $title ) {
+				$title = $post_id > 0 ? ( '#' . $post_id ) : __( '(unknown / global)', 'convertrack-click-conversion-analytics' );
+			}
 
 			$out[] = array(
+				'page_key'   => $page_key,
 				'post_id'     => $post_id,
-				'title'       => $title ? $title : ( '#' . $post_id ),
+				'title'       => $title,
 				'url'         => $url ? $url : '',
 				'clicks'      => (int) $row['clicks'],
 				'pageviews'   => (int) $row['pageviews'],
@@ -495,6 +614,32 @@ class Rest_Controller {
 			);
 		}
 		return $out;
+	}
+
+	/**
+	 * Mark a mixed aggregate/raw response with its shortest truthful window.
+	 *
+	 * @param int   $requested Requested days.
+	 * @param array $aggregate Aggregate-source metadata.
+	 * @param array $raw       Raw-source metadata.
+	 * @return array
+	 */
+	private function mixed_range_metadata( $requested, array $aggregate, array $raw ) {
+		$from_values = array_filter(
+			array( $aggregate['data_available_from'], $raw['data_available_from'] ),
+			'is_string'
+		);
+		return array(
+			'requested_range'    => max( 1, (int) $requested ),
+			'effective_range'    => min( (int) $aggregate['effective_range'], (int) $raw['effective_range'] ),
+			'data_available_from'=> empty( $from_values ) ? null : max( $from_values ),
+			'truncated'          => ! empty( $aggregate['truncated'] ) || ! empty( $raw['truncated'] ),
+			'partial'            => ! empty( $aggregate['partial'] ) || ! empty( $raw['partial'] ),
+			'range_sources'      => array(
+				'aggregate' => $aggregate,
+				'raw'       => $raw,
+			),
+		);
 	}
 
 	/**
@@ -519,6 +664,43 @@ class Rest_Controller {
 		}
 
 		return array();
+	}
+
+	/**
+	 * Reject oversized public payloads before decoding or persistence.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @param string           $channel collect|heartbeat.
+	 * @return true|\WP_Error
+	 */
+	private function validate_body_size( $request, $channel ) {
+		$maximum = Ingestion_Guard::max_body_bytes( $channel );
+		$body    = (string) $request->get_body();
+		$declared = $request->get_header( 'content-length' );
+		if ( ( is_numeric( $declared ) && (int) $declared > $maximum ) || strlen( $body ) > $maximum ) {
+			return new \WP_Error(
+				'convertrack_payload_too_large',
+				'Tracking payload is too large.',
+				array( 'status' => 413, 'max_bytes' => $maximum )
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * Fail closed for direct/cached clients while either schema is unhealthy.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private function ingestion_schema_error() {
+		if ( Database::schema_is_healthy() && Ingestion_Guard::schema_is_healthy() ) {
+			return true;
+		}
+		return new \WP_Error(
+			'convertrack_schema_unavailable',
+			'Tracking is temporarily unavailable while the database is repaired.',
+			array( 'status' => 503 )
+		);
 	}
 
 	/**

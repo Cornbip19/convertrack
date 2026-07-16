@@ -14,6 +14,7 @@ class Cron {
 	const PROCESS     = 'convertrack_gsc_process_queue';
 	const PROCESS_NOW = 'convertrack_gsc_process_now';
 	const SCAN        = 'convertrack_gsc_scan_sitemap';
+	const SCAN_NOW    = 'convertrack_gsc_scan_sitemap_step';
 	const FULL        = 'convertrack_gsc_full_audit';
 	const GROUP       = 'convertrack';
 
@@ -25,6 +26,7 @@ class Cron {
 		add_action( self::PROCESS, array( __CLASS__, 'run_process' ) );
 		add_action( self::PROCESS_NOW, array( __CLASS__, 'run_process_now' ) );
 		add_action( self::SCAN, array( __CLASS__, 'run_scan' ) );
+		add_action( self::SCAN_NOW, array( __CLASS__, 'run_scan_now' ) );
 		add_action( self::FULL, array( __CLASS__, 'run_full_audit' ) );
 
 		self::schedule();
@@ -82,12 +84,14 @@ class Cron {
 			as_unschedule_all_actions( self::PROCESS, array(), self::GROUP );
 			as_unschedule_all_actions( self::PROCESS_NOW, array(), self::GROUP );
 			as_unschedule_all_actions( self::SCAN, array(), self::GROUP );
+			as_unschedule_all_actions( self::SCAN_NOW, array(), self::GROUP );
 			as_unschedule_all_actions( self::FULL, array(), self::GROUP );
 		}
 
 		wp_clear_scheduled_hook( self::PROCESS );
 		wp_clear_scheduled_hook( self::PROCESS_NOW );
 		wp_clear_scheduled_hook( self::SCAN );
+		wp_clear_scheduled_hook( self::SCAN_NOW );
 		wp_clear_scheduled_hook( self::FULL );
 	}
 
@@ -109,6 +113,27 @@ class Cron {
 
 		if ( ! wp_next_scheduled( self::PROCESS_NOW ) ) {
 			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::PROCESS_NOW );
+			if ( function_exists( 'spawn_cron' ) ) {
+				spawn_cron();
+			}
+		}
+	}
+
+	/**
+	 * Schedule a near-immediate resumable sitemap step.
+	 *
+	 * @param int $delay Seconds from now.
+	 */
+	public static function kick_scan( $delay = 0 ) {
+		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
+			if ( ! as_next_scheduled_action( self::SCAN_NOW, array(), self::GROUP ) ) {
+				as_schedule_single_action( time() + max( 0, (int) $delay ), self::SCAN_NOW, array(), self::GROUP );
+			}
+			return;
+		}
+
+		if ( ! wp_next_scheduled( self::SCAN_NOW ) ) {
+			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::SCAN_NOW );
 			if ( function_exists( 'spawn_cron' ) ) {
 				spawn_cron();
 			}
@@ -146,7 +171,7 @@ class Cron {
 			return;
 		}
 
-		if ( empty( $result['aborted'] ) && empty( $result['quota_reached'] ) && ! empty( $result['remaining'] ) ) {
+		if ( empty( $result['aborted'] ) && empty( $result['quota_reached'] ) && empty( $result['rate_limited'] ) && ! empty( $result['remaining'] ) ) {
 			self::kick_processing( MINUTE_IN_SECONDS );
 		}
 	}
@@ -158,9 +183,28 @@ class Cron {
 		if ( ! Settings::get( 'enabled' ) ) {
 			return;
 		}
+		$queued = Sitemap_Scanner::request_scan( 'scheduled' );
+		if ( ! is_wp_error( $queued ) ) {
+			self::kick_scan();
+		}
+	}
+
+	/**
+	 * Execute and continue one sitemap scan step.
+	 */
+	public static function run_scan_now() {
+		if ( ! Settings::get( 'enabled' ) ) {
+			return;
+		}
 		$scan = Sitemap_Scanner::scan();
-		Database::record_snapshot();
-		if ( ! is_wp_error( $scan ) ) {
+		if ( is_wp_error( $scan ) ) {
+			return;
+		}
+		if ( ! empty( $scan['busy'] ) || in_array( $scan['status'], array( 'queued', 'running' ), true ) ) {
+			self::kick_scan( ! empty( $scan['busy'] ) ? 2 * MINUTE_IN_SECONDS : MINUTE_IN_SECONDS );
+			return;
+		}
+		if ( in_array( $scan['status'], array( 'completed', 'partial' ), true ) ) {
 			self::kick_processing();
 		}
 	}
@@ -172,11 +216,9 @@ class Cron {
 		if ( ! Settings::get( 'enabled' ) ) {
 			return;
 		}
-		$scan = Sitemap_Scanner::scan();
-		if ( ! is_wp_error( $scan ) ) {
-			$count = Database::schedule_full_audit();
-			Logger::info( 'full-audit', 'Weekly full audit scheduled.', array( 'urls' => $count ) );
-			self::kick_processing();
+		$queued = Sitemap_Scanner::request_scan( 'full_audit' );
+		if ( ! is_wp_error( $queued ) ) {
+			self::kick_scan();
 		}
 	}
 

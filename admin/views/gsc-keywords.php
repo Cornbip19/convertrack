@@ -56,6 +56,7 @@ $type_labels = array(
 				<span><?php esc_html_e( 'Last synced:', 'convertrack-click-conversion-analytics' ); ?> <b data-cvtrk="kw-last-sync">&mdash;</b></span>
 			</span>
 			<a class="button" data-cvtrk="kw-export" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'convertrack-click-conversion-analytics' ); ?></a>
+			<button type="button" class="button" data-cvtrk="kw-cancel" hidden><?php esc_html_e( 'Cancel Sync', 'convertrack-click-conversion-analytics' ); ?></button>
 			<button type="button" class="button button-primary" data-cvtrk="kw-sync"><?php esc_html_e( 'Sync Now', 'convertrack-click-conversion-analytics' ); ?></button>
 		</div>
 	</div>

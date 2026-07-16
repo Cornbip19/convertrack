@@ -60,9 +60,9 @@ class API {
 
 	/**
 	 * Notify Google Indexing API. The automatic (background) path stays
-	 * disabled for normal content unless a filter marks the URL eligible;
-	 * an explicit admin click ("Notify Google") defaults to eligible but can
-	 * still be vetoed by the same filter.
+	 * disabled unless the post has positive JobPosting/BroadcastEvent evidence.
+	 * Manual clicks use the same eligibility rule. Developers can explicitly
+	 * override the conservative decision with the existing filter.
 	 *
 	 * @param string $url     URL.
 	 * @param int    $post_id Post id.
@@ -70,7 +70,8 @@ class API {
 	 * @return true|\WP_Error
 	 */
 	public static function indexing_api_notify( $url, $post_id, $manual = false ) {
-		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', $manual, $post_id, $url );
+		$eligible = self::default_indexing_eligibility( $url, $post_id );
+		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', $eligible, $post_id, $url, $manual );
 		if ( ! $eligible ) {
 			return new \WP_Error( 'convertrack_gsc_indexing_api_not_eligible', __( 'This URL is not eligible for the Google Indexing API.', 'convertrack-click-conversion-analytics' ) );
 		}
@@ -252,9 +253,11 @@ class API {
 
 		if ( $code < 200 || $code >= 300 ) {
 			$message = isset( $data['error']['message'] ) ? $data['error']['message'] : sprintf( 'Google API returned HTTP %d.', $code );
-			$error = new \WP_Error( 'convertrack_gsc_google_api_error', $message, array( 'status' => $code, 'body' => $data ) );
+			$retry_after = self::parse_retry_after( wp_remote_retrieve_header( $response, 'retry-after' ) );
+			$error_data  = array( 'status' => $code, 'body' => $data, 'retry_after' => $retry_after );
+			$error = new \WP_Error( 'convertrack_gsc_google_api_error', $message, $error_data );
 			if ( self::is_quota_error( $error ) ) {
-				$error->add( 'convertrack_gsc_quota_error', $message, array( 'status' => $code, 'body' => $data ) );
+				$error->add( 'convertrack_gsc_quota_error', $message, $error_data );
 			}
 			return $error;
 		}
@@ -308,12 +311,13 @@ class API {
 	private static function map_status( $verdict, $coverage, $robots, $indexing ) {
 		$coverage_l = strtolower( $coverage );
 		$robots_l   = strtolower( $robots );
+		$robots_u   = strtoupper( trim( $robots ) );
 		$indexing_l = strtolower( $indexing );
 
 		if ( 'PASS' === strtoupper( $verdict ) ) {
 			return 'indexed';
 		}
-		if ( '' !== $robots && false === strpos( $robots_l, 'allowed' ) ) {
+		if ( in_array( $robots_u, array( 'DISALLOWED', 'BLOCKED' ), true ) || false !== strpos( $robots_l, 'disallow' ) ) {
 			return 'blocked_by_robots';
 		}
 		if ( false !== strpos( $indexing_l, 'blocked_by_meta_tag' ) || false !== strpos( $coverage_l, 'noindex' ) ) {
@@ -327,6 +331,12 @@ class API {
 		}
 		if ( false !== strpos( $coverage_l, 'crawled' ) && false !== strpos( $coverage_l, 'not indexed' ) ) {
 			return 'crawled_not_indexed';
+		}
+
+		if ( in_array( $robots_u, array( '', 'ROBOTS_TXT_STATE_UNSPECIFIED', 'UNSPECIFIED' ), true )
+			&& in_array( strtoupper( trim( $verdict ) ), array( '', 'VERDICT_UNSPECIFIED', 'NEUTRAL' ), true )
+			&& '' === trim( $coverage ) ) {
+			return 'unknown';
 		}
 
 		return 'not_indexed';
@@ -352,10 +362,61 @@ class API {
 			$api_status = strtolower( (string) $data['body']['error']['status'] );
 		}
 
-		return 429 === $status
+		return self::is_rate_limit_error( $error )
+			|| self::is_daily_quota_error( $error )
 			|| false !== strpos( $message, 'quota' )
-			|| false !== strpos( $message, 'rate limit' )
 			|| false !== strpos( $api_status, 'resource_exhausted' );
+	}
+
+	/**
+	 * Whether Google asked the caller to retry later without exhausting the
+	 * configured daily inspection allowance.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @return bool
+	 */
+	public static function is_rate_limit_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+		$data    = $error->get_error_data();
+		$status  = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 0;
+		$message = strtolower( $error->get_error_message() );
+		$reasons = self::error_reasons( $data );
+		return 429 === $status
+			|| ( is_array( $data ) && ! empty( $data['retry_after'] ) )
+			|| false !== strpos( $message, 'rate limit' )
+			|| ! empty( array_intersect( $reasons, array( 'ratelimitexceeded', 'userratelimitexceeded', 'resourceexhausted' ) ) );
+	}
+
+	/**
+	 * Whether Google explicitly reported an exhausted daily quota.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @return bool
+	 */
+	public static function is_daily_quota_error( $error ) {
+		if ( ! is_wp_error( $error ) ) {
+			return false;
+		}
+		$data    = $error->get_error_data();
+		$message = strtolower( $error->get_error_message() );
+		$reasons = self::error_reasons( $data );
+		return ! empty( array_intersect( $reasons, array( 'dailylimitexceeded', 'dailylimitexceededunreg', 'quotaexceeded' ) ) )
+			|| false !== strpos( $message, 'daily quota' )
+			|| false !== strpos( $message, 'daily limit' );
+	}
+
+	/**
+	 * Retry-After delay carried by a Google error.
+	 *
+	 * @param \WP_Error $error Error.
+	 * @param int       $default Default seconds.
+	 * @return int
+	 */
+	public static function retry_after_seconds( $error, $default = 300 ) {
+		$data = is_wp_error( $error ) ? $error->get_error_data() : array();
+		return is_array( $data ) && ! empty( $data['retry_after'] ) ? max( 60, min( DAY_IN_SECONDS, (int) $data['retry_after'] ) ) : max( 60, (int) $default );
 	}
 
 	/**
@@ -413,6 +474,89 @@ class API {
 		$message = strtolower( $error->get_error_message() );
 		return 'permission_denied' === $state
 			&& ( false !== strpos( $message, 'has not been used in project' ) || false !== strpos( $message, 'is disabled' ) );
+	}
+
+	/**
+	 * Conservative Google Indexing API eligibility detection.
+	 *
+	 * Google's Indexing API is restricted to JobPosting pages and livestream
+	 * BroadcastEvent pages. A manual admin request is not evidence of eligibility.
+	 *
+	 * @param string $url     URL.
+	 * @param int    $post_id Post id.
+	 * @return bool
+	 */
+	private static function default_indexing_eligibility( $url, $post_id ) {
+		$post = get_post( (int) $post_id );
+		if ( ! $post || 'publish' !== $post->post_status ) {
+			return false;
+		}
+		$permalink = get_permalink( $post );
+		if ( ! $permalink || untrailingslashit( strtok( $permalink, '?' ) ) !== untrailingslashit( strtok( (string) $url, '?' ) ) ) {
+			return false;
+		}
+
+		if ( in_array( $post->post_type, array( 'job_listing', 'job', 'job_posting' ), true ) ) {
+			return true;
+		}
+
+		$evidence = '';
+		foreach ( array( '_yoast_wpseo_schema_page_type', 'rank_math_schema_JobPosting', 'rank_math_schema_BroadcastEvent', '_schema_type' ) as $key ) {
+			$value = get_post_meta( $post->ID, $key, true );
+			if ( is_scalar( $value ) ) {
+				$evidence .= ' ' . (string) $value;
+			} elseif ( is_array( $value ) ) {
+				$evidence .= ' ' . wp_json_encode( $value );
+			}
+		}
+
+		if ( preg_match( '/(?:JobPosting|BroadcastEvent)/i', $evidence ) ) {
+			return true;
+		}
+		return (bool) preg_match( '/["\']@type["\']\s*:\s*["\'](?:JobPosting|BroadcastEvent)["\']/i', (string) $post->post_content );
+	}
+
+	/**
+	 * Parse Retry-After seconds or HTTP date.
+	 *
+	 * @param string $value Header value.
+	 * @return int
+	 */
+	private static function parse_retry_after( $value ) {
+		$value = trim( (string) $value );
+		if ( '' === $value ) {
+			return 0;
+		}
+		if ( ctype_digit( $value ) ) {
+			return max( 0, min( DAY_IN_SECONDS, (int) $value ) );
+		}
+		$timestamp = strtotime( $value );
+		return $timestamp ? max( 0, min( DAY_IN_SECONDS, $timestamp - time() ) ) : 0;
+	}
+
+	/**
+	 * Flatten Google error reason/status values for quota classification.
+	 *
+	 * @param mixed $data WP_Error data.
+	 * @return array
+	 */
+	private static function error_reasons( $data ) {
+		$body    = is_array( $data ) && isset( $data['body']['error'] ) && is_array( $data['body']['error'] ) ? $data['body']['error'] : array();
+		$reasons = array();
+		if ( ! empty( $body['status'] ) ) {
+			$reasons[] = strtolower( str_replace( array( '_', '-' ), '', (string) $body['status'] ) );
+		}
+		foreach ( isset( $body['errors'] ) && is_array( $body['errors'] ) ? $body['errors'] : array() as $entry ) {
+			if ( ! empty( $entry['reason'] ) ) {
+				$reasons[] = strtolower( str_replace( array( '_', '-' ), '', (string) $entry['reason'] ) );
+			}
+		}
+		foreach ( isset( $body['details'] ) && is_array( $body['details'] ) ? $body['details'] : array() as $entry ) {
+			if ( ! empty( $entry['reason'] ) ) {
+				$reasons[] = strtolower( str_replace( array( '_', '-' ), '', (string) $entry['reason'] ) );
+			}
+		}
+		return array_values( array_unique( $reasons ) );
 	}
 
 	/**

@@ -167,10 +167,21 @@ class Rest_Controller {
 		if ( ! $id ) {
 			return $this->bad_id();
 		}
+		$event = Database::get_event( $id );
+		if ( ! $event ) {
+			return $this->bad_id();
+		}
+		$validation = Redirector::validate_pair( $event['url'], $destination, false );
+		if ( is_wp_error( $validation ) ) {
+			return $validation;
+		}
 		if ( empty( Database::normalize_destination( $destination ) ) ) {
 			return new \WP_Error( 'convertrack_404_bad_destination', __( 'Enter a valid destination URL.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
 		}
-		Database::update_suggestion( $id, $destination );
+		$updated = Database::update_suggestion( $id, $destination );
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
 		Logger::info( 'manual', '404 recommendation destination edited.', array( 'id' => $id, 'destination' => $destination ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}
@@ -186,7 +197,10 @@ class Rest_Controller {
 		if ( ! $id ) {
 			return $this->bad_id();
 		}
-		Database::set_event_status( $id, 'ignored' );
+		$updated = Database::set_event_status( $id, 'ignored' );
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
 		Logger::info( 'manual', '404 event ignored.', array( 'id' => $id ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}
@@ -202,7 +216,10 @@ class Rest_Controller {
 		if ( ! $id ) {
 			return $this->bad_id();
 		}
-		Database::set_event_status( $id, 'deleted' );
+		$updated = Database::set_event_status( $id, 'deleted' );
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
 		Logger::info( 'manual', '404 event deleted.', array( 'id' => $id ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}
@@ -250,11 +267,11 @@ class Rest_Controller {
 				}
 				$count++;
 			} elseif ( 'ignore' === $action ) {
-				Database::set_event_status( $id, 'ignored' );
-				$count++;
+				$result = Database::set_event_status( $id, 'ignored' );
+				is_wp_error( $result ) ? $errors++ : $count++;
 			} elseif ( 'delete' === $action ) {
-				Database::set_event_status( $id, 'deleted' );
-				$count++;
+				$result = Database::set_event_status( $id, 'deleted' );
+				is_wp_error( $result ) ? $errors++ : $count++;
 			}
 		}
 
@@ -284,7 +301,7 @@ class Rest_Controller {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
-		if ( Settings::recommendations_enabled() ) {
+		if ( empty( $result['pending'] ) && Settings::recommendations_enabled() ) {
 			Cron::kick_processing();
 		}
 		return $this->no_cache( new \WP_REST_Response( array_merge( array( 'ok' => true ), $result ), 200 ) );
@@ -305,7 +322,20 @@ class Rest_Controller {
 		if ( ! in_array( $status, array( 'active', 'paused', 'disabled' ), true ) ) {
 			return new \WP_Error( 'convertrack_404_bad_status', __( 'Invalid redirect status.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
 		}
-		Database::set_redirect_status( $id, $status );
+		if ( 'active' === $status ) {
+			$redirect = Database::get_redirect( $id );
+			if ( ! $redirect ) {
+				return new \WP_Error( 'convertrack_404_redirect_missing', __( 'The redirect rule was not found.', 'convertrack-click-conversion-analytics' ), array( 'status' => 404 ) );
+			}
+			$validation = Redirector::validate_pair( $redirect['source_url'], $redirect['destination_url'], false );
+			if ( is_wp_error( $validation ) ) {
+				return $validation;
+			}
+		}
+		$updated = Database::set_redirect_status( $id, $status );
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
 		Logger::info( 'redirect', 'Internal redirect status changed.', array( 'id' => $id, 'status' => $status ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}
@@ -321,7 +351,10 @@ class Rest_Controller {
 		if ( ! $id ) {
 			return $this->bad_id();
 		}
-		Database::delete_redirect( $id );
+		$deleted = Database::delete_redirect( $id );
+		if ( is_wp_error( $deleted ) ) {
+			return $deleted;
+		}
 		Logger::info( 'redirect', 'Internal redirect deleted.', array( 'id' => $id ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
 	}

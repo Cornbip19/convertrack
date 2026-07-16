@@ -257,12 +257,12 @@ class Admin {
 		header( 'Content-Disposition: attachment; filename=convertrack-gsc-index-monitor-' . gmdate( 'Ymd' ) . '.csv' );
 
 		$out = fopen( 'php://output', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		fputcsv( $out, array( 'URL', 'Post ID', 'Post Type', 'Index Status', 'Coverage State', 'Google Verdict', 'Last Checked', 'Next Check', 'Attempts', 'Priority', 'Sitemap URL', 'Error' ) );
+		\Convertrack\CSV::write( $out, array( 'URL', 'Post ID', 'Post Type', 'Index Status', 'Coverage State', 'Google Verdict', 'Last Checked', 'Next Check', 'Attempts', 'Priority', 'Sitemap URL', 'Error' ) );
 
 		do {
 			$data = Database::list_urls( $args );
 			foreach ( $data['rows'] as $row ) {
-				fputcsv(
+				\Convertrack\CSV::write(
 					$out,
 					array(
 						$row['url'],

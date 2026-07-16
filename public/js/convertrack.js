@@ -3,8 +3,8 @@
  *
  * Captures analytics clicks on configured "button-like" elements, records
  * all-click heatmap positions, pageviews, and presence heartbeats. Events are
- * batched and delivered with navigator.sendBeacon so tracking never blocks
- * navigation.
+ * batched over keepalive fetch with sendBeacon for navigation/pagehide so
+ * tracking never blocks navigation.
  */
 ( function () {
 	'use strict';
@@ -23,22 +23,31 @@
 		return dnt === '1' || dnt === 'yes';
 	}
 
-	if ( cfg.respectDnt && dntEnabled() ) {
+	function privacyOptedOut() {
+		if ( navigator.globalPrivacyControl === true ) {
+			return true;
+		}
+		try {
+			return typeof window.wp_has_consent === 'function' && ! window.wp_has_consent( 'statistics' );
+		} catch ( err ) {
+			return false;
+		}
+	}
+
+	if ( privacyOptedOut() || ( cfg.respectDnt && dntEnabled() ) ) {
 		return;
 	}
 
 	var store = safeStorage();
 
-	// Stable per-visitor sampling decision.
-	if ( cfg.sampleRate < 100 ) {
-		var decision = store.get( 'cvtrk_smp' );
-		if ( decision === null ) {
-			decision = Math.random() * 100 < cfg.sampleRate ? '1' : '0';
-			store.set( 'cvtrk_smp', decision );
-		}
-		if ( decision !== '1' ) {
-			return;
-		}
+	// Store a stable random bucket, not a permanent yes/no decision. This means
+	// changing the configured sample rate immediately expands or contracts the
+	// same deterministic cohort. Legacy binary decisions are migrated into the
+	// equivalent side of the current threshold, then removed.
+	var sampleBucket = resolveSamplingBucket();
+	if ( ! sampledIn( cfg.sampleRate, sampleBucket ) ) {
+		publishTestApi();
+		return;
 	}
 
 	/* ----------------------------------------------------------------- *
@@ -51,7 +60,8 @@
 		store.set( 'cvtrk_vid', visitorId );
 	}
 
-	var sessionId = resolveSession();
+	var sessionState = resolveSession();
+	var sessionId = sessionState.id;
 
 	/* ----------------------------------------------------------------- *
 	 * State + selectors
@@ -61,10 +71,17 @@
 	var detectedSource = detectSource();
 	var source = resolveAcquisitionSource( detectedSource );
 	var selector = buildSelector( cfg.selectors );
-	var batchMax = cfg.batchMax > 0 ? cfg.batchMax : 25;
+	var batchMax = Math.min( 25, cfg.batchMax > 0 ? cfg.batchMax : 25 );
+	var queueMax = 100;
+	var collectMaxBytes = 60000;
+	var heartbeatMaxBytes = 3500;
 	var maxScroll = 0;
-	var scrollSent = false;
+	var lastSentScroll = 0;
 	var scrollTick = false;
+	var retryQueue = [];
+	var retryTimer = 0;
+	var retryMaxBatches = 8;
+	var retryMaxAttempts = 2;
 
 	/* ----------------------------------------------------------------- *
 	 * Event capture
@@ -74,6 +91,11 @@
 	document.addEventListener( 'click', onClick, true );
 
 	function onClick( e ) {
+		if ( privacyOptedOut() ) {
+			queue.length = 0;
+			return;
+		}
+		rotateSessionIfExpired();
 		var target = e.target;
 		var heatmapEl = heatmapTarget( target );
 		if ( ! heatmapEl ) {
@@ -95,11 +117,12 @@
 		// Tracked clicks keep the existing dashboard/conversion semantics and
 		// also feed the heatmap. Untracked clicks are recorded as heatmap-only
 		// events so all-click heatmaps do not inflate click analytics.
-		if ( el ) {
+		if ( el && isButtonLike( el ) ) {
 			var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
-			queue.push( clickPayload( 'click', e, el, href, attr, eventDevice, isConversion( el, href ) ? 1 : 0 ) );
+			var goal = conversionRule( el, href );
+			enqueue( clickPayload( e, el, href, attr, eventDevice, goal ) );
 		} else {
-			queue.push( clickPayload( 'heatmap_click', e, heatmapEl, heatmapHref( heatmapEl ), attr, eventDevice, 0 ) );
+			enqueue( heatmapPayload( e, heatmapEl, attr, eventDevice ) );
 		}
 
 		// Flush immediately if this click is likely to navigate away, so the
@@ -108,8 +131,10 @@
 		var navigates = ( !! navHref && navHref.charAt( 0 ) !== '#' && navHref.toLowerCase().indexOf( 'javascript:' ) !== 0 ) ||
 			( el && el.type === 'submit' );
 
-		if ( navigates || queue.length >= batchMax ) {
-			flush();
+		if ( navigates ) {
+			flush( true );
+		} else if ( queue.length >= batchMax ) {
+			flush( false );
 		}
 	}
 
@@ -139,22 +164,29 @@
 		}
 	}
 
-	function clickPayload( type, event, el, href, attr, eventDevice, conversion ) {
+	function clickPayload( event, el, href, attr, eventDevice, goal ) {
 		var coords = clickPosition( event, el );
+		var identity = pageIdentity();
 		return {
-			t: type,
+			t: 'click',
+			eid: uuid(),
 			ts: nowMs(),
 			pid: cfg.postId || 0,
+			pk: identity.pk,
+			ot: identity.ot,
+			oid: identity.oid,
+			pit: identity.pit,
 			url: currentPath(),
 			title: docTitle(),
 			tag: ( el.tagName || '' ).toLowerCase(),
-			id: el.id || '',
+			id: stableId( el ),
 			cls: elementClasses( el ),
-			txt: elementText( el ),
+			txt: staticControlLabel( el ),
 			sel: cssPath( el ),
 			hsel: heatmapPath( el ),
-			href: href || '',
-			conv: conversion ? 1 : 0,
+			href: privacySafeUrl( href ),
+			conv: goal ? 1 : 0,
+			goal: byteLimit( goal, 191 ),
 			dev: eventDevice,
 			src: attr.src,
 			rh: attr.rh,
@@ -177,45 +209,75 @@
 		};
 	}
 
+	// Heatmap-only events intentionally contain no text, href, classes or
+	// arbitrary attributes. Coordinates and a generated structural path are
+	// sufficient to render the heatmap.
+	function heatmapPayload( event, el, attr, eventDevice ) {
+		var coords = clickPosition( event, el );
+		var identity = pageIdentity();
+		return {
+			t: 'heatmap_click', eid: uuid(), ts: nowMs(), pid: cfg.postId || 0,
+			pk: identity.pk, ot: identity.ot, oid: identity.oid, pit: identity.pit,
+			url: currentPath(), title: docTitle(), tag: tagOf( el ),
+			id: '', cls: '', txt: '', sel: '', hsel: heatmapPath( el ), href: '', conv: 0,
+			dev: eventDevice,
+			src: attr.src, rh: attr.rh, us: attr.us, um: attr.um, uc: attr.uc, ut: attr.ut, kw: attr.kw, ks: attr.ks,
+			cx: coords.cx, cy: coords.cy, rx: coords.rx, ry: coords.ry,
+			vw: coords.vw, vh: coords.vh, dw: coords.dw, dh: coords.dh, sx: coords.sx, sy: coords.sy
+		};
+	}
+
 	/* ----------------------------------------------------------------- *
 	 * Pageview + heartbeat
 	 * ----------------------------------------------------------------- */
 
-	var pageAttr = eventAttribution();
-	var pageViewMetrics = viewportSnapshot();
-	var pageDevice = detectDevice();
-	queue.push( {
-		t: 'pageview',
-		ts: nowMs(),
-		pid: cfg.postId || 0,
-		url: currentPath(),
-		title: docTitle(),
-		tag: '',
-		id: '',
-		cls: '',
-		txt: '',
-		sel: '',
-		href: '',
-		conv: isConversionUrl( currentPath() ) ? 1 : 0,
-		dev: pageDevice,
-		src: pageAttr.src,
-		rh: pageAttr.rh,
-		us: pageAttr.us,
-		um: pageAttr.um,
-		uc: pageAttr.uc,
-		ut: pageAttr.ut,
-		kw: pageAttr.kw,
-		ks: pageAttr.ks,
-		vw: pageViewMetrics.vw,
-		vh: pageViewMetrics.vh,
-		dw: pageViewMetrics.dw,
-		dh: pageViewMetrics.dh,
-		sx: pageViewMetrics.sx,
-		sy: pageViewMetrics.sy
-	} );
+	enqueuePageview();
+
+	function enqueuePageview() {
+		var pageAttr = eventAttribution();
+		var pageViewMetrics = viewportSnapshot();
+		var pageDevice = detectDevice();
+		var identity = pageIdentity();
+		enqueue( {
+			t: 'pageview',
+			eid: uuid(),
+			ts: nowMs(),
+			pid: cfg.postId || 0,
+			pk: identity.pk,
+			ot: identity.ot,
+			oid: identity.oid,
+			pit: identity.pit,
+			url: currentPath(),
+			title: docTitle(),
+			tag: '',
+			id: '',
+			cls: '',
+			txt: '',
+			sel: '',
+			href: '',
+			conv: isConversionUrl( currentPath() ) ? 1 : 0,
+			dev: pageDevice,
+			src: pageAttr.src,
+			rh: pageAttr.rh,
+			us: pageAttr.us,
+			um: pageAttr.um,
+			uc: pageAttr.uc,
+			ut: pageAttr.ut,
+			kw: pageAttr.kw,
+			ks: pageAttr.ks,
+			vw: pageViewMetrics.vw,
+			vh: pageViewMetrics.vh,
+			dw: pageViewMetrics.dw,
+			dh: pageViewMetrics.dh,
+			sx: pageViewMetrics.sx,
+			sy: pageViewMetrics.sy
+		} );
+	}
 
 	heartbeat();
-	var heartbeatTimer = window.setInterval( heartbeat, Math.max( 5000, cfg.heartbeat || 15000 ) );
+	var heartbeatTimer = window.setInterval( function () {
+		resumeLifecycle( false );
+	}, Math.max( 5000, cfg.heartbeat || 15000 ) );
 	var flushTimer = window.setInterval( flush, Math.max( 1000, cfg.flush || 5000 ) );
 
 	// Flush reliably when the page is being hidden or unloaded.
@@ -225,112 +287,340 @@
 	document.addEventListener( 'visibilitychange', function () {
 		if ( document.visibilityState === 'hidden' ) {
 			recordScroll();
-			flush();
+			flushAll();
 		} else {
-			heartbeat();
+			resumeLifecycle( false );
 		}
 	} );
 	window.addEventListener( 'pagehide', function () {
 		recordScroll();
-		flush();
+		flushAll();
 	} );
+	window.addEventListener( 'pageshow', function ( event ) {
+		// pageshow is the only reliable resume signal for BFCache restores. A
+		// restore inside the inactivity window keeps the session and does not
+		// double-count a pageview; an expired restore starts a genuine session.
+		resumeLifecycle( !! ( event && event.persisted ) );
+	} );
+
+	publishTestApi();
 
 	/* ----------------------------------------------------------------- *
 	 * Transport
 	 * ----------------------------------------------------------------- */
 
-	function flush() {
-		if ( ! queue.length ) {
+	function enqueue( event ) {
+		if ( ! event ) {
 			return;
 		}
+		if ( queue.length >= queueMax ) {
+			// Prefer dropping a heatmap-only event over a conversion or pageview.
+			var drop = -1;
+			for ( var i = 0; i < queue.length; i++ ) {
+				if ( queue[ i ] && queue[ i ].t === 'heatmap_click' ) {
+					drop = i;
+					break;
+				}
+			}
+			queue.splice( drop >= 0 ? drop : 0, 1 );
+		}
+		queue.push( event );
+	}
+
+	function flush( preferBeacon ) {
+		if ( privacyOptedOut() ) {
+			queue.length = 0;
+			return 0;
+		}
+		if ( ! queue.length ) {
+			return 0;
+		}
 		touchSession();
-		var batch = queue.splice( 0, batchMax );
+		var batch = takeBatch( collectMaxBytes );
+		if ( ! batch.length ) {
+			return 0;
+		}
 		send( cfg.collectUrl, {
 			v: '1',
+			_ct: byteLimit( cfg.collectorToken || '', 96 ),
 			vid: visitorId,
 			sid: sessionId,
 			events: batch
-		} );
+		}, collectMaxBytes, true, 0, !! preferBeacon );
+		return batch.length;
+	}
+
+	// pagehide/visibility flushing is deliberately bounded. Each request is
+	// independently kept below the browser keepalive limit, and the in-memory
+	// queue itself is capped, so a hostile page cannot create an unload loop.
+	function flushAll() {
+		var sends = 0;
+		while ( queue.length && sends < 8 ) {
+			if ( ! flush( true ) ) {
+				break;
+			}
+			sends++;
+		}
 	}
 
 	function heartbeat() {
+		if ( privacyOptedOut() || document.visibilityState === 'hidden' ) {
+			return;
+		}
 		touchSession();
+		var identity = pageIdentity();
 		send( cfg.heartbeatUrl, {
+			_ct: byteLimit( cfg.collectorToken || '', 96 ),
 			vid: visitorId,
 			sid: sessionId,
 			url: currentPath(),
-			pid: cfg.postId || 0
-		} );
+			pid: cfg.postId || 0,
+			pk: identity.pk,
+			ot: identity.ot,
+			oid: identity.oid,
+			pit: identity.pit
+		}, heartbeatMaxBytes, false, 0, false );
 	}
 
-	function send( url, payload ) {
+	function send( url, payload, maxBytes, canRetry, attempt, preferBeacon ) {
 		var body = JSON.stringify( payload );
+		if ( utf8Bytes( body ) > maxBytes ) {
+			return false;
+		}
 		try {
-			if ( navigator.sendBeacon ) {
+			if ( preferBeacon && navigator.sendBeacon ) {
 				var blob = new Blob( [ body ], { type: 'application/json' } );
 				if ( navigator.sendBeacon( url, blob ) ) {
-					return;
+					return true;
 				}
 			}
 		} catch ( err ) {} // eslint-disable-line no-empty
 
 		// Fallback for browsers without a working sendBeacon.
 		try {
-			fetch( url, {
+			var request = fetch( url, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: body,
 				keepalive: true,
 				credentials: 'omit'
-			} ).catch( function () {} );
-		} catch ( err2 ) {} // eslint-disable-line no-empty
+			} );
+			if ( request && request.then ) {
+				request.then( function ( response ) {
+					if ( canRetry && shouldRetryResponse( response ) ) {
+						scheduleRetry( url, payload, maxBytes, attempt );
+					}
+				} ).catch( function () {
+					if ( canRetry ) {
+						scheduleRetry( url, payload, maxBytes, attempt );
+					}
+				} );
+			}
+			return true;
+		} catch ( err2 ) {
+			if ( canRetry ) {
+				scheduleRetry( url, payload, maxBytes, attempt );
+			}
+			return false;
+		}
+	}
+
+	function shouldRetryResponse( response ) {
+		if ( ! response ) {
+			return true;
+		}
+		if ( response.ok ) {
+			return false;
+		}
+		var status = parseInt( response.status, 10 ) || 0;
+		return status === 0 || status === 408 || status === 425 || status === 429 || status >= 500;
+	}
+
+	function scheduleRetry( url, payload, maxBytes, attempt ) {
+		attempt = ( parseInt( attempt, 10 ) || 0 ) + 1;
+		if ( attempt > retryMaxAttempts ) {
+			return;
+		}
+		if ( retryQueue.length >= retryMaxBatches ) {
+			retryQueue.shift();
+		}
+		retryQueue.push( { url: url, payload: payload, maxBytes: maxBytes, attempt: attempt } );
+		armRetryTimer();
+	}
+
+	function armRetryTimer() {
+		if ( retryTimer || ! retryQueue.length ) {
+			return;
+		}
+		var delay = Math.min( 4000, 500 * Math.pow( 2, Math.max( 0, retryQueue[ 0 ].attempt - 1 ) ) );
+		retryTimer = window.setTimeout( drainRetry, delay );
+	}
+
+	function drainRetry() {
+		retryTimer = 0;
+		if ( privacyOptedOut() ) {
+			retryQueue.length = 0;
+			return;
+		}
+		var entry = retryQueue.shift();
+		if ( entry ) {
+			send( entry.url, entry.payload, entry.maxBytes, true, entry.attempt, false );
+		}
+		armRetryTimer();
+	}
+
+	// Pull the largest bounded prefix that fits under the keepalive/body cap.
+	// Events are already field-capped; a pathological event is discarded rather
+	// than creating an unbounded client queue.
+	function takeBatch( maxBytes ) {
+		var batch = [];
+		while ( queue.length && batch.length < batchMax ) {
+			var candidate = batch.concat( [ queue[ 0 ] ] );
+			var envelope = { v: '1', _ct: cfg.collectorToken || '', vid: visitorId, sid: sessionId, events: candidate };
+			if ( utf8Bytes( JSON.stringify( envelope ) ) > maxBytes ) {
+				if ( ! batch.length ) {
+					queue.shift();
+					continue;
+				}
+				break;
+			}
+			batch.push( queue.shift() );
+		}
+		return batch;
 	}
 
 	/* ----------------------------------------------------------------- *
 	 * Session handling (sliding 30-min window)
 	 * ----------------------------------------------------------------- */
 
+	function normalizedSampleRate( rate ) {
+		rate = parseFloat( rate );
+		if ( ! isFinite( rate ) ) {
+			return 100;
+		}
+		return Math.max( 0, Math.min( 100, rate ) );
+	}
+
+	function sampledIn( rate, bucket ) {
+		rate = normalizedSampleRate( rate );
+		bucket = parseInt( bucket, 10 );
+		return bucket >= 0 && bucket < 1000000 && bucket < Math.round( rate * 10000 );
+	}
+
+	function resolveSamplingBucket() {
+		var raw = store.get( 'cvtrk_smp_bucket' );
+		var bucket = parseInt( raw, 10 );
+		if ( ! /^\d+$/.test( String( raw || '' ) ) || bucket < 0 || bucket >= 1000000 ) {
+			var rate = normalizedSampleRate( cfg.sampleRate );
+			var threshold = Math.round( rate * 10000 );
+			var legacy = store.get( 'cvtrk_smp' );
+			if ( legacy === '1' && threshold > 0 ) {
+				bucket = Math.floor( Math.random() * threshold );
+			} else if ( legacy === '0' && threshold < 1000000 ) {
+				bucket = threshold + Math.floor( Math.random() * ( 1000000 - threshold ) );
+			} else {
+				bucket = Math.floor( Math.random() * 1000000 );
+			}
+			store.set( 'cvtrk_smp_bucket', String( bucket ) );
+		}
+		store.remove( 'cvtrk_smp' );
+		return bucket;
+	}
+
+	function sessionTtlMs() {
+		return Math.max( 60000, ( parseInt( cfg.sessionTtl, 10 ) || 1800 ) * 1000 );
+	}
+
 	function resolveSession() {
-		var ttl = ( cfg.sessionTtl || 1800 ) * 1000;
+		var ttl = sessionTtlMs();
 		var raw = store.get( 'cvtrk_sid' );
 		var now = nowMs();
 		if ( raw ) {
 			var parts = raw.split( '|' );
-			if ( parts.length === 2 && isUuid( parts[0] ) && ( now - parseInt( parts[1], 10 ) ) < ttl ) {
+			var touched = parts.length === 2 ? parseInt( parts[ 1 ], 10 ) : 0;
+			if ( parts.length === 2 && isUuid( parts[ 0 ] ) && touched > 0 && now >= touched && ( now - touched ) < ttl ) {
 				store.set( 'cvtrk_sid', parts[0] + '|' + now );
-				return parts[0];
+				return { id: parts[ 0 ], isNew: false };
 			}
 		}
 		var id = uuid();
 		store.set( 'cvtrk_sid', id + '|' + now );
-		return id;
+		return { id: id, isNew: true };
 	}
 
 	function touchSession() {
-		store.set( 'cvtrk_sid', sessionId + '|' + nowMs() );
+		var now = nowMs();
+		store.set( 'cvtrk_sid', sessionId + '|' + now );
+		refreshAcquisitionExpiry( now );
+	}
+
+	function resumeLifecycle( fromBfcache ) { // eslint-disable-line no-unused-vars
+		if ( privacyOptedOut() ) {
+			queue.length = 0;
+			retryQueue.length = 0;
+			return false;
+		}
+		var rotated = rotateSessionIfExpired();
+		heartbeat();
+		return rotated;
+	}
+
+	function rotateSessionIfExpired() {
+		var next = resolveSession();
+		if ( next.id !== sessionId ) {
+			// Any remaining events belong to the previous session and must be
+			// enveloped before the session id changes.
+			flushAll();
+			// A deliberately tiny batch setting can leave events after the bounded
+			// unload-style flush. Drop them instead of assigning them to the new
+			// session; accepted batches remain retryable with their original sid.
+			queue.length = 0;
+			sessionId = next.id;
+			store.set( 'cvtrk_sid', sessionId + '|' + nowMs() );
+			detectedSource = detectSource();
+			source = resolveAcquisitionSource( detectedSource );
+			maxScroll = 0;
+			lastSentScroll = 0;
+			updateScroll();
+			enqueuePageview();
+			return true;
+		}
+		sessionId = next.id;
+		return false;
 	}
 
 	function normalizeSource( src ) {
 		src = src || {};
 		return {
-			src: String( src.src || 'Direct' ).substring( 0, 100 ),
-			rh: String( src.rh || '' ).substring( 0, 191 ),
-			us: String( src.us || '' ).substring( 0, 100 ),
-			um: String( src.um || '' ).substring( 0, 100 ),
-			uc: String( src.uc || '' ).substring( 0, 150 ),
-			ut: String( src.ut || '' ).substring( 0, 150 ),
-			kw: String( src.kw || '' ).substring( 0, 191 ),
-			ks: String( src.ks || '' ).substring( 0, 50 )
+			src: safeAttributionValue( src.src || 'Direct', 100 ),
+			rh: safeHost( src.rh || '' ),
+			us: safeAttributionValue( src.us, 100 ),
+			um: safeAttributionValue( src.um, 100 ),
+			uc: safeAttributionValue( src.uc, 150 ),
+			ut: safeAttributionValue( src.ut, 150 ),
+			kw: safeAttributionValue( src.kw, 191 ),
+			ks: safeAttributionValue( src.ks, 50 )
 		};
 	}
 
 	function resolveAcquisitionSource( current ) {
-		var key = 'cvtrk_acq_' + sessionId;
+		var key = 'cvtrk_acq';
+		var now = nowMs();
 		var raw = store.get( key );
+		var legacyRaw = store.get( 'cvtrk_acq_' + sessionId );
+		pruneLegacyAcquisitionKeys();
 		if ( raw ) {
 			try {
-				return normalizeSource( JSON.parse( raw ) );
+				var record = JSON.parse( raw );
+				if ( record && record.sid === sessionId && parseInt( record.exp, 10 ) > now && record.data ) {
+					return normalizeSource( record.data );
+				}
 			} catch ( e ) {} // eslint-disable-line no-empty
+		}
+		if ( legacyRaw ) {
+			try {
+				current = normalizeSource( JSON.parse( legacyRaw ) );
+			} catch ( e2 ) {} // eslint-disable-line no-empty
 		}
 		current = normalizeSource( current );
 		// On-site search is page-specific, not an acquisition channel. If the
@@ -344,8 +634,33 @@
 			current.kw = '';
 			current.ks = '';
 		}
-		store.set( key, JSON.stringify( current ) );
+		store.set( key, JSON.stringify( { sid: sessionId, exp: now + sessionTtlMs(), data: current } ) );
 		return current;
+	}
+
+	function refreshAcquisitionExpiry( now ) {
+		var raw = store.get( 'cvtrk_acq' );
+		if ( ! raw ) {
+			return;
+		}
+		try {
+			var record = JSON.parse( raw );
+			if ( record && record.sid === sessionId && record.data ) {
+				record.exp = now + sessionTtlMs();
+				store.set( 'cvtrk_acq', JSON.stringify( record ) );
+			}
+		} catch ( e ) {
+			store.remove( 'cvtrk_acq' );
+		}
+	}
+
+	function pruneLegacyAcquisitionKeys() {
+		var keys = store.keys();
+		for ( var i = 0; i < keys.length; i++ ) {
+			if ( keys[ i ].indexOf( 'cvtrk_acq_' ) === 0 ) {
+				store.remove( keys[ i ] );
+			}
+		}
 	}
 
 	function eventAttribution() {
@@ -395,19 +710,57 @@
 
 	function elementClasses( el ) {
 		var cls = el.getAttribute ? ( el.getAttribute( 'class' ) || '' ) : '';
-		return cls.substring( 0, 255 );
+		var parts = String( cls ).split( /\s+/ ).filter( function ( item ) {
+			return /^[A-Za-z_-][A-Za-z0-9_-]{0,63}$/.test( item ) && ! looksSensitive( item ) && ! /^(user|customer|account|member|email|order|session|auth|token|key)[_-]/i.test( item );
+		} );
+		return byteLimit( parts.slice( 0, 12 ).join( ' ' ), 191 );
 	}
 
-	function elementText( el ) {
-		var txt = '';
-		if ( el.value && typeof el.value === 'string' ) {
-			txt = el.value;
-		} else if ( el.textContent ) {
-			txt = el.textContent;
-		} else if ( el.getAttribute ) {
-			txt = el.getAttribute( 'aria-label' ) || el.getAttribute( 'title' ) || '';
+	function isEditable( el ) {
+		if ( ! el || el.nodeType !== 1 ) {
+			return false;
 		}
-		return txt.replace( /\s+/g, ' ' ).trim().substring( 0, 200 );
+		var tag = tagOf( el );
+		if ( /^(input|textarea|select|option)$/.test( tag ) || el.isContentEditable ) {
+			return true;
+		}
+		try {
+			return !! ( el.closest && el.closest( '[contenteditable],[role="textbox"],[role="searchbox"],[role="combobox"]' ) );
+		} catch ( err ) {
+			return false;
+		}
+	}
+
+	function isButtonLike( el ) {
+		if ( ! el || isEditable( el ) && tagOf( el ) !== 'input' ) {
+			return false;
+		}
+		var tag = tagOf( el );
+		if ( tag === 'a' || tag === 'button' ) {
+			return true;
+		}
+		if ( tag === 'input' ) {
+			var type = String( el.type || '' ).toLowerCase();
+			return /^(button|submit|image)$/.test( type );
+		}
+		return matchesSafe( el, '[role="button"],[data-cvtrk]' );
+	}
+
+	// Labels are collected only for explicitly tracked, non-editable
+	// button-like controls. No .value access exists anywhere in the tracker.
+	function staticControlLabel( el ) {
+		if ( ! isButtonLike( el ) || isEditable( el ) ) {
+			return '';
+		}
+		var txt = '';
+		if ( el.getAttribute ) {
+			txt = el.getAttribute( 'data-cvtrk-label' ) || el.getAttribute( 'aria-label' ) || '';
+		}
+		if ( ! txt && el.textContent ) {
+			txt = el.textContent;
+		}
+		txt = String( txt ).replace( /\s+/g, ' ' ).trim();
+		return looksSensitive( txt ) ? '' : byteLimit( txt, 100 );
 	}
 
 	function tagOf( node ) {
@@ -418,7 +771,7 @@
 	// runs, very long strings) would explode the rollup table's cardinality.
 	function stableId( node ) {
 		var id = ( node && node.id ) ? String( node.id ) : '';
-		if ( ! id || id.length > 40 || /\d{4,}/.test( id ) ) {
+		if ( ! id || id.length > 40 || /\d{4,}/.test( id ) || ! /^[A-Za-z][A-Za-z0-9_-]*$/.test( id ) || looksSensitive( id ) || isSensitiveParamName( id ) ) {
 			return '';
 		}
 		return id;
@@ -495,7 +848,7 @@
 		return parts.join( '>' ).substring( 0, 255 );
 	}
 
-	function isConversion( el, href ) {
+	function conversionRule( el, href ) {
 		// An internal link to a goal URL is counted on its destination pageview,
 		// so never flag the click for it — even when the element also matches a
 		// conversion selector. This keeps one goal completion = one conversion.
@@ -504,12 +857,12 @@
 		var list = cfg.conversionSelectors || [];
 		for ( var i = 0; i < list.length; i++ ) {
 			if ( matchesSafe( el, list[ i ] ) ) {
-				return ! internalGoal;
+				return ! internalGoal ? String( list[ i ] ).substring( 0, 191 ) : '';
 			}
 		}
 		// URL goals are otherwise only counted on the click when the link leaves
 		// the site, since no pageview will fire here to count it.
-		return isExternalHref( href ) && isConversionUrl( href );
+		return isExternalHref( href ) && isConversionUrl( href ) ? '@url' : '';
 	}
 
 	// True when href points to a different host (so it will not produce a
@@ -535,18 +888,87 @@
 		if ( ! url ) {
 			return false;
 		}
+		var test = privacySafeUrl( url );
+		if ( ! test ) {
+			return false;
+		}
 		var list = cfg.conversionUrls || [];
 		for ( var i = 0; i < list.length; i++ ) {
-			if ( list[ i ] && url.indexOf( list[ i ] ) !== -1 ) {
+			if ( conversionUrlMatches( test, list[ i ] ) ) {
 				return true;
 			}
 		}
 		return false;
 	}
 
+	function conversionUrlMatches( test, rawRule ) {
+		var mode = 'exact';
+		var value = rawRule;
+		if ( rawRule && typeof rawRule === 'object' ) {
+			mode = String( rawRule.mode || rawRule.match || 'exact' ).toLowerCase();
+			value = rawRule.value || rawRule.pattern || rawRule.url || '';
+		} else {
+			var explicit = /^(exact|prefix|regex):(.*)$/i.exec( String( rawRule || '' ) );
+			if ( explicit ) {
+				mode = explicit[ 1 ].toLowerCase();
+				value = explicit[ 2 ];
+			}
+		}
+
+		value = String( value || '' ).trim();
+		if ( ! value ) {
+			return false;
+		}
+
+		if ( mode === 'regex' ) {
+			return safeRegexMatch( test, value );
+		}
+
+		var goal = privacySafeUrl( value );
+		if ( ! goal ) {
+			return false;
+		}
+		if ( mode === 'exact' ) {
+			// Backward compatibility: existing unprefixed setting lines remain
+			// valid, but are intentionally normalized to exact matching. Sites that
+			// need broader matching can opt into an explicit prefix: rule.
+			return test === goal;
+		}
+		if ( mode === 'prefix' ) {
+			return test.indexOf( goal ) === 0;
+		}
+
+		return false;
+	}
+
+	function safeRegexMatch( value, pattern ) {
+		pattern = String( pattern || '' );
+		// Regex rules must be anchored and intentionally conservative. Reject
+		// lookarounds, backreferences and visibly nested repeaters to avoid a
+		// configuration typo turning pageview tracking into a ReDoS vector.
+		if ( ! pattern || utf8Bytes( pattern ) > 191 || pattern.charAt( 0 ) !== '^' || pattern.charAt( pattern.length - 1 ) !== '$' || /[\u0000-\u001f\u007f]/.test( pattern ) || /\(\?/.test( pattern ) || /\\[1-9]/.test( pattern ) || /\([^)]*[+*}][^)]*\)\s*[+*{]/.test( pattern ) ) {
+			return false;
+		}
+		try {
+			return new RegExp( pattern ).test( String( value ).substring( 0, 255 ) );
+		} catch ( err ) {
+			return false;
+		}
+	}
+
 	/* ----------------------------------------------------------------- *
 	 * Misc helpers
 	 * ----------------------------------------------------------------- */
+
+	function pageIdentity() {
+		var objectId = parseInt( cfg.objectId, 10 ) || 0;
+		return {
+			pk: byteLimit( cfg.pageKey || '', 191 ),
+			ot: byteLimit( String( cfg.objectType || '' ).toLowerCase().replace( /[^a-z0-9:_-]/g, '' ), 40 ),
+			oid: Math.max( 0, objectId ),
+			pit: byteLimit( cfg.pageIdentityToken || '', 191 )
+		};
+	}
 
 	function detectDevice() {
 		var ua = navigator.userAgent || '';
@@ -580,6 +1002,94 @@
 		} catch ( e ) {
 			return m[ 1 ];
 		}
+	}
+
+	function isSensitiveParamName( name ) {
+		name = String( name || '' ).toLowerCase().replace( /[^a-z0-9_-]/g, '' );
+		if ( ! name ) {
+			return true;
+		}
+		var compact = name.replace( /[_-]/g, '' );
+		var exact = [ 'token', 'key', 'apikey', 'nonce', 'password', 'passwd', 'pass', 'email', 'auth', 'authorization', 'session', 'sessionid', 'code', 'secret', 'signature', 'sig', 'orderkey', 'resetkey', 'magiclink' ];
+		if ( exact.indexOf( compact ) !== -1 ) {
+			return true;
+		}
+		return /(^|[_-])(token|key|nonce|password|passwd|email|auth|session|code|secret|signature|order[_-]?key|reset[_-]?key)($|[_-])/.test( name );
+	}
+
+	function allowedQueryParams() {
+		var list = cfg.allowedQueryParams || [];
+		var out = {};
+		for ( var i = 0; i < list.length; i++ ) {
+			var key = String( list[ i ] || '' ).toLowerCase().replace( /[^a-z0-9_-]/g, '' );
+			if ( key && ! isSensitiveParamName( key ) ) {
+				out[ key ] = true;
+			}
+		}
+		return out;
+	}
+
+	function safeQuery( query ) {
+		var allow = allowedQueryParams();
+		var out = [];
+		String( query || '' ).replace( /^\?/, '' ).split( '&' ).forEach( function ( pair ) {
+			if ( ! pair ) {
+				return;
+			}
+			var pos = pair.indexOf( '=' );
+			var rawKey = pos === -1 ? pair : pair.substring( 0, pos );
+			var rawVal = pos === -1 ? '' : pair.substring( pos + 1 );
+			var key;
+			var value;
+			try {
+				key = decodeURIComponent( rawKey.replace( /\+/g, ' ' ) ).toLowerCase();
+				value = decodeURIComponent( rawVal.replace( /\+/g, ' ' ) );
+			} catch ( err ) {
+				return;
+			}
+			if ( ! allow[ key ] || isSensitiveParamName( key ) || looksSensitive( value ) ) {
+				return;
+			}
+			out.push( encodeURIComponent( key ) + '=' + encodeURIComponent( byteLimit( value, 100 ) ) );
+		} );
+		return out.length ? '?' + out.join( '&' ) : '';
+	}
+
+	function privacySafeUrl( value ) {
+		value = String( value || '' ).trim();
+		if ( ! value || /^(javascript|data|mailto|tel|sms):/i.test( value ) ) {
+			return '';
+		}
+		try {
+			var a = document.createElement( 'a' );
+			a.href = value;
+			if ( ! /^https?:$/i.test( a.protocol ) ) {
+				return '';
+			}
+			var path = safePath( a.pathname || '/' );
+			var query = safeQuery( a.search || '' );
+			var external = a.hostname && a.hostname.toLowerCase() !== ( location.hostname || '' ).toLowerCase();
+			var safe = external ? ( a.protocol + '//' + a.host + path + query ) : ( path + query );
+			return byteLimit( safe, 255 );
+		} catch ( err ) {
+			return '';
+		}
+	}
+
+	function safePath( path ) {
+		var segments = String( path || '/' ).split( '/' );
+		for ( var i = 0; i < segments.length; i++ ) {
+			var decoded = segments[ i ];
+			try {
+				decoded = decodeURIComponent( decoded );
+			} catch ( err ) {} // eslint-disable-line no-empty
+			var prior = i > 0 ? String( segments[ i - 1 ] ).toLowerCase() : '';
+			var credentialRoute = /^(magic|magic-link|magic-login|magic_link|magic_login|login|passwordless|one-time-login|reset|password-reset|reset-password|lostpassword|verify|verification|auth|authenticate|token)$/.test( prior );
+			if ( looksSensitive( decoded ) || ( credentialRoute && utf8Bytes( decoded ) >= 16 ) ) {
+				segments[ i ] = 'redacted';
+			}
+		}
+		return segments.join( '/' ) || '/';
 	}
 
 	function referrerHost() {
@@ -671,7 +1181,7 @@
 	}
 
 	function currentPath() {
-		return ( ( location.pathname || '/' ) + ( location.search || '' ) ).substring( 0, 800 );
+		return byteLimit( safePath( location.pathname || '/' ) + safeQuery( location.search || '' ), 255 );
 	}
 
 	/* ----------------------------------------------------------------- *
@@ -761,20 +1271,24 @@
 		}, 250 );
 	}
 
-	// Send the deepest scroll reached, once, as the visit ends.
+	// Send monotonically increasing milestones. Visibility changes and BFCache
+	// round-trips may happen repeatedly; only a new maximum creates an event.
 	function recordScroll() {
-		if ( scrollSent ) {
-			return;
-		}
 		updateScroll();
-		scrollSent = true;
-		if ( maxScroll > 0 ) {
+		if ( maxScroll > lastSentScroll ) {
+			lastSentScroll = maxScroll;
 			var attr = eventAttribution();
 			var eventDevice = detectDevice();
-			queue.push( {
+			var identity = pageIdentity();
+			enqueue( {
 				t: 'scroll',
+				eid: uuid(),
 				ts: nowMs(),
 				pid: cfg.postId || 0,
+				pk: identity.pk,
+				ot: identity.ot,
+				oid: identity.oid,
+				pit: identity.pit,
 				url: currentPath(),
 				title: docTitle(),
 				tag: '', id: '', cls: '', txt: '', sel: '', href: '', conv: 0,
@@ -786,7 +1300,60 @@
 	}
 
 	function docTitle() {
-		return ( document.title || '' ).substring( 0, 255 );
+		var title = String( document.title || '' ).replace( /\s+/g, ' ' ).trim();
+		return looksSensitive( title ) ? '' : byteLimit( title, 160 );
+	}
+
+	function safeHost( value ) {
+		value = String( value || '' ).toLowerCase();
+		return /^[a-z0-9.-]+$/.test( value ) ? byteLimit( value, 191 ) : '';
+	}
+
+	function looksSensitive( value ) {
+		value = String( value || '' ).trim();
+		if ( ! value ) {
+			return false;
+		}
+		if ( /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test( value ) ) {
+			return true;
+		}
+		if ( /(?:token|nonce|password|passwd|secret|signature|authorization|order[_ -]?key|reset[_ -]?key)\s*[:=]/i.test( value ) ) {
+			return true;
+		}
+		return /^[A-Za-z0-9_\-+/=]{40,}$/.test( value );
+	}
+
+	function safeAttributionValue( value, maxBytes ) {
+		value = String( value || '' ).replace( /[\u0000-\u001f\u007f]/g, '' ).trim();
+		return looksSensitive( value ) ? '' : byteLimit( value, maxBytes );
+	}
+
+	function utf8Bytes( value ) {
+		value = String( value || '' );
+		if ( window.TextEncoder ) {
+			return new window.TextEncoder().encode( value ).length;
+		}
+		try {
+			return unescape( encodeURIComponent( value ) ).length; // eslint-disable-line no-undef
+		} catch ( err ) {
+			return value.length * 3;
+		}
+	}
+
+	function byteLimit( value, maxBytes ) {
+		value = String( value || '' );
+		if ( utf8Bytes( value ) <= maxBytes ) {
+			return value;
+		}
+		var out = '';
+		for ( var i = 0; i < value.length; i++ ) {
+			var next = out + value.charAt( i );
+			if ( utf8Bytes( next ) > maxBytes ) {
+				break;
+			}
+			out = next;
+		}
+		return out;
 	}
 
 	function isUuid( v ) {
@@ -814,6 +1381,43 @@
 
 	function nowMs() {
 		return ( window.Date && Date.now ) ? Date.now() : new Date().getTime();
+	}
+
+	function publishTestApi() {
+		if ( window.__CONVERTRACK_TEST__ !== true ) {
+			return;
+		}
+		window.__ConvertrackTest = {
+			sampledIn: sampledIn,
+			sampleBucket: sampleBucket,
+			safePath: safePath,
+			safeQuery: safeQuery,
+			privacySafeUrl: privacySafeUrl,
+			conversionUrlMatches: conversionUrlMatches,
+			safeRegexMatch: safeRegexMatch,
+			utf8Bytes: utf8Bytes,
+			byteLimit: byteLimit,
+			takeBatch: takeBatch,
+			enqueue: enqueue,
+			flush: flush,
+			flushAll: flushAll,
+			recordScroll: recordScroll,
+			updateScroll: updateScroll,
+			resumeLifecycle: resumeLifecycle,
+			rotateSessionIfExpired: rotateSessionIfExpired,
+			scheduleRetry: scheduleRetry,
+			drainRetry: drainRetry,
+			getState: function () {
+				return {
+					sessionId: sessionId,
+					queue: queue ? queue.slice() : [],
+					retries: retryQueue ? retryQueue.slice() : [],
+					maxScroll: maxScroll,
+					lastSentScroll: lastSentScroll,
+					source: source
+				};
+			}
+		};
 	}
 
 	/**
@@ -847,6 +1451,33 @@
 					} catch ( e ) {}
 				}
 				mem[ key ] = val;
+			},
+			remove: function ( key ) {
+				if ( ok ) {
+					try {
+						window.localStorage.removeItem( key );
+					} catch ( e ) {}
+				}
+				delete mem[ key ];
+			},
+			keys: function () {
+				var out = [];
+				if ( ok ) {
+					try {
+						for ( var i = 0; i < window.localStorage.length; i++ ) {
+							var item = window.localStorage.key( i );
+							if ( item !== null ) {
+								out.push( item );
+							}
+						}
+					} catch ( e ) {}
+				}
+				for ( var key in mem ) {
+					if ( Object.prototype.hasOwnProperty.call( mem, key ) && out.indexOf( key ) === -1 ) {
+						out.push( key );
+					}
+				}
+				return out;
 			}
 		};
 	}

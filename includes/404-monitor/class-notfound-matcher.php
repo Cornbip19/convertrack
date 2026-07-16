@@ -19,7 +19,7 @@ class Matcher {
 	 */
 	public static function process_batch( $limit = 0 ) {
 		if ( ! Settings::recommendations_enabled() ) {
-			return array( 'processed' => 0, 'auto_created' => 0, 'skipped' => true );
+			return array( 'processed' => 0, 'auto_created' => 0, 'failed' => 0, 'pending' => false, 'skipped' => true );
 		}
 
 		if ( Database::valid_url_count() < 1 ) {
@@ -27,14 +27,38 @@ class Matcher {
 		}
 
 		$limit = $limit > 0 ? $limit : (int) Settings::get( 'recommendation_batch', 50 );
-		$rows  = Database::recommendation_batch( $limit );
+		$owner = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : md5( uniqid( 'convertrack-404-', true ) );
+		$rows  = Database::claim_recommendations( $limit, $owner );
+		if ( is_wp_error( $rows ) ) {
+			Logger::error( 'matcher', '404 recommendation batch could not claim work.', array( 'error' => $rows->get_error_message() ) );
+			return array( 'processed' => 0, 'auto_created' => 0, 'failed' => 1, 'pending' => Database::has_pending_recommendations(), 'skipped' => false, 'error' => $rows->get_error_message() );
+		}
+
+		$candidates = empty( $rows ) ? array() : Database::valid_candidates();
 		$processed = 0;
 		$auto_created = 0;
+		$failed = 0;
 
 		foreach ( $rows as $row ) {
-			$result = self::recommend( $row );
-			Database::save_recommendation( (int) $row['id'], $result );
-			$processed++;
+			try {
+				$result = self::recommend( $row, $candidates );
+				$saved  = Database::save_recommendation(
+					(int) $row['id'],
+					$result,
+					$owner,
+					isset( $row['recommendation_generation'] ) ? (int) $row['recommendation_generation'] : Database::RECOMMENDATION_GENERATION
+				);
+				if ( is_wp_error( $saved ) ) {
+					Database::fail_recommendation( (int) $row['id'], $owner, $saved->get_error_message() );
+					$failed++;
+					continue;
+				}
+				$processed++;
+			} catch ( \Throwable $error ) {
+				Database::fail_recommendation( (int) $row['id'], $owner, $error->getMessage() );
+				$failed++;
+				continue;
+			}
 
 			if ( self::should_auto_redirect( $result ) ) {
 				$created = Redirector::create_from_event( (int) $row['id'], true );
@@ -44,17 +68,19 @@ class Matcher {
 			}
 		}
 
-		Logger::info( 'matcher', '404 recommendation batch completed.', array( 'processed' => $processed, 'auto_created' => $auto_created ) );
-		return array( 'processed' => $processed, 'auto_created' => $auto_created, 'skipped' => false );
+		$pending = Database::has_pending_recommendations();
+		Logger::info( 'matcher', '404 recommendation batch completed.', array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'pending' => $pending ) );
+		return array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'pending' => $pending, 'skipped' => false );
 	}
 
 	/**
 	 * Build a recommendation for one event row.
 	 *
-	 * @param array $event Event row.
+	 * @param array      $event      Event row.
+	 * @param array|null $candidates Candidate snapshot for this batch.
 	 * @return array
 	 */
-	public static function recommend( array $event ) {
+	public static function recommend( array $event, $candidates = null ) {
 		$source_path = isset( $event['path'] ) ? (string) $event['path'] : '';
 		$source_tokens = self::tokens( $source_path );
 		$source_slug = basename( untrailingslashit( $source_path ) );
@@ -67,7 +93,8 @@ class Matcher {
 			'destination_type' => '',
 		);
 
-		foreach ( Database::valid_candidates() as $candidate ) {
+		$candidates = is_array( $candidates ) ? $candidates : Database::valid_candidates();
+		foreach ( $candidates as $candidate ) {
 			if ( empty( $candidate['url'] ) || empty( $candidate['path'] ) ) {
 				continue;
 			}
@@ -148,7 +175,6 @@ class Matcher {
 	 */
 	private static function should_auto_redirect( array $result ) {
 		return 'auto_high_confidence' === Settings::get( 'mode' )
-			&& ! Compatibility::has_redirect_tool()
 			&& ! empty( $result['url'] )
 			&& (int) $result['confidence'] >= (int) Settings::get( 'auto_min_confidence', 90 );
 	}
@@ -236,4 +262,3 @@ class Matcher {
 		return in_array( $source_parent, $c_parts, true ) || ( isset( $c_parts[0] ) && $source_parent === $c_parts[0] );
 	}
 }
-

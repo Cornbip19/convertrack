@@ -13,6 +13,8 @@ namespace Convertrack\GSC;
 
 defined( 'ABSPATH' ) || exit;
 
+require_once dirname( __DIR__ ) . '/class-owner-lock.php';
+
 class Keywords_Analyzer {
 
 	const LOCK_OPTION       = 'convertrack_gsc_keywords_analysis_lock';
@@ -46,7 +48,8 @@ class Keywords_Analyzer {
 			);
 		}
 
-		if ( ! self::acquire_lock() ) {
+		$owner = \Convertrack\Owner_Lock::acquire( self::LOCK_OPTION, self::LOCK_TIMEOUT );
+		if ( false === $owner ) {
 			return array(
 				'processed' => 0,
 				'errors'    => 0,
@@ -57,9 +60,9 @@ class Keywords_Analyzer {
 		}
 
 		try {
-			return self::run_batch( (int) $limit );
+			return self::run_batch( (int) $limit, $owner );
 		} finally {
-			delete_option( self::LOCK_OPTION );
+			\Convertrack\Owner_Lock::release( self::LOCK_OPTION, $owner );
 		}
 	}
 
@@ -114,9 +117,16 @@ class Keywords_Analyzer {
 	 * @param int $limit Batch size.
 	 * @return array
 	 */
-	private static function run_batch( $limit ) {
+	private static function run_batch( $limit, $owner ) {
 		$limit = $limit > 0 ? $limit : (int) apply_filters( 'convertrack_gsc_keywords_analysis_batch_size', 200 );
+		$mapped = Keywords_Database::map_page_posts( $limit );
+		if ( is_wp_error( $mapped ) ) {
+			return array( 'processed' => 0, 'errors' => 1, 'remaining' => Keywords_Database::pending_analysis_count(), 'busy' => false, 'aborted' => true, 'abort_reason' => $mapped->get_error_message() );
+		}
 		$rows  = Keywords_Database::analysis_batch( $limit );
+		if ( is_wp_error( $rows ) ) {
+			return array( 'processed' => 0, 'errors' => 1, 'remaining' => Keywords_Database::pending_analysis_count(), 'busy' => false, 'aborted' => true, 'abort_reason' => $rows->get_error_message() );
+		}
 
 		Keywords_Fingerprint::flush_cache();
 		Keywords_Classifier::flush_context();
@@ -128,15 +138,23 @@ class Keywords_Analyzer {
 		$streak       = 0;
 		$aborted      = false;
 		$abort_reason = '';
+		$page_hashes  = array();
 
 		foreach ( $rows as $row ) {
-			// Heartbeat so a live batch is not taken over after LOCK_TIMEOUT.
-			update_option( self::LOCK_OPTION, time(), false );
+			if ( ! \Convertrack\Owner_Lock::heartbeat( self::LOCK_OPTION, $owner, self::LOCK_TIMEOUT ) ) {
+				$aborted      = true;
+				$abort_reason = __( 'The keyword analyzer lost ownership of its lease.', 'convertrack-click-conversion-analytics' );
+				break;
+			}
 
 			try {
 				$fields = self::analyze_row( $row, $context, $tracked );
-				Keywords_Database::save_analysis( (int) $row['id'], $fields );
+				$saved = Keywords_Database::save_analysis( (int) $row['id'], $fields, false );
+				if ( is_wp_error( $saved ) ) {
+					throw new \RuntimeException( $saved->get_error_message() );
+				}
 				$processed++;
+				$page_hashes[] = (string) $row['page_hash'];
 				$streak = 0;
 			} catch ( \Throwable $e ) {
 				$errors++;
@@ -162,7 +180,12 @@ class Keywords_Analyzer {
 		}
 
 		if ( $processed > 0 ) {
-			Keywords_Database::refresh_page_analysis();
+			$refreshed = Keywords_Database::refresh_page_analysis( $page_hashes );
+			if ( is_wp_error( $refreshed ) ) {
+				$errors++;
+				$aborted      = true;
+				$abort_reason = $refreshed->get_error_message();
+			}
 			if ( ! $aborted ) {
 				delete_option( self::LAST_ERROR_OPTION );
 			}
@@ -266,22 +289,4 @@ class Keywords_Analyzer {
 		);
 	}
 
-	/**
-	 * Acquire the analysis lock (atomic add_option; stale locks taken over).
-	 *
-	 * @return bool
-	 */
-	private static function acquire_lock() {
-		if ( add_option( self::LOCK_OPTION, time(), '', 'no' ) ) {
-			return true;
-		}
-
-		$held = (int) get_option( self::LOCK_OPTION );
-		if ( $held && ( time() - $held ) < self::LOCK_TIMEOUT ) {
-			return false;
-		}
-
-		update_option( self::LOCK_OPTION, time(), false );
-		return true;
-	}
 }

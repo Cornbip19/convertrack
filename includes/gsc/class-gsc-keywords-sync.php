@@ -13,6 +13,8 @@ namespace Convertrack\GSC;
 
 defined( 'ABSPATH' ) || exit;
 
+require_once dirname( __DIR__ ) . '/class-owner-lock.php';
+
 class Keywords_Sync {
 
 	const STATE_OPTION      = 'convertrack_gsc_keywords_sync_state';
@@ -49,7 +51,7 @@ class Keywords_Sync {
 		}
 
 		$state = self::raw_state();
-		if ( in_array( $state['status'], array( 'queued', 'running' ), true ) && self::lock_is_live() ) {
+		if ( in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
 			return new \WP_Error(
 				'convertrack_gsc_keywords_sync_in_progress',
 				__( 'A keyword sync is already running.', 'convertrack-click-conversion-analytics' ),
@@ -87,11 +89,34 @@ class Keywords_Sync {
 		$state['ranges_pending'] = $pending;
 		$state['ranges_total']   = count( $pending );
 		$state['custom']         = $custom;
+		$state['sync_id']        = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'kw-', true );
 		update_option( self::STATE_OPTION, $state, false );
+		Keywords_Database::cleanup_staging();
 
 		Keywords_Cron::kick_sync( 0 );
 		Logger::info( 'keywords-sync', 'Keyword sync queued.', array( 'ranges' => $pending, 'trigger' => $state['trigger'] ) );
 
+		return self::state();
+	}
+
+	/**
+	 * Cancel queued/running work without changing the last complete generation.
+	 *
+	 * @return array
+	 */
+	public static function cancel() {
+		$state = self::raw_state();
+		if ( ! in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
+			return self::state();
+		}
+		if ( ! empty( $state['sync_id'] ) ) {
+			Keywords_Database::discard_generation( $state['sync_id'] );
+		}
+		$state['status']      = 'cancelled';
+		$state['finished_at'] = current_time( 'mysql' );
+		$state['current']     = null;
+		update_option( self::STATE_OPTION, $state, false );
+		Logger::info( 'keywords-sync', 'Keyword sync cancelled.' );
 		return self::state();
 	}
 
@@ -102,20 +127,24 @@ class Keywords_Sync {
 	 */
 	public static function run_step() {
 		if ( ! Keywords_Settings::ready() ) {
-			Logger::warning( 'keywords-sync', 'Sync step skipped because Keyword Insights is not ready.' );
-			return self::raw_state();
+			$state = self::raw_state();
+			if ( in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
+				return self::fail( $state, __( 'Google Search Console disconnected while the keyword sync was running. Reconnect Google, then explicitly retry the sync.', 'convertrack-click-conversion-analytics' ), 'auth' );
+			}
+			return $state;
 		}
 
-		if ( ! self::acquire_lock() ) {
+		$owner = \Convertrack\Owner_Lock::acquire( self::LOCK_OPTION, self::LOCK_TIMEOUT );
+		if ( false === $owner ) {
 			$state         = self::raw_state();
 			$state['busy'] = true;
 			return $state;
 		}
 
 		try {
-			return self::run_step_locked();
+			return self::run_step_locked( $owner );
 		} finally {
-			delete_option( self::LOCK_OPTION );
+			\Convertrack\Owner_Lock::release( self::LOCK_OPTION, $owner );
 		}
 	}
 
@@ -131,12 +160,12 @@ class Keywords_Sync {
 		$cap    = max( 1, (int) Keywords_Settings::get( 'row_cap', 5000 ) );
 		$in_run = empty( $state['current'] ) ? 0 : min( 1, $state['current']['stored'] / $cap );
 
-		$state['running']  = in_array( $state['status'], array( 'queued', 'running' ), true ) && ( self::lock_is_live() || 'queued' === $state['status'] );
+		$state['running']  = in_array( $state['status'], array( 'queued', 'running' ), true ) && ( \Convertrack\Owner_Lock::is_live( self::LOCK_OPTION, self::LOCK_TIMEOUT ) || 'queued' === $state['status'] );
 		$state['progress'] = array(
 			'ranges_total' => $total,
 			'ranges_done'  => $done,
 			'current'      => empty( $state['current'] ) ? '' : (string) $state['current']['range_key'],
-			'rows_stored'  => (int) $state['rows_stored'],
+			'rows_stored'  => (int) $state['rows_stored'] + ( empty( $state['current'] ) ? 0 : (int) $state['current']['stored'] ),
 			'percent'      => $total > 0 ? (int) round( 100 * ( $done + $in_run ) / $total ) : 0,
 		);
 
@@ -175,13 +204,17 @@ class Keywords_Sync {
 	 *
 	 * @return array
 	 */
-	private static function run_step_locked() {
+	private static function run_step_locked( $owner ) {
 		$state = self::raw_state();
 		if ( ! in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
 			return $state;
 		}
 
 		$state['status'] = 'running';
+		if ( ! empty( $state['next_retry_at'] ) && (int) $state['next_retry_at'] > time() ) {
+			return $state;
+		}
+		$state['next_retry_at'] = 0;
 		if ( empty( $state['started_at'] ) ) {
 			$state['started_at'] = current_time( 'mysql' );
 		}
@@ -190,8 +223,9 @@ class Keywords_Sync {
 		$row_cap   = max( 100, (int) Keywords_Settings::get( 'row_cap', 5000 ) );
 
 		for ( $i = 0; $i < self::MAX_REQUESTS_PER_RUN; $i++ ) {
-			// Heartbeat so a live step is not taken over after LOCK_TIMEOUT.
-			update_option( self::LOCK_OPTION, time(), false );
+			if ( ! \Convertrack\Owner_Lock::heartbeat( self::LOCK_OPTION, $owner, self::LOCK_TIMEOUT ) ) {
+				return self::fail( $state, __( 'The keyword sync worker lost ownership of its lease.', 'convertrack-click-conversion-analytics' ), 'lease' );
+			}
 
 			if ( empty( $state['current'] ) ) {
 				if ( empty( $state['ranges_pending'] ) ) {
@@ -214,7 +248,13 @@ class Keywords_Sync {
 					'skipped'         => 0,
 					'range_synced_at' => current_time( 'mysql' ),
 					'truncated'       => false,
+					'cap_hit'         => false,
 				);
+			}
+
+			if ( (int) $state['requests_made'] >= self::MAX_REQUESTS_PER_SYNC ) {
+				$state['current']['truncated'] = true;
+				return self::partial( $state, __( 'The request budget ended before the current range completed. The prior complete generation was preserved.', 'convertrack-click-conversion-analytics' ), 'request_budget' );
 			}
 
 			$dimensions = array( 'query', 'page' );
@@ -244,33 +284,46 @@ class Keywords_Sync {
 				(int) $state['current']['start_row'],
 				$filters
 			);
+			$state['requests_made'] = (int) $state['requests_made'] + 1;
 
 			if ( is_wp_error( $result ) ) {
 				return self::handle_error( $state, $result );
 			}
 
-			$state['requests_made'] = (int) $state['requests_made'] + 1;
 			$state['retries']       = 0;
 
-			$rows = $result['rows'];
-			self::store_rows( $rows, $state['current'], $country, $row_cap );
-			$state['rows_stored'] = (int) $state['rows_stored'] + (int) $state['current']['stored'];
+			$rows   = $result['rows'];
+			$stored = self::store_rows( $rows, $state['current'], $country, $row_cap, $state['sync_id'] );
+			if ( is_wp_error( $stored ) ) {
+				return self::fail( $state, $stored->get_error_message(), 'database' );
+			}
 
 			$budget_spent = $state['requests_made'] >= self::MAX_REQUESTS_PER_SYNC;
-			$cap_reached  = $state['current']['stored'] >= $row_cap;
+			$cap_reached  = ! empty( $state['current']['cap_hit'] );
 			$exhausted    = count( $rows ) < $row_limit;
 
-			if ( $exhausted || $cap_reached || $budget_spent ) {
-				$state['current']['truncated'] = $cap_reached || $budget_spent;
-				self::finalize_range( $state['current'] );
+			if ( $cap_reached ) {
+				$state['current']['truncated'] = true;
+				return self::partial( $state, __( 'The configured keyword row cap truncated this range. The prior complete generation was preserved.', 'convertrack-click-conversion-analytics' ), 'row_cap' );
+			}
+
+			if ( $exhausted ) {
+				$finalized = self::finalize_range( $state['current'], $state['sync_id'] );
+				if ( is_wp_error( $finalized ) ) {
+					return self::fail( $state, $finalized->get_error_message(), 'database' );
+				}
+				$state['rows_stored'] = (int) $state['rows_stored'] + (int) $state['current']['stored'];
 				$state['current'] = null;
 
-				if ( $budget_spent ) {
+				if ( $budget_spent && ! empty( $state['ranges_pending'] ) ) {
 					// Out of request budget for this sync — drop remaining ranges.
-					$state['ranges_pending'] = array();
-					return self::finish( $state );
+					return self::partial( $state, __( 'The request budget ended before every configured range completed. Completed ranges were kept; unfinished ranges were not published.', 'convertrack-click-conversion-analytics' ), 'request_budget' );
 				}
 			} else {
+				if ( $budget_spent ) {
+					$state['current']['truncated'] = true;
+					return self::partial( $state, __( 'The request budget ended before the current range completed. The prior complete generation was preserved.', 'convertrack-click-conversion-analytics' ), 'request_budget' );
+				}
 				$state['current']['start_row'] = (int) $state['current']['start_row'] + count( $rows );
 			}
 
@@ -290,7 +343,7 @@ class Keywords_Sync {
 	 * @param string $country Active country filter ('' = worldwide).
 	 * @param int    $row_cap Max stored rows for this range.
 	 */
-	private static function store_rows( array $rows, array &$current, $country, $row_cap ) {
+	private static function store_rows( array $rows, array &$current, $country, $row_cap, $sync_id ) {
 		$min_impressions = (int) Keywords_Settings::get( 'min_impressions', 10 );
 		$site_host       = self::normalize_host( (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST ) );
 		$range_key       = (string) $current['range_key'];
@@ -298,6 +351,7 @@ class Keywords_Sync {
 
 		foreach ( $rows as $row ) {
 			if ( $current['stored'] + count( $batch ) >= $row_cap ) {
+				$current['cap_hit'] = true;
 				break;
 			}
 			if ( empty( $row['keys'][0] ) || empty( $row['keys'][1] ) ) {
@@ -343,8 +397,13 @@ class Keywords_Sync {
 		}
 
 		if ( ! empty( $batch ) ) {
-			$current['stored'] += Keywords_Database::upsert_keywords( $batch, $range_key, $current['range_synced_at'] );
+			$result = Keywords_Database::stage_keywords( $batch, $range_key, $sync_id );
+			if ( is_wp_error( $result ) ) {
+				return $result;
+			}
+			$current['stored'] += (int) $result;
 		}
+		return count( $batch );
 	}
 
 	/**
@@ -353,12 +412,17 @@ class Keywords_Sync {
 	 *
 	 * @param array $current Completed range state.
 	 */
-	private static function finalize_range( array $current ) {
+	private static function finalize_range( array $current, $sync_id ) {
 		$range_key = (string) $current['range_key'];
 
-		Keywords_Database::prune_stale( $range_key, $current['range_synced_at'] );
-		Keywords_Database::rebuild_page_rollup( $range_key, $current['range_synced_at'] );
-		Keywords_Database::map_page_posts();
+		$published = Keywords_Database::finalize_generation( $sync_id, $range_key, $current['range_synced_at'] );
+		if ( is_wp_error( $published ) ) {
+			return $published;
+		}
+		$mapped = Keywords_Database::map_page_posts();
+		if ( is_wp_error( $mapped ) ) {
+			return $mapped;
+		}
 
 		$last_sync               = get_option( self::LAST_SYNC_OPTION, array() );
 		$last_sync               = is_array( $last_sync ) ? $last_sync : array();
@@ -371,6 +435,8 @@ class Keywords_Sync {
 
 		Logger::info( 'keywords-sync', 'Keyword range synced.', array( 'range' => $range_key, 'rows' => (int) $current['stored'], 'skipped' => (int) $current['skipped'], 'truncated' => ! empty( $current['truncated'] ) ) );
 		do_action( 'convertrack_gsc_keywords_range_synced', $range_key, $current );
+		Keywords_Cron::kick_analyze( MINUTE_IN_SECONDS );
+		return true;
 	}
 
 	/**
@@ -394,6 +460,32 @@ class Keywords_Sync {
 	}
 
 	/**
+	 * End a request-budget or row-cap truncated run without publishing its
+	 * incomplete current generation.
+	 *
+	 * @param array  $state   State.
+	 * @param string $message Message.
+	 * @param string $reason  Partial reason.
+	 * @return array
+	 */
+	private static function partial( array $state, $message, $reason ) {
+		$partial_range = empty( $state['current'] ) ? '' : (string) $state['current']['range_key'];
+		if ( ! empty( $state['sync_id'] ) ) {
+			Keywords_Database::discard_generation( $state['sync_id'] );
+		}
+		$error = array( 'message' => $message, 'reason' => $reason, 'time' => current_time( 'mysql' ) );
+		$state['status']        = 'partial';
+		$state['finished_at']   = current_time( 'mysql' );
+		$state['partial_range'] = $partial_range;
+		$state['current']       = null;
+		$state['error']         = $error;
+		update_option( self::STATE_OPTION, $state, false );
+		update_option( self::LAST_ERROR_OPTION, $error, false );
+		Logger::warning( 'keywords-sync', 'Keyword sync ended with partial results.', array( 'reason' => $reason, 'range' => $partial_range ) );
+		return $state;
+	}
+
+	/**
 	 * Classify an API error and either retry or fail the sync.
 	 *
 	 * @param array     $state State.
@@ -405,6 +497,20 @@ class Keywords_Sync {
 
 		if ( self::is_auth_error( $error ) ) {
 			return self::fail( $state, $message, 'auth' );
+		}
+		if ( API::is_daily_quota_error( $error ) ) {
+			return self::fail( $state, $message, 'quota' );
+		}
+		if ( API::is_rate_limit_error( $error ) ) {
+			$delay                  = API::retry_after_seconds( $error, 5 * MINUTE_IN_SECONDS );
+			$state['retries']       = (int) $state['retries'] + 1;
+			$state['next_retry_at'] = time() + $delay;
+			if ( $state['retries'] >= 3 ) {
+				return self::fail( $state, $message, 'rate_limit' );
+			}
+			update_option( self::STATE_OPTION, $state, false );
+			Logger::warning( 'keywords-sync', 'Keyword sync was temporarily rate limited.', array( 'retry_after' => $delay ) );
+			return $state;
 		}
 		if ( API::is_quota_error( $error ) ) {
 			return self::fail( $state, $message, 'quota' );
@@ -445,8 +551,13 @@ class Keywords_Sync {
 		$state['status']      = 'failed';
 		$state['finished_at'] = current_time( 'mysql' );
 		$state['error']       = $error;
+		$state['partial_range'] = empty( $state['current'] ) ? '' : (string) $state['current']['range_key'];
+		$state['current']       = null;
 		if ( 'quota' === $reason ) {
 			$state['quota_reached'] = true;
+		}
+		if ( ! empty( $state['sync_id'] ) ) {
+			Keywords_Database::discard_generation( $state['sync_id'] );
 		}
 
 		update_option( self::STATE_OPTION, $state, false );
@@ -511,35 +622,6 @@ class Keywords_Sync {
 	}
 
 	/**
-	 * Acquire the sync lock (atomic add_option; stale locks are taken over).
-	 *
-	 * @return bool
-	 */
-	private static function acquire_lock() {
-		if ( add_option( self::LOCK_OPTION, time(), '', 'no' ) ) {
-			return true;
-		}
-
-		$held = (int) get_option( self::LOCK_OPTION );
-		if ( $held && ( time() - $held ) < self::LOCK_TIMEOUT ) {
-			return false;
-		}
-
-		update_option( self::LOCK_OPTION, time(), false );
-		return true;
-	}
-
-	/**
-	 * Whether the lock is currently held by a live step.
-	 *
-	 * @return bool
-	 */
-	private static function lock_is_live() {
-		$held = (int) get_option( self::LOCK_OPTION );
-		return $held && ( time() - $held ) < self::LOCK_TIMEOUT;
-	}
-
-	/**
 	 * Stored state merged over defaults.
 	 *
 	 * @return array
@@ -559,6 +641,7 @@ class Keywords_Sync {
 		return array(
 			'status'         => 'idle',
 			'trigger'        => '',
+			'sync_id'        => '',
 			'ranges_pending' => array(),
 			'ranges_total'   => 0,
 			'custom'         => null,
@@ -566,7 +649,9 @@ class Keywords_Sync {
 			'requests_made'  => 0,
 			'rows_stored'    => 0,
 			'retries'        => 0,
+			'next_retry_at'  => 0,
 			'quota_reached'  => false,
+			'partial_range'  => '',
 			'started_at'     => null,
 			'finished_at'    => null,
 			'error'          => null,

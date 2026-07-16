@@ -19,28 +19,68 @@
 
 	function api( path, options ) {
 		options = options || {};
-		var headers = { 'X-WP-Nonce': C.nonce };
-		if ( options.body ) {
-			headers['Content-Type'] = 'application/json';
-		}
-		return fetch( ROOT + path, {
-			method: options.method || 'GET',
-			headers: headers,
-			body: options.body ? JSON.stringify( options.body ) : undefined,
-			credentials: 'same-origin'
-		} ).then( function ( r ) {
-			if ( ! r.ok ) {
-				return r.json().catch( function () {
-					return null;
-				} ).then( function ( body ) {
-					var requestError = new Error( ( body && body.message ) || 'HTTP ' + r.status );
-					requestError.cvtrkPublic = true;
-					requestError.status = r.status;
-					throw requestError;
-				} );
+		var method = options.method || 'GET';
+		var maxAttempts = options.retries !== undefined ? Math.max( 1, Number( options.retries ) + 1 ) : ( method === 'GET' ? 2 : 1 );
+		var timeoutMs = Math.max( 1000, Number( options.timeout ) || 15000 );
+		var attempt = 0;
+
+		function request() {
+			attempt++;
+			var headers = { 'X-WP-Nonce': C.nonce };
+			var controller = window.AbortController ? new window.AbortController() : null;
+			var timedOut = false;
+			var timer = window.setTimeout( function () {
+				timedOut = true;
+				if ( controller ) {
+					controller.abort();
+				}
+			}, timeoutMs );
+			if ( options.body ) {
+				headers['Content-Type'] = 'application/json';
 			}
-			return r.json();
-		} );
+
+			return fetch( ROOT + path, {
+				method: method,
+				headers: headers,
+				body: options.body ? JSON.stringify( options.body ) : undefined,
+				credentials: 'same-origin',
+				signal: controller ? controller.signal : undefined
+			} ).then( function ( response ) {
+				window.clearTimeout( timer );
+				if ( ! response.ok ) {
+					return response.json().catch( function () {
+						return null;
+					} ).then( function ( body ) {
+						var requestError = new Error( ( body && body.message ) || ( I18N.requestFailed || 'The request could not be completed.' ) );
+						requestError.cvtrkPublic = true;
+						requestError.status = response.status;
+						requestError.code = body && body.code ? body.code : 'http_error';
+						requestError.retryable = [ 502, 503, 504 ].indexOf( response.status ) !== -1;
+						throw requestError;
+					} );
+				}
+				return response.json();
+			} ).catch( function ( error ) {
+				window.clearTimeout( timer );
+				var publicError = error;
+				if ( ! error || ! error.cvtrkPublic ) {
+					publicError = new Error( timedOut ? ( I18N.requestTimeout || 'The request timed out. Please try again.' ) : ( I18N.networkError || 'The server could not be reached. Please try again.' ) );
+					publicError.cvtrkPublic = true;
+					publicError.status = 0;
+					publicError.code = timedOut ? 'timeout' : 'network_error';
+					publicError.retryable = true;
+					publicError.cause = error;
+				}
+				if ( publicError.retryable && attempt < maxAttempts ) {
+					return new Promise( function ( resolve ) {
+						window.setTimeout( resolve, 350 * attempt );
+					} ).then( request );
+				}
+				throw publicError;
+			} );
+		}
+
+		return request();
 	}
 
 	function postApi( path, body ) {
@@ -1812,6 +1852,14 @@
 			return modeSel ? modeSel.value : 'element';
 		}
 
+		function selectedPage() {
+			var option = postSel && postSel.selectedIndex >= 0 ? postSel.options[ postSel.selectedIndex ] : null;
+			return {
+				post: option ? option.value : '0',
+				pageKey: option ? ( option.getAttribute( 'data-page-key' ) || '' ) : ''
+			};
+		}
+
 		function loadSnapshot( post, device ) {
 			post = String( post || '' );
 			device = device || selectedDevice();
@@ -1907,15 +1955,17 @@
 		}
 
 		function load() {
-			var post = postSel ? postSel.value : 0;
+			var selected = selectedPage();
+			var post = selected.post;
+			var pageKey = selected.pageKey;
 			var range = rangeSel ? rangeSel.value : 7;
 			var device = selectedDevice();
 			syncDeviceToggle();
-			if ( ! post || post === '0' ) {
+			if ( ( ! post || post === '0' ) && ! pageKey ) {
 				clearHeatmapSurface( 'Select a page to view heatmap data.' );
 				return;
 			}
-			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
+			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&page_key=' + encodeURIComponent( pageKey ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
 				.then( function ( d ) {
 					data = d;
 					if ( showChk && showChk.checked ) {
@@ -1953,7 +2003,7 @@
 					setHeatmapConfidenceNote( heatmapClicks );
 				} )
 				.catch( function ( err ) {
-					clearHeatmapSurface( ( err && err.message ) || 'Could not load heatmap data.' );
+					clearHeatmapSurface( errorMessage( err, 'Could not load heatmap data.' ) );
 				} );
 		}
 
@@ -1970,19 +2020,21 @@
 					if ( ! postSel || ! d.rows ) {
 						return;
 					}
-					var cur = postSel.value;
-					var hasCurrent = false;
+					var current = selectedPage();
+					var currentIndex = -1;
 					while ( postSel.options.length > 1 ) {
 						postSel.remove( 1 );
 					}
 					d.rows.forEach( function ( p ) {
-						if ( p.post_id > 0 ) {
+						var pageKey = String( p.page_key || '' );
+						if ( p.post_id > 0 || pageKey ) {
 							var o = document.createElement( 'option' );
-							o.value = p.post_id;
+							o.value = Number( p.post_id ) > 0 ? p.post_id : 0;
+							o.setAttribute( 'data-page-key', pageKey );
 							o.textContent = p.title;
 							postSel.appendChild( o );
-							if ( String( p.post_id ) === String( cur ) ) {
-								hasCurrent = true;
+							if ( current.pageKey ? pageKey === current.pageKey : ( ! pageKey && String( p.post_id ) === String( current.post ) ) ) {
+								currentIndex = postSel.options.length - 1;
 							}
 						}
 					} );
@@ -1990,15 +2042,15 @@
 						clearHeatmapSurface( search ? ( I18N.noMatchingPages || 'No tracked pages match this search.' ) : ( I18N.noHeatmapPages || 'No page activity in this range yet.' ) );
 						return;
 					}
-					if ( cur && cur !== '0' && hasCurrent ) {
-						postSel.value = cur;
+					if ( currentIndex > 0 ) {
+						postSel.selectedIndex = currentIndex;
 					} else {
 						postSel.selectedIndex = 1;
 					}
 					load();
 				} )
 				.catch( function ( err ) {
-					clearHeatmapSurface( ( err && err.message ) || 'Could not load heatmap pages.' );
+					clearHeatmapSurface( errorMessage( err, 'Could not load heatmap pages.' ) );
 				} );
 		}
 
@@ -2387,7 +2439,7 @@
 				.catch( function ( err ) {
 					[ attr( 'top-pages' ), attr( 'top-buttons' ) ].forEach( function ( box ) {
 						if ( box ) {
-							errorState( box, ( err && err.message ) || 'Could not load content analytics.', load );
+						errorState( box, errorMessage( err, 'Could not load content analytics.' ), load );
 						}
 					} );
 				} );
@@ -2559,7 +2611,7 @@
 				.catch( function ( err ) {
 					setBusy( detailBox, false );
 					if ( detailBox ) {
-						errorState( detailBox, ( err && err.message ) || 'Could not load page details.', function () { loadDetail( false ); } );
+						errorState( detailBox, errorMessage( err, 'Could not load page details.' ), function () { loadDetail( false ); } );
 					}
 				} );
 		}
@@ -2591,7 +2643,7 @@
 				.catch( function ( err ) {
 					setBusy( listBox, false );
 					if ( listBox ) {
-						errorState( listBox, ( err && err.message ) || 'Could not load tracked pages.', loadList );
+						errorState( listBox, errorMessage( err, 'Could not load tracked pages.' ), loadList );
 					}
 					if ( resultCount ) {
 						resultCount.textContent = I18N.loadError || 'Could not load tracked pages.';
@@ -2748,6 +2800,7 @@
 					setBusy( box, false );
 					renderGscSummary( data );
 					renderGscSitemapOptions( data.sitemaps || [] );
+					reconcileSitemapScan( data.sitemap_scan || {} );
 					if ( ! proc.running && data.last_batch_error && data.last_batch_error.message ) {
 						setGscProgress( data.last_batch_error.message, true );
 					}
@@ -2755,7 +2808,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load indexing coverage.', loadSummary );
+						errorState( box, errorMessage( err, 'Could not load indexing coverage.' ), loadSummary );
 					}
 				} );
 		}
@@ -3091,7 +3144,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load the indexing queue.', loadUrls );
+						errorState( box, errorMessage( err, 'Could not load the indexing queue.' ), loadUrls );
 					}
 				} );
 		}
@@ -3223,7 +3276,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load indexing activity.', loadLogs );
+						errorState( box, errorMessage( err, 'Could not load indexing activity.' ), loadLogs );
 					}
 				} );
 		}
@@ -3354,7 +3407,7 @@
 					} )
 					.catch( function ( err ) {
 						btn.disabled = false;
-						setGscProgress( ( err && err.message ) || 'Request failed.', true );
+						setGscProgress( errorMessage( err, 'Request failed.' ), true );
 					} );
 			} );
 		}
@@ -3364,6 +3417,7 @@
 		var progressBox = attr( 'gsc-progress' );
 		var CHUNK = 5;
 		var MAX_CHUNKS = 20;
+		var SITEMAP_POLL_MS = 2000;
 
 		function setGscProgress( text, isError ) {
 			if ( ! progressBox ) {
@@ -3384,6 +3438,55 @@
 			}
 			if ( process ) {
 				process.disabled = disabled;
+			}
+		}
+
+		function sitemapErrorText( value ) {
+			if ( ! value ) {
+				return '';
+			}
+			if ( typeof value === 'string' ) {
+				return value;
+			}
+			return value.message || value.reason || '';
+		}
+
+		// Sitemap discovery is a resumable background job. Reconcile the state
+		// exposed by /gsc/summary instead of treating the queue request as done.
+		function reconcileSitemapScan( scanState ) {
+			var status = String( scanState.status || 'idle' );
+			var running = status === 'queued' || status === 'running';
+			if ( running ) {
+				setGscButtonsDisabled( true );
+				setGscProgress(
+					( status === 'queued' ? ( I18N.gscScanQueued || 'Sitemap scan queued...' ) : ( I18N.gscScanning || 'Scanning sitemap...' ) ) +
+					' ' + num( scanState.stored || 0 ) + ' ' + ( I18N.gscUrlsStored || 'URLs stored' )
+				);
+				if ( ! proc.scanTimer ) {
+					proc.scanTimer = window.setTimeout( function () {
+						proc.scanTimer = null;
+						loadSummary();
+					}, SITEMAP_POLL_MS );
+				}
+				return;
+			}
+
+			if ( proc.scanTimer ) {
+				window.clearTimeout( proc.scanTimer );
+				proc.scanTimer = null;
+			}
+			setGscButtonsDisabled( proc.running );
+			if ( status === 'completed' ) {
+				setGscProgress( ( I18N.gscScanDone || 'Sitemap scan complete - URLs queued:' ) + ' ' + num( scanState.stored || scanState.sitemap_urls || 0 ) + '.' );
+				loadUrls();
+				loadLogs();
+			} else if ( status === 'partial' ) {
+				setGscProgress( ( I18N.gscScanPartial || 'Sitemap scan completed with partial results. Existing records were preserved.' ) + ( sitemapErrorText( scanState.error ) ? ' ' + sitemapErrorText( scanState.error ) : '' ), true );
+				loadUrls();
+				loadLogs();
+			} else if ( status === 'failed' ) {
+				setGscProgress( ( I18N.gscScanFailed || 'Sitemap scan failed:' ) + ' ' + ( sitemapErrorText( scanState.error ) || ( I18N.retry || 'Please retry.' ) ), true );
+				loadLogs();
 			}
 		}
 
@@ -3442,7 +3545,7 @@
 
 			return step()
 				.catch( function ( err ) {
-					setGscProgress( ( I18N.gscInspectFailed || 'Inspection failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+					setGscProgress( ( I18N.gscInspectFailed || 'Inspection failed:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 				} )
 				.then( function () {
 					proc.running = false;
@@ -3460,20 +3563,12 @@
 				setGscProgress( I18N.gscScanning || 'Scanning sitemap…' );
 				postApi( '/gsc/scan-sitemap', {} )
 					.then( function ( data ) {
-						var found = Number( data.stored ) || Number( data.sitemap_urls ) || 0;
-						var remaining = Number( data.remaining ) || 0;
-						setGscButtonsDisabled( false );
-						loadUrls();
-						if ( remaining > 0 ) {
-							setGscProgress( ( I18N.gscScanDone || 'Sitemap scan complete — URLs queued:' ) + ' ' + found + '. ' + ( I18N.gscStartingInspection || 'Starting inspection…' ) );
-							return runInspectionLoop( remaining );
-						}
-						setGscProgress( ( I18N.gscScanDone || 'Sitemap scan complete — URLs queued:' ) + ' ' + found + '. ' + ( I18N.gscNothingDue || 'No URLs are currently due for inspection.' ) );
-						reloadAll();
+						reconcileSitemapScan( data.sitemap_scan || data || {} );
+						loadSummary();
 					} )
 					.catch( function ( err ) {
 						setGscButtonsDisabled( false );
-						setGscProgress( ( I18N.gscScanFailed || 'Sitemap scan failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+						setGscProgress( ( I18N.gscScanFailed || 'Sitemap scan failed:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 						loadLogs();
 					} );
 			} );
@@ -3563,7 +3658,7 @@
 					setPropertyStatus( '' );
 				} )
 				.catch( function ( err ) {
-					setPropertyStatus( ( I18N.gscPropsError || "Couldn't load properties:" ) + ' ' + ( ( err && err.message ) || '' ), true );
+					setPropertyStatus( ( I18N.gscPropsError || "Couldn't load properties:" ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 					if ( propertyStatus ) {
 						propertyStatus.appendChild( document.createTextNode( ' ' ) );
 						var retry = el( 'button', 'button-link', I18N.retry || 'Retry' );
@@ -3751,7 +3846,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load 404 summary.', loadSummary );
+						errorState( box, errorMessage( err, 'Could not load 404 summary.' ), loadSummary );
 					}
 				} );
 		}
@@ -3938,7 +4033,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load 404 events.', loadEvents );
+						errorState( box, errorMessage( err, 'Could not load 404 events.' ), loadEvents );
 					}
 				} );
 		}
@@ -4030,7 +4125,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load redirects.', loadRedirects );
+						errorState( box, errorMessage( err, 'Could not load redirects.' ), loadRedirects );
 					}
 				} );
 		}
@@ -4079,7 +4174,7 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load 404 logs.', loadLogs );
+						errorState( box, errorMessage( err, 'Could not load 404 logs.' ), loadLogs );
 					}
 				} );
 		}
@@ -4140,7 +4235,7 @@
 					reloadAll();
 				} )
 				.catch( function ( err ) {
-					setProgress( ( err && err.message ) || '404 action failed.', true );
+					setProgress( errorMessage( err, '404 action failed.' ), true );
 					throw err;
 				} );
 		}
@@ -4200,7 +4295,7 @@
 								staticSave.disabled = false;
 							}
 							if ( staticError ) {
-								staticError.textContent = ( err && err.message ) || 'Could not update this redirect.';
+								staticError.textContent = errorMessage( err, 'Could not update this redirect.' );
 								staticError.hidden = false;
 							}
 						} );
@@ -4291,7 +4386,7 @@
 					.then( closeDestinationDialog )
 					.catch( function ( err ) {
 						save.disabled = false;
-						error.textContent = ( err && err.message ) || 'Could not update this redirect.';
+						error.textContent = errorMessage( err, 'Could not update this redirect.' );
 						error.hidden = false;
 					} );
 			} );
@@ -4360,7 +4455,7 @@
 						reloadAll();
 					} )
 					.catch( function ( err ) {
-						setProgress( ( err && err.message ) || 'Redirect action failed.', true );
+						setProgress( errorMessage( err, 'Redirect action failed.' ), true );
 					} );
 			} );
 		}
@@ -4410,7 +4505,7 @@
 					} )
 					.catch( function ( err ) {
 						refresh.disabled = false;
-						setProgress( ( err && err.message ) || 'URL refresh failed.', true );
+						setProgress( errorMessage( err, 'URL refresh failed.' ), true );
 						loadLogs();
 					} );
 			} );
@@ -4429,7 +4524,7 @@
 					} )
 					.catch( function ( err ) {
 						process.disabled = false;
-						setProgress( ( err && err.message ) || 'Recommendation processing failed.', true );
+						setProgress( errorMessage( err, 'Recommendation processing failed.' ), true );
 						loadLogs();
 					} );
 			} );
@@ -4460,7 +4555,7 @@
 					} )
 					.catch( function ( err ) {
 						bulkRun.disabled = false;
-						setProgress( ( err && err.message ) || 'Bulk action failed.', true );
+						setProgress( errorMessage( err, 'Bulk action failed.' ), true );
 					} );
 			} );
 		}
@@ -4498,6 +4593,7 @@
 		var searchInput = attr( 'kw-search' );
 		var progressBox = attr( 'kw-progress' );
 		var exportLink = attr( 'kw-export' );
+		var cancelSync = attr( 'kw-cancel' );
 		var tableBox = attr( 'kw-table' );
 		var detailCard = attr( 'kw-detail' );
 		var toolsStatus = attr( 'kw-tools-status' );
@@ -4768,13 +4864,13 @@
 				.catch( function ( err ) {
 					setBusy( box, false );
 					if ( box ) {
-						errorState( box, ( err && err.message ) || 'Could not load keyword summary.', loadSummary );
+						errorState( box, errorMessage( err, 'Could not load keyword summary.' ), loadSummary );
 					}
 					// These cards are fed by the same request — stop their
 					// skeletons instead of letting them pulse forever.
 					[ attr( 'kw-branded' ), attr( 'kw-top-pages' ) ].forEach( function ( card ) {
 						if ( card ) {
-							errorState( card, ( err && err.message ) || ( I18N.loadError || 'Something went wrong while loading this data.' ) );
+							errorState( card, errorMessage( err, I18N.loadError || 'Something went wrong while loading this data.' ) );
 						}
 					} );
 				} );
@@ -5008,7 +5104,7 @@
 				.catch( function ( err ) {
 					setBusy( tableBox, false );
 					if ( tableBox ) {
-						errorState( tableBox, ( err && err.message ) || 'Could not load keywords.', loadKeywords );
+						errorState( tableBox, errorMessage( err, 'Could not load keywords.' ), loadKeywords );
 					}
 				} );
 		}
@@ -5061,7 +5157,7 @@
 					}
 				} )
 				.catch( function ( err ) {
-					setProgress( ( I18N.kwPageFilterFailed || 'Could not load the page filter:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+					setProgress( ( I18N.kwPageFilterFailed || 'Could not load the page filter:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 				} );
 		}
 
@@ -5236,7 +5332,7 @@
 				.catch( function ( err ) {
 					var box = attr( 'kw-detail-body' );
 					if ( box ) {
-						errorState( box, ( I18N.kwDetailFailed || 'Could not load the page detail:' ) + ' ' + ( ( err && err.message ) || '' ), function () {
+						errorState( box, ( I18N.kwDetailFailed || 'Could not load the page detail:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), function () {
 							openDetail( postId );
 						} );
 					}
@@ -5260,6 +5356,30 @@
 					btn.disabled = disabled;
 				}
 			} );
+			if ( cancelSync ) {
+				cancelSync.hidden = ! disabled;
+				cancelSync.disabled = false;
+			}
+		}
+
+		if ( cancelSync ) {
+			cancelSync.addEventListener( 'click', function () {
+				cancelSync.disabled = true;
+				postApi( '/gsc/keywords/cancel', {} )
+					.then( function () {
+						if ( state.statusTimer ) {
+							window.clearInterval( state.statusTimer );
+							state.statusTimer = null;
+						}
+						setSyncButtons( false );
+						setProgress( I18N.kwSyncCancelled || 'Keyword sync was cancelled. The previous complete generation was preserved.', true );
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						cancelSync.disabled = false;
+						setProgress( ( I18N.kwCancelFailed || 'Could not cancel the keyword sync:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
+					} );
+			} );
 		}
 
 		function startSync( body ) {
@@ -5271,7 +5391,7 @@
 				} )
 				.catch( function ( err ) {
 					setSyncButtons( false );
-					setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+					setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 				} );
 		}
 
@@ -5296,8 +5416,14 @@
 						state.statusTimer = null;
 						setSyncButtons( false );
 
-						if ( sync.status === 'failed' && sync.last_error ) {
-							setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ' ' + sync.last_error.message, true );
+						var terminalError = sync.last_error || sync.error || null;
+						var terminalMessage = terminalError && ( terminalError.message || terminalError.reason ) ? ( terminalError.message || terminalError.reason ) : '';
+						if ( sync.status === 'failed' ) {
+							setProgress( ( I18N.kwSyncFailed || 'Keyword sync failed:' ) + ( terminalMessage ? ' ' + terminalMessage : '' ), true );
+						} else if ( sync.status === 'partial' ) {
+							setProgress( ( I18N.kwSyncPartial || 'Keyword sync stopped with partial results. The previous complete generation was preserved.' ) + ( terminalMessage ? ' ' + terminalMessage : '' ), true );
+						} else if ( sync.status === 'cancelled' ) {
+							setProgress( I18N.kwSyncCancelled || 'Keyword sync was cancelled. The previous complete generation was preserved.', true );
 						} else {
 							setProgress( I18N.kwSyncDone || 'Keyword sync complete.' );
 						}
@@ -5311,7 +5437,7 @@
 							window.clearInterval( state.statusTimer );
 							state.statusTimer = null;
 							setSyncButtons( false );
-							setProgress( ( I18N.kwStatusLost || 'Lost contact with the sync status endpoint. The sync may still be running in the background — refresh to check.' ) + ( err && err.message ? ' (' + err.message + ')' : '' ), true );
+							setProgress( ( I18N.kwStatusLost || 'Lost contact with the sync status endpoint. The sync may still be running in the background — refresh to check.' ) + ' (' + errorMessage( err, I18N.loadError || 'Please try again.' ) + ')', true );
 						}
 					} );
 			}, 4000 );
@@ -5416,7 +5542,7 @@
 					} )
 					.catch( function ( err ) {
 						reanalyzeAll.disabled = false;
-						setProgress( ( err && err.message ) || 'Re-analysis failed.', true );
+						setProgress( errorMessage( err, 'Re-analysis failed.' ), true );
 					} );
 			} );
 		}
@@ -5438,7 +5564,7 @@
 					} )
 					.catch( function ( err ) {
 						bulkBtn.disabled = false;
-						setProgress( ( err && err.message ) || 'Bulk action failed.', true );
+						setProgress( errorMessage( err, 'Bulk action failed.' ), true );
 					} );
 			} );
 		}
@@ -5461,7 +5587,7 @@
 					} )
 					.catch( function ( err ) {
 						target.disabled = false;
-						setProgress( ( err && err.message ) || 'Re-analysis failed.', true );
+						setProgress( errorMessage( err, 'Re-analysis failed.' ), true );
 					} );
 			}
 		} );
@@ -5514,7 +5640,7 @@
 						button.disabled = false;
 						button.textContent = I18N.kwPromptEnableBtn || 'Enable & sync now';
 					}
-					setProgress( ( I18N.kwEnableFailed || 'Could not enable Keyword Insights:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+					setProgress( ( I18N.kwEnableFailed || 'Could not enable Keyword Insights:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 				} );
 		}
 
@@ -5603,7 +5729,7 @@
 				}
 			} )
 			.catch( function ( err ) {
-				setProgress( ( I18N.kwStatusFailed || 'Could not check keyword sync status:' ) + ' ' + ( ( err && err.message ) || '' ), true );
+				setProgress( ( I18N.kwStatusFailed || 'Could not check keyword sync status:' ) + ' ' + errorMessage( err, I18N.loadError || 'Please try again.' ), true );
 			} );
 
 		var hashMatch = /^#kw-page-(\d+)$/.exec( location.hash || '' );
@@ -5728,6 +5854,19 @@
 	}
 
 	/* Boot ---------------------------------------------------------------- */
+
+	// Keep the browser bundle testable without running page initializers. This
+	// hook is only populated by the isolated Node test harness; production
+	// localized data never sets `testMode`.
+	if ( C.testMode ) {
+		window.__ConvertrackAdminTest = {
+			api: api,
+			clear: clear,
+			errorMessage: errorMessage,
+			errorState: errorState
+		};
+		return;
+	}
 
 	initSubviews();
 	initLive();

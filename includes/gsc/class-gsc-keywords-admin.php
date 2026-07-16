@@ -79,7 +79,7 @@ class Keywords_Admin {
 		header( 'Content-Disposition: attachment; filename=convertrack-gsc-keywords-' . gmdate( 'Ymd' ) . '.csv' );
 
 		$out = fopen( 'php://output', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		fputcsv( $out, array( 'Keyword', 'Page URL', 'Post Title', 'Types', 'Clicks', 'Impressions', 'CTR %', 'Position', 'Presence', 'Opportunity Score', 'Opportunity Level', 'Recommended Action', 'Last Analyzed' ) );
+		\Convertrack\CSV::write( $out, array( 'Keyword', 'Page URL', 'Post Title', 'Types', 'Clicks', 'Impressions', 'CTR %', 'Position', 'Presence', 'Opportunity Score', 'Opportunity Level', 'Recommended Action', 'Last Analyzed' ) );
 
 		do {
 			$data = Keywords_Database::list_keywords( $args );
@@ -90,7 +90,7 @@ class Keywords_Admin {
 					$primary = Keywords_Recommendations::message( (string) $first['code'], isset( $first['params'] ) ? (array) $first['params'] : array() );
 				}
 
-				fputcsv(
+				\Convertrack\CSV::write(
 					$out,
 					array(
 						$row['query'],

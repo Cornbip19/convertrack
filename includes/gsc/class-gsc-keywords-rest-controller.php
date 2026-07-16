@@ -43,7 +43,7 @@ class Keywords_Rest_Controller {
 			);
 		}
 
-		foreach ( array( 'enable', 'sync', 'analyze', 'bulk' ) as $action ) {
+		foreach ( array( 'enable', 'sync', 'cancel', 'analyze', 'bulk' ) as $action ) {
 			register_rest_route(
 				$namespace,
 				'/gsc/keywords/' . $action,
@@ -164,15 +164,10 @@ class Keywords_Rest_Controller {
 		$first   = $rows[0];
 		$post_id = $post_id ? $post_id : (int) $first['post_id'];
 
-		$totals = array(
-			'keywords'    => count( $rows ),
-			'clicks'      => 0,
-			'impressions' => 0,
-			'present'     => 0,
-			'partial'     => 0,
-			'missing'     => 0,
-		);
-		$weighted = 0.0;
+		$totals = Keywords_Database::page_keyword_totals( $post_id, $page_hash, $range );
+		$totals['avg_position'] = round( $totals['avg_position'], 1 );
+		$totals['rows_returned'] = count( $rows );
+		$totals['truncated']     = $totals['keywords'] > count( $rows );
 		$groups   = array(
 			'present' => array(),
 			'partial' => array(),
@@ -196,17 +191,12 @@ class Keywords_Rest_Controller {
 		$key_areas = Keywords_Presence::key_areas();
 
 		foreach ( $rows as $index => $row ) {
-			$totals['clicks']      += $row['clicks'];
-			$totals['impressions'] += $row['impressions'];
-			$weighted              += $row['position'] * $row['impressions'];
-
 			$bucket = 'missing';
 			if ( 'present' === $row['presence_status'] ) {
 				$bucket = 'present';
 			} elseif ( in_array( $row['presence_status'], array( 'partial', 'needs_improvement', 'overused' ), true ) ) {
 				$bucket = 'partial';
 			}
-			$totals[ $bucket ]++;
 			$groups[ $bucket ][] = array(
 				'query'       => $row['query'],
 				'clicks'      => $row['clicks'],
@@ -267,8 +257,6 @@ class Keywords_Rest_Controller {
 
 			$rows[ $index ] = $this->rest_row( $row, true );
 		}
-
-		$totals['avg_position'] = $totals['impressions'] > 0 ? round( $weighted / $totals['impressions'], 1 ) : 0;
 
 		$page_recs = array_values( $page_recs );
 		usort(
@@ -351,6 +339,15 @@ class Keywords_Rest_Controller {
 		}
 
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'state' => 'started', 'sync' => $result ), 200 ) );
+	}
+
+	/**
+	 * Cancel a queued/running keyword sync.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function cancel() {
+		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'sync' => Keywords_Sync::cancel() ), 200 ) );
 	}
 
 	/**

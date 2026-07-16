@@ -1,8 +1,4 @@
-name: Build & Release
-
-# Packages the plugin into a correctly-structured zip and attaches it to a
-# GitHub Release whenever a version tag (e.g. v1.0.1) is pushed. Connected
-# WordPress sites pick up the new version from that release automatically.
+name: Verify, Build & Release
 
 on:
   push:
@@ -13,56 +9,161 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  integration:
+    name: WordPress ${{ matrix.wp }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The WP 5.8.x test suite only supports PHPUnit up to 7.x (PHPUnit 9
+          # support arrived with the 5.9 suite), so this leg pins PHPUnit 7.5;
+          # yoast/phpunit-polyfills lets the same test code run on both.
+          - wp: '5.8.3'
+            php: '7.4'
+            tests_ref: 'tags/5.8.3'
+            core_url: 'https://wordpress.org/wordpress-5.8.3.tar.gz'
+            phpunit: '^7.5'
+          - wp: 'latest'
+            php: '8.3'
+            tests_ref: 'trunk'
+            core_url: 'https://wordpress.org/latest.tar.gz'
+            phpunit: '^9.6'
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@c541c155eee45413f5b09a52248675b1a2575231
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer:v2
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+
+      - name: Install development dependencies
+        run: |
+          composer require --dev --no-interaction --update-with-all-dependencies "phpunit/phpunit:${{ matrix.phpunit }}"
+          composer install --no-interaction --prefer-dist
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Verify tag and version equality
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          header="$(sed -nE 's/^ \* Version:[[:space:]]*([^[:space:]]+).*/\1/p' convertrack.php)"
+          constant="$(sed -nE "s/^define\( 'CONVERTRACK_VERSION', '([^']+)' \);/\1/p" convertrack.php)"
+          stable="$(sed -nE 's/^Stable tag:[[:space:]]*([^[:space:]]+).*/\1/p' readme.txt)"
+          test -n "$tag" && test "$tag" = "$header" && test "$tag" = "$constant" && test "$tag" = "$stable"
+
+      - name: PHP 7.4-compatible syntax and JavaScript tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -type f -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 | xargs -0 -n1 php -l
+          node --check admin/js/admin.js
+          node --check public/js/convertrack.js
+          npm test
+
+      - name: Install WordPress integration fixture
+        env:
+          WP_TESTS_REF: ${{ matrix.tests_ref }}
+          WP_CORE_URL: ${{ matrix.core_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq subversion default-mysql-client
+          mkdir -p /tmp/wordpress-tests-lib
+          svn export --quiet "https://develop.svn.wordpress.org/${WP_TESTS_REF}/tests/phpunit/includes" /tmp/wordpress-tests-lib/includes
+          svn export --quiet "https://develop.svn.wordpress.org/${WP_TESTS_REF}/tests/phpunit/data" /tmp/wordpress-tests-lib/data
+          curl --fail --location --silent --show-error "$WP_CORE_URL" | tar -xz -C /tmp
+          cp /tmp/wordpress-tests-lib/wp-tests-config-sample.php /tmp/wordpress-tests-lib/wp-tests-config.php 2>/dev/null || \
+            curl --fail --location --silent --show-error "https://develop.svn.wordpress.org/${WP_TESTS_REF}/wp-tests-config-sample.php" -o /tmp/wordpress-tests-lib/wp-tests-config.php
+          sed -i "s/youremptytestdbnamehere/wordpress_test_suite/" /tmp/wordpress-tests-lib/wp-tests-config.php
+          sed -i "s/yourusernamehere/root/" /tmp/wordpress-tests-lib/wp-tests-config.php
+          sed -i "s/yourpasswordhere/root/" /tmp/wordpress-tests-lib/wp-tests-config.php
+          sed -i "s|localhost|127.0.0.1|" /tmp/wordpress-tests-lib/wp-tests-config.php
+          sed -i "s|dirname( __FILE__ ) . '/src/'|'/tmp/wordpress/'|" /tmp/wordpress-tests-lib/wp-tests-config.php
+          mysql --protocol=tcp -h127.0.0.1 -uroot -proot -e 'DROP DATABASE IF EXISTS wordpress_test_suite; CREATE DATABASE wordpress_test_suite CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
+
+      - name: Run WordPress integration tests
+        env:
+          WP_TESTS_DIR: /tmp/wordpress-tests-lib
+        run: vendor/bin/phpunit -c phpunit.xml.dist
+
+  package:
+    name: Inspect and package release
+    needs: integration
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
 
-      - name: Build self-hosted zip (with GitHub self-updater)
+      - name: Build release archives
+        shell: bash
         run: |
-          PLUGIN=convertrack
-          mkdir -p build/$PLUGIN
-          rsync -a \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'build' \
-            --exclude '*.zip' \
-            --exclude '.gitignore' \
-            --exclude 'README.md' \
-            ./ build/$PLUGIN/
-          cd build && zip -r "../$PLUGIN.zip" "$PLUGIN"
+          set -euo pipefail
+          plugin=convertrack
+          wporg=convertrack-click-conversion-analytics
+          exclusions=(
+            --exclude '.git' --exclude '.github' --exclude '.agents' --exclude '.codex'
+            --exclude 'build' --exclude 'wporg' --exclude 'tests' --exclude 'vendor' --exclude 'node_modules'
+            --exclude '*.zip' --exclude '*.log' --exclude '.env*' --exclude '.gitignore'
+            --exclude 'README.md' --exclude 'composer.json' --exclude 'composer.lock'
+            --exclude 'package.json' --exclude 'package-lock.json' --exclude 'phpunit.xml.dist'
+          )
+          mkdir -p "build/$plugin" "wporg/$wporg"
+          rsync -a "${exclusions[@]}" ./ "build/$plugin/"
+          rsync -a "${exclusions[@]}" --exclude 'includes/class-updater.php' ./ "wporg/$wporg/"
+          sed -i '/^[[:space:]]*\* Update URI:/d' "wporg/$wporg/convertrack.php"
+          ( cd build && zip -qr "../$plugin.zip" "$plugin" )
+          ( cd wporg && zip -qr "../$plugin-wordpress-org.zip" "$wporg" )
 
-      - name: Build WordPress.org zip (no self-updater — directory handles updates)
+      - name: Inspect package structure and generate checksums
+        shell: bash
         run: |
-          PLUGIN=convertrack
-          WPORG_PLUGIN=convertrack-click-conversion-analytics
-          mkdir -p wporg/$WPORG_PLUGIN
-          rsync -a \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'build' \
-            --exclude 'wporg' \
-            --exclude '*.zip' \
-            --exclude '.gitignore' \
-            --exclude 'README.md' \
-            --exclude 'includes/class-updater.php' \
-            ./ wporg/$WPORG_PLUGIN/
-          cd wporg && zip -r "../$PLUGIN-wordpress-org.zip" "$WPORG_PLUGIN"
+          set -euo pipefail
+          test "$(zipinfo -1 convertrack.zip | cut -d/ -f1 | sort -u)" = 'convertrack'
+          unzip -Z1 convertrack.zip | grep -qx 'convertrack/convertrack.php'
+          unzip -Z1 convertrack.zip | grep -qx 'convertrack/readme.txt'
+          unzip -Z1 convertrack.zip | grep -qx 'convertrack/includes/class-updater.php'
+          ! unzip -Z1 convertrack.zip | grep -Eq '(^|/)(tests|vendor|node_modules|\.agents|\.codex|\.git)(/|$)|(^|/)\.env'
+          ! unzip -Z1 convertrack-wordpress-org.zip | grep -q 'includes/class-updater.php'
+          ! unzip -p convertrack-wordpress-org.zip convertrack-click-conversion-analytics/convertrack.php | grep -q 'Update URI:'
+          sha256sum convertrack.zip > convertrack.zip.sha256
+          version="${GITHUB_REF_NAME#v}"
+          digest="$(cut -d' ' -f1 convertrack.zip.sha256)"
+          printf '{"plugin":"convertrack","version":"%s","asset":"convertrack.zip","sha256":"%s"}\n' "$version" "$digest" > convertrack-release-manifest.json
 
-      # Only the self-hosted zip goes on the release: GitHub sorts release
-      # assets alphabetically, so attaching the wordpress.org build too would
-      # make older self-updaters (which take the first .zip) install a build
-      # without the updater. The wp.org zip is kept as a workflow artifact.
       - name: Keep WordPress.org zip as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: convertrack-wordpress-org
           path: convertrack-wordpress-org.zip
 
-      - name: Publish release
-        uses: softprops/action-gh-release@v2
+      - name: Publish verified release assets
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           files: |
             convertrack.zip
+            convertrack.zip.sha256
+            convertrack-release-manifest.json
           generate_release_notes: true

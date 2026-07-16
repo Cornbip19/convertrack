@@ -50,8 +50,6 @@ class Admin {
 		}
 
 		$args = array(
-			'page'           => 1,
-			'per_page'       => 100,
 			'status'         => isset( $_GET['status'] ) ? sanitize_key( wp_unslash( $_GET['status'] ) ) : 'all',
 			'post_type'      => isset( $_GET['post_type'] ) ? sanitize_key( wp_unslash( $_GET['post_type'] ) ) : 'all',
 			'confidence_min' => isset( $_GET['confidence_min'] ) ? sanitize_text_field( wp_unslash( $_GET['confidence_min'] ) ) : '',
@@ -66,12 +64,13 @@ class Admin {
 		header( 'Content-Disposition: attachment; filename=convertrack-404-monitor-' . gmdate( 'Ymd' ) . '.csv' );
 
 		$out = fopen( 'php://output', 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
-		fputcsv( $out, array( 'Source URL', 'Referrer', 'First detected', 'Last detected', 'Hits', 'Suggested destination', 'Confidence', 'Match reason', 'Post type', 'Status' ) );
+		\Convertrack\CSV::write( $out, array( 'Source URL', 'Referrer', 'First detected', 'Last detected', 'Hits', 'Suggested destination', 'Confidence', 'Match reason', 'Post type', 'Status' ) );
 
+		$cursor = 0;
 		do {
-			$data = Database::list_events( $args );
+			$data = Database::export_events_cursor( $args, $cursor, 500 );
 			foreach ( $data['rows'] as $row ) {
-				fputcsv(
+				\Convertrack\CSV::write(
 					$out,
 					array(
 						$row['url'],
@@ -87,8 +86,8 @@ class Admin {
 					)
 				);
 			}
-			$args['page']++;
-		} while ( $args['page'] <= $data['pages'] );
+			$cursor = (int) $data['cursor'];
+		} while ( empty( $data['done'] ) );
 
 		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions
 		exit;

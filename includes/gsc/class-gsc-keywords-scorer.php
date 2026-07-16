@@ -88,6 +88,14 @@ class Keywords_Scorer {
 
 		$m     = in_array( 'branded', $labels, true ) ? (float) $weights['branded'] : 1.0;
 		$score = (int) round( max( 0, min( 100, ( $i + $c + $p + $d + $b ) * $m ) ) );
+		$position_threshold = max( 1, min( 100, (int) Keywords_Settings::get( 'min_position', 4 ) ) );
+		$below_threshold    = $position >= 1 && $position < $position_threshold;
+		if ( $below_threshold ) {
+			// The UI defines this as the first ranking position eligible for an
+			// improvement opportunity. Keep diagnostics, but never promote a better
+			// ranking keyword into medium/high opportunity tiers.
+			$score = min( 39, $score );
+		}
 
 		if ( $score >= 70 ) {
 			$level = 'high';
@@ -98,6 +106,8 @@ class Keywords_Scorer {
 		}
 		if ( $position >= 1 && $position <= 3 && 'present' === $presence ) {
 			$level = 'optimized';
+		} elseif ( $below_threshold ) {
+			$level = 'low';
 		}
 
 		return array(
@@ -110,6 +120,7 @@ class Keywords_Scorer {
 				'd' => round( $d, 1 ),
 				'b' => round( $b, 1 ),
 				'm' => $m,
+				'position_threshold' => $position_threshold,
 			),
 		);
 	}

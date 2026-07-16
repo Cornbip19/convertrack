@@ -36,7 +36,20 @@ class Detector {
 		if ( self::is_internal_user_agent( $ua ) ) {
 			return;
 		}
+
+		$source = Database::normalize_source( $url );
+		$ip     = isset( $_SERVER['REMOTE_ADDR'] ) ? wp_unslash( $_SERVER['REMOTE_ADDR'] ) : '';
+		$budget = Database::consume_capture_budget( $source, $ip );
+		if ( is_wp_error( $budget ) ) {
+			do_action( 'convertrack_404_capture_rejected', $budget, $source );
+			return;
+		}
+
 		$id       = Database::record_404( $url, $referrer, $ua );
+		if ( is_wp_error( $id ) ) {
+			Logger::error( 'capture', '404 event write failed.', array( 'error' => $id->get_error_message() ) );
+			return;
+		}
 		if ( $id && Settings::recommendations_enabled() ) {
 			Cron::kick_processing( MINUTE_IN_SECONDS );
 		}
