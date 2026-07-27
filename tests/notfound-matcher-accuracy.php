@@ -211,6 +211,69 @@ try {
 		sprintf( 'D10 colliding slug stays below the auto threshold (confidence=%d reason=%s)', $dup['confidence'], $dup['reason'] )
 	);
 
+	// Reported on a live site: flat /<service>.html URLs migrated to a CPT with a
+	// location suffix, e.g. /senior-pet-grooming.html against
+	// /service/senior-pet-grooming-miami-fl/. Neither the path nor the slug
+	// matches, so before the subset tier this fell through to similarity and a tag
+	// archive won. Fixtures mirror that site's real catalogue.
+	echo "\n--- location-suffixed service pages ---\n";
+	foreach ( array( 'senior-pet-grooming', 'dog-grooming', 'cat-grooming', 'puppy-grooming', 'nail-trimming', 'fleas-and-tick' ) as $service ) {
+		cvtrk_seed_candidate( '/service/' . $service . '-miami-fl/', array( 'post_type' => 'service' ) );
+	}
+	cvtrk_seed_candidate( '/tag/thanksgiving-pet-grooming/', array( 'source' => 'taxonomy_archive', 'priority' => 55 ) );
+
+	$subset = cvtrk_recommend( '/senior-pet-grooming.html/' );
+	cvtrk_check(
+		false !== strpos( $subset['url'], '/service/senior-pet-grooming-miami-fl/' ),
+		sprintf( 'the reported URL resolves to the real service page (url=%s reason=%s confidence=%d)', $subset['url'], $subset['reason'], $subset['confidence'] )
+	);
+	cvtrk_check(
+		Matcher::TOKEN_SUBSET_CONFIDENCE === (int) $subset['confidence'] && 'token_subset' === $subset['reason'],
+		sprintf( 'and at high confidence via token_subset (confidence=%d reason=%s)', $subset['confidence'], $subset['reason'] )
+	);
+	cvtrk_check(
+		false === strpos( $subset['url'], '/tag/' ) && 'archive_match' !== $subset['reason'],
+		'and never suggests the tag archive'
+	);
+	cvtrk_check(
+		Matcher::TOKEN_SUBSET_CONFIDENCE < (int) Settings::get( 'auto_min_confidence', 90 ),
+		sprintf( 'a subset match stays below the auto-redirect gate so a human confirms (%d < %d)', Matcher::TOKEN_SUBSET_CONFIDENCE, (int) Settings::get( 'auto_min_confidence', 90 ) )
+	);
+
+	// The stemmer is what makes this one work: source "flea" vs page "fleas".
+	$plural = cvtrk_recommend( '/flea-and-tick.html/' );
+	cvtrk_check(
+		false !== strpos( $plural['url'], '/service/fleas-and-tick-miami-fl/' ),
+		sprintf( 'singular source matches a plural page via stemming (url=%s reason=%s)', $plural['url'], $plural['reason'] )
+	);
+	$plural_source = cvtrk_recommend( '/senior-pets-grooming.html/' );
+	cvtrk_check(
+		false !== strpos( $plural_source['url'], '/service/senior-pet-grooming-miami-fl/' ),
+		sprintf( 'plural source matches a singular page via stemming (url=%s)', $plural_source['url'] )
+	);
+
+	// Uniqueness is the safety net: "grooming miami" fits five services, so the
+	// tier must decline rather than pick one and call it a recommendation.
+	$generic = cvtrk_recommend( '/grooming-miami.html/' );
+	cvtrk_check(
+		'token_subset' !== $generic['reason'],
+		sprintf( 'a source matching many services is not resolved by the subset tier (reason=%s confidence=%d)', $generic['reason'], $generic['confidence'] )
+	);
+	$single = cvtrk_recommend( '/grooming.html/' );
+	cvtrk_check(
+		'token_subset' !== $single['reason'],
+		sprintf( 'a single-word source is not resolved by the subset tier (reason=%s)', $single['reason'] )
+	);
+
+	// An exact slug equality is a more literal match than a subset, so it wins
+	// outright even though it scores lower.
+	cvtrk_seed_candidate( '/archive/nail-trimming/' );
+	$literal = cvtrk_recommend( '/nail-trimming.html/' );
+	cvtrk_check(
+		'exact_slug' === $literal['reason'] && false !== strpos( $literal['url'], '/archive/nail-trimming/' ),
+		sprintf( 'a page whose slug is the source slug beats a subset match (url=%s reason=%s)', $literal['url'], $literal['reason'] )
+	);
+
 	echo "\n--- ordering and filters ---\n";
 
 	// One event per status, all with equal hits so only the status rank can order them.
@@ -274,7 +337,12 @@ try {
 	$indexes = (array) $wpdb->get_col( "SHOW INDEX FROM `$valid`", 2 ); // phpcs:ignore WordPress.DB
 	cvtrk_check( in_array( 'slug', $indexes, true ), 'valid_urls has a slug index.' );
 	cvtrk_check( in_array( 'path', $indexes, true ), 'valid_urls has a path index.' );
-	cvtrk_check( '1.3.0' === Database::DB_VERSION, 'Schema version was bumped for the new indexes.' );
+	// Assert the migration completed rather than pinning a literal version, so a
+	// later schema bump does not fail this test spuriously.
+	cvtrk_check(
+		Database::DB_VERSION === (string) get_option( Database::DB_VERSION_OPTION ),
+		sprintf( 'Stored schema watermark matches the code (%s).', Database::DB_VERSION )
+	);
 	cvtrk_check( Database::schema_is_healthy(), 'verify_schema() accepts the upgraded schema.' );
 
 	$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB
