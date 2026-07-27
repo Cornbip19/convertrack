@@ -4549,7 +4549,17 @@
 				bulkRun.disabled = true;
 				postApi( '/404/bulk', body )
 					.then( function ( data ) {
-						setProgress( 'Bulk action updated ' + num( data.updated ) + ' rows' + ( Number( data.errors ) ? ' with ' + num( data.errors ) + ' errors.' : '.' ) );
+						var message = ( I18N.nfBulkUpdated || 'Bulk action updated' ) + ' ' + num( data.updated ) + ' ' + ( I18N.nfBulkRows || 'rows' );
+						if ( Number( data.errors ) ) {
+							message += ' ' + ( I18N.nfBulkWith || 'with' ) + ' ' + num( data.errors ) + ' ' + ( I18N.nfBulkErrors || 'errors' );
+						}
+						message += '.';
+						// The matched set can exceed one page, so say so rather than
+						// leaving the impression the whole queue was handled.
+						if ( Number( data.remaining ) > 0 ) {
+							message += ' ' + num( data.remaining ) + ' ' + ( I18N.nfBulkRemaining || 'more still match - run the action again to continue.' );
+						}
+						setProgress( message );
 						bulkRun.disabled = false;
 						reloadAll();
 					} )

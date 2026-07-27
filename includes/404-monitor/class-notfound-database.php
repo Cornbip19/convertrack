@@ -11,14 +11,22 @@ defined( 'ABSPATH' ) || exit;
 
 class Database {
 
-	const DB_VERSION        = '1.2.0';
+	const DB_VERSION        = '1.3.0';
 	const DB_VERSION_OPTION = 'convertrack_404_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_404_summary';
-	const RECOMMENDATION_GENERATION = 1;
+	const RECOMMENDATION_GENERATION = 2;
 	const MAX_RECOMMENDATION_ATTEMPTS = 3;
 	const RECOMMENDATION_LEASE_SECONDS = 300;
 	const REDIRECT_CACHE_GROUP = 'convertrack_404_redirects';
 	const REDIRECT_CACHE_GENERATION_OPTION = 'convertrack_404_redirect_cache_generation';
+
+	const STATUS_NEW             = 'new';
+	const STATUS_RECOMMENDED     = 'recommended';
+	const STATUS_MANUAL_REVIEW   = 'manual_review';
+	const STATUS_APPROVED        = 'approved';
+	const STATUS_AUTO_REDIRECTED = 'auto_redirected';
+	const STATUS_IGNORED         = 'ignored';
+	const STATUS_DELETED         = 'deleted';
 
 	/**
 	 * Request-local redirect cache, including negative lookups.
@@ -26,6 +34,36 @@ class Database {
 	 * @var array
 	 */
 	private static $redirect_cache = array();
+
+	/**
+	 * Review-queue display order. Rows still awaiting a redirect sort first and
+	 * finished rows sort last; the index position becomes the SQL sort rank.
+	 *
+	 * @return array
+	 */
+	public static function status_rank_order() {
+		return array(
+			self::STATUS_RECOMMENDED,
+			self::STATUS_MANUAL_REVIEW,
+			self::STATUS_NEW,
+			self::STATUS_APPROVED,
+			self::STATUS_AUTO_REDIRECTED,
+			self::STATUS_IGNORED,
+		);
+	}
+
+	/**
+	 * Status filter groups. Keys must never collide with a status value, so an
+	 * unknown filter value can safely fall through to an exact status match.
+	 *
+	 * @return array
+	 */
+	public static function status_groups() {
+		return array(
+			'needs_action' => array( self::STATUS_RECOMMENDED, self::STATUS_MANUAL_REVIEW, self::STATUS_NEW ),
+			'redirected'   => array( self::STATUS_APPROVED, self::STATUS_AUTO_REDIRECTED ),
+		);
+	}
 
 	/**
 	 * Request-local capture-budget schema check.
@@ -216,7 +254,9 @@ class Database {
 			KEY post_type (post_type),
 			KEY source (source),
 			KEY last_seen_at (last_seen_at),
-			KEY status (status)
+			KEY status (status),
+			KEY slug (slug),
+			KEY path (path(191))
 		) $charset_collate;";
 
 		$sql[] = "CREATE TABLE $logs (
@@ -276,6 +316,14 @@ class Database {
 			return $verified;
 		}
 
+		// Runs after verification so it never touches a half-built schema, and
+		// only once per version thanks to the maybe_upgrade() watermark gate.
+		$requeued = self::requeue_stale_recommendations();
+		if ( is_wp_error( $requeued ) ) {
+			self::rollback_install( $existed );
+			return $requeued;
+		}
+
 		if ( ! update_option( self::DB_VERSION_OPTION, self::DB_VERSION, false ) && self::DB_VERSION !== get_option( self::DB_VERSION_OPTION ) ) {
 			return new \WP_Error( 'convertrack_404_db_version_write', __( 'The Broken URLs schema version could not be saved.', 'convertrack-click-conversion-analytics' ) );
 		}
@@ -303,6 +351,12 @@ class Database {
 			return $result;
 		}
 		delete_transient( 'convertrack_404_migration_error' );
+
+		// Rows requeued by the upgrade have no fresh suggestion yet, so start the
+		// matcher promptly rather than waiting for the next scheduled batch.
+		if ( self::has_pending_recommendations() && Settings::recommendations_enabled() ) {
+			Cron::kick_processing( MINUTE_IN_SECONDS );
+		}
 		return true;
 	}
 
@@ -595,9 +649,11 @@ class Database {
 	 */
 	public static function save_recommendation( $id, array $result, $owner = '', $generation = 0 ) {
 		global $wpdb;
-		$status = ! empty( $result['url'] ) ? 'recommended' : 'manual_review';
-		if ( isset( $result['confidence'] ) && (int) $result['confidence'] < 50 ) {
-			$status = 'manual_review';
+		// A suggestion below the recommend floor is still stored and shown, but it
+		// is filed for review rather than presented as ready to approve.
+		$status = ! empty( $result['url'] ) ? self::STATUS_RECOMMENDED : self::STATUS_MANUAL_REVIEW;
+		if ( isset( $result['confidence'] ) && (int) $result['confidence'] < Matcher::RECOMMEND_FLOOR ) {
+			$status = self::STATUS_MANUAL_REVIEW;
 		}
 		$owner      = self::truncate( sanitize_text_field( $owner ), 64 );
 		$generation = absint( $generation );
@@ -702,24 +758,34 @@ class Database {
 	}
 
 	/**
-	 * List events with filters.
+	 * Shared WHERE fragments for the event list and the CSV export cursor.
 	 *
-	 * @param array $args Args.
-	 * @return array
+	 * Both callers must build identical predicates or a filtered export would
+	 * silently disagree with the screen it was exported from.
+	 *
+	 * @param array $args           Event filters.
+	 * @param array $prepare        Placeholder values, appended in clause order.
+	 * @param bool  $include_scope  Whether to emit the "not deleted" scope clause.
+	 * @return array WHERE fragments.
 	 */
-	public static function list_events( array $args ) {
+	private static function event_filter_sql( array $args, array &$prepare, $include_scope = true ) {
 		global $wpdb;
-		$table    = self::events_table();
-		$where    = array( "status <> 'deleted'" );
-		$prepare  = array();
-		$page     = max( 1, isset( $args['page'] ) ? (int) $args['page'] : 1 );
-		$per_page = max( 1, min( 100, isset( $args['per_page'] ) ? (int) $args['per_page'] : 25 ) );
-		$offset   = ( $page - 1 ) * $per_page;
+		$where = $include_scope ? array( "status <> '" . self::STATUS_DELETED . "'" ) : array();
 
-		if ( ! empty( $args['status'] ) && 'all' !== $args['status'] ) {
+		$requested = isset( $args['status'] ) ? sanitize_key( (string) $args['status'] ) : '';
+		$groups    = self::status_groups();
+		if ( isset( $groups[ $requested ] ) ) {
+			// Group filters ("needs action", "redirected") expand to an IN list.
+			$values  = $groups[ $requested ];
+			$where[] = 'status IN (' . implode( ',', array_fill( 0, count( $values ), '%s' ) ) . ')';
+			foreach ( $values as $value ) {
+				$prepare[] = $value;
+			}
+		} elseif ( '' !== $requested && 'all' !== $requested ) {
 			$where[]   = 'status = %s';
-			$prepare[] = sanitize_key( $args['status'] );
+			$prepare[] = $requested;
 		}
+
 		if ( ! empty( $args['post_type'] ) && 'all' !== $args['post_type'] ) {
 			$where[]   = 'suggested_post_type = %s';
 			$prepare[] = sanitize_key( $args['post_type'] );
@@ -748,9 +814,46 @@ class Database {
 			$prepare[] = $like;
 		}
 
+		return $where;
+	}
+
+	/**
+	 * ORDER BY fragment that floats rows still awaiting a redirect to the front
+	 * and pushes finished rows to the back.
+	 *
+	 * The literals come from status_rank_order(), never from request input, so
+	 * this is safe to interpolate and carries no placeholders.
+	 *
+	 * @return string
+	 */
+	private static function status_rank_sql() {
+		$cases = array();
+		$rank  = 0;
+		foreach ( self::status_rank_order() as $status ) {
+			$rank++;
+			$cases[] = "WHEN '" . $status . "' THEN " . $rank;
+		}
+		return 'CASE status ' . implode( ' ', $cases ) . ' ELSE ' . ( $rank + 1 ) . ' END ASC';
+	}
+
+	/**
+	 * List events with filters.
+	 *
+	 * @param array $args Args.
+	 * @return array
+	 */
+	public static function list_events( array $args ) {
+		global $wpdb;
+		$table    = self::events_table();
+		$prepare  = array();
+		$where    = self::event_filter_sql( $args, $prepare );
+		$page     = max( 1, isset( $args['page'] ) ? (int) $args['page'] : 1 );
+		$per_page = max( 1, min( 100, isset( $args['per_page'] ) ? (int) $args['per_page'] : 25 ) );
+		$offset   = ( $page - 1 ) * $per_page;
+
 		$where_sql = implode( ' AND ', $where );
 		$count_sql = "SELECT COUNT(*) FROM $table WHERE $where_sql";
-		$rows_sql  = "SELECT * FROM $table WHERE $where_sql ORDER BY hit_count DESC, last_detected_at DESC, id DESC LIMIT %d OFFSET %d";
+		$rows_sql  = "SELECT * FROM $table WHERE $where_sql ORDER BY " . self::status_rank_sql() . ', hit_count DESC, last_detected_at DESC, id DESC LIMIT %d OFFSET %d';
 
 		$total = ! empty( $prepare ) ? (int) $wpdb->get_var( $wpdb->prepare( $count_sql, $prepare ) ) : (int) $wpdb->get_var( $count_sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$rows_prepare = array_merge( $prepare, array( $per_page, $offset ) );
@@ -776,41 +879,12 @@ class Database {
 	public static function export_events_cursor( array $args, $after_id = 0, $limit = 500 ) {
 		global $wpdb;
 		$table   = self::events_table();
-		$where   = array( "status <> 'deleted'", 'id > %d' );
 		$prepare = array( max( 0, (int) $after_id ) );
 		$limit   = max( 1, min( 1000, (int) $limit ) );
 
-		if ( ! empty( $args['status'] ) && 'all' !== $args['status'] ) {
-			$where[]   = 'status = %s';
-			$prepare[] = sanitize_key( $args['status'] );
-		}
-		if ( ! empty( $args['post_type'] ) && 'all' !== $args['post_type'] ) {
-			$where[]   = 'suggested_post_type = %s';
-			$prepare[] = sanitize_key( $args['post_type'] );
-		}
-		if ( isset( $args['confidence_min'] ) && '' !== $args['confidence_min'] ) {
-			$where[]   = 'confidence >= %d';
-			$prepare[] = absint( $args['confidence_min'] );
-		}
-		if ( isset( $args['confidence_max'] ) && '' !== $args['confidence_max'] ) {
-			$where[]   = 'confidence <= %d';
-			$prepare[] = absint( $args['confidence_max'] );
-		}
-		if ( ! empty( $args['detected_from'] ) ) {
-			$where[]   = 'last_detected_at >= %s';
-			$prepare[] = sanitize_text_field( $args['detected_from'] ) . ' 00:00:00';
-		}
-		if ( ! empty( $args['detected_to'] ) ) {
-			$where[]   = 'last_detected_at <= %s';
-			$prepare[] = sanitize_text_field( $args['detected_to'] ) . ' 23:59:59';
-		}
-		if ( ! empty( $args['search'] ) ) {
-			$like      = '%' . $wpdb->esc_like( sanitize_text_field( $args['search'] ) ) . '%';
-			$where[]   = '(url LIKE %s OR referrer_url LIKE %s OR suggested_url LIKE %s)';
-			$prepare[] = $like;
-			$prepare[] = $like;
-			$prepare[] = $like;
-		}
+		// The cursor predicate has to bind before the shared filters so the
+		// placeholder order matches the assembled WHERE clause.
+		$where = array_merge( array( "status <> '" . self::STATUS_DELETED . "'", 'id > %d' ), self::event_filter_sql( $args, $prepare, false ) );
 
 		$prepare[] = $limit;
 		$sql       = "SELECT * FROM $table WHERE " . implode( ' AND ', $where ) . ' ORDER BY id ASC LIMIT %d';
@@ -1238,6 +1312,170 @@ class Database {
 	}
 
 	/**
+	 * One active candidate matching an exact normalized path.
+	 *
+	 * @param string $path Normalized path.
+	 * @return array|null
+	 */
+	public static function candidate_by_path( $path ) {
+		global $wpdb;
+		$path = (string) $path;
+		if ( '' === $path ) {
+			return null;
+		}
+		$table = self::valid_urls_table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE status = 'active' AND path = %s ORDER BY priority DESC, id ASC LIMIT 1", $path ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? $row : null;
+	}
+
+	/**
+	 * Active candidates sharing a slug.
+	 *
+	 * Bounded deliberately: the caller only needs to know whether the slug is
+	 * unique, and if not, which of a handful of collisions fits best.
+	 *
+	 * @param string $slug  Sanitized slug.
+	 * @param int    $limit Max rows.
+	 * @return array
+	 */
+	public static function candidates_by_slug( $slug, $limit = 6 ) {
+		global $wpdb;
+		$slug = (string) $slug;
+		if ( '' === $slug ) {
+			return array();
+		}
+		$table = self::valid_urls_table();
+		$limit = max( 1, min( 50, (int) $limit ) );
+		return (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE status = 'active' AND slug = %s ORDER BY priority DESC, id ASC LIMIT %d", $slug, $limit ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Candidates whose slug or token list mentions one of the given tokens.
+	 *
+	 * Keeps fuzzy scoring bounded and, unlike a blanket priority-ordered fetch,
+	 * still reaches sitemap and archive rows on sites with more posts than the
+	 * snapshot limit.
+	 *
+	 * @param array $tokens Source tokens, longest first.
+	 * @param int   $limit  Max rows overall.
+	 * @return array
+	 */
+	public static function candidates_by_tokens( array $tokens, $limit = 800 ) {
+		global $wpdb;
+		$tokens = array_slice( array_values( array_filter( array_map( 'strval', $tokens ) ) ), 0, 4 );
+		if ( empty( $tokens ) ) {
+			return array();
+		}
+
+		$table     = self::valid_urls_table();
+		$limit     = max( 1, min( 5000, (int) $limit ) );
+		$per_token = max( 1, (int) ceil( $limit / count( $tokens ) ) );
+		$found     = array();
+
+		foreach ( $tokens as $token ) {
+			if ( strlen( $token ) < 3 ) {
+				continue;
+			}
+			$like = '%' . $wpdb->esc_like( $token ) . '%';
+			$rows = (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE status = 'active' AND (slug LIKE %s OR tokens LIKE %s) ORDER BY priority DESC, id ASC LIMIT %d", $like, $like, $per_token ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			foreach ( $rows as $row ) {
+				$found[ (int) $row['id'] ] = $row;
+			}
+			if ( count( $found ) >= $limit ) {
+				break;
+			}
+		}
+
+		return array_slice( array_values( $found ), 0, $limit );
+	}
+
+	/**
+	 * Published posts whose stored previous slug matches, via the core
+	 * '_wp_old_slug' meta that wp_check_for_changed_slugs() maintains.
+	 *
+	 * Bounded because wp_postmeta indexes meta_key but not meta_value.
+	 *
+	 * @param string $slug Old slug.
+	 * @return array Rows of {ID, post_type, post_date}.
+	 */
+	public static function posts_by_old_slug( $slug ) {
+		global $wpdb;
+		$slug = (string) $slug;
+		if ( '' === $slug ) {
+			return array();
+		}
+		return (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT p.ID, p.post_type, p.post_date FROM $wpdb->postmeta pm
+				INNER JOIN $wpdb->posts p ON p.ID = pm.post_id
+				WHERE pm.meta_key = '_wp_old_slug' AND pm.meta_value = %s AND p.post_status = 'publish'
+				ORDER BY p.post_date DESC LIMIT 5",
+				$slug
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Published posts whose stored previous date matches, via core's
+	 * '_wp_old_date' meta. Only meaningful for date-based permalinks.
+	 *
+	 * @param string $slug Current slug.
+	 * @param array  $date {year, month, day} — any may be empty.
+	 * @return array Rows of {ID, post_type}.
+	 */
+	public static function posts_by_old_date( $slug, array $date ) {
+		global $wpdb;
+		$slug = (string) $slug;
+		if ( '' === $slug || empty( $date['year'] ) ) {
+			return array();
+		}
+
+		$sql     = "SELECT p.ID, p.post_type FROM $wpdb->postmeta pm
+			INNER JOIN $wpdb->posts p ON p.ID = pm.post_id
+			WHERE pm.meta_key = '_wp_old_date' AND p.post_name = %s AND p.post_status = 'publish'
+			AND YEAR(pm.meta_value) = %d";
+		$prepare = array( $slug, (int) $date['year'] );
+		if ( ! empty( $date['month'] ) ) {
+			$sql      .= ' AND MONTH(pm.meta_value) = %d';
+			$prepare[] = (int) $date['month'];
+		}
+		if ( ! empty( $date['day'] ) ) {
+			$sql      .= ' AND DAYOFMONTH(pm.meta_value) = %d';
+			$prepare[] = (int) $date['day'];
+		}
+		$sql .= ' LIMIT 5';
+
+		return (array) $wpdb->get_results( $wpdb->prepare( $sql, $prepare ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+	}
+
+	/**
+	 * Non-published posts occupying a slug.
+	 *
+	 * Yields no redirect destination, but proves the URL was real once — which
+	 * is the difference between an honest "needs review" and a junk suggestion.
+	 *
+	 * @param string $slug Sanitized slug.
+	 * @return array Rows of {ID, post_type, post_status, post_parent}.
+	 */
+	public static function unpublished_posts_by_slug( $slug ) {
+		global $wpdb;
+		$slug = (string) $slug;
+		if ( '' === $slug ) {
+			return array();
+		}
+		return (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT ID, post_type, post_status, post_parent FROM $wpdb->posts
+				WHERE post_name = %s AND post_status IN ('draft','pending','private','future','trash')
+				ORDER BY post_date DESC LIMIT 5",
+				$slug
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
 	 * Count active valid URL candidates.
 	 *
 	 * @return int
@@ -1662,6 +1900,49 @@ class Database {
 	}
 
 	/**
+	 * Requeue rows whose stored suggestion predates the current matcher.
+	 *
+	 * Bumping RECOMMENDATION_GENERATION alone is not enough: the worker only
+	 * claims status = 'new', so 'recommended' and 'manual_review' rows would
+	 * keep their stale suggestions forever. Rows the operator already acted on
+	 * (approved, auto_redirected, ignored, deleted) are deliberately untouched.
+	 *
+	 * suggested_url and confidence are preserved so the screen keeps showing the
+	 * previous suggestion until the new one lands.
+	 *
+	 * @return true|\WP_Error
+	 */
+	private static function requeue_stale_recommendations() {
+		global $wpdb;
+		$events = self::events_table();
+		$now    = current_time( 'mysql' );
+		$result = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $events SET
+				recommendation_generation = %d, recommendation_state = 'pending',
+				recommendation_attempts = 0, processed_generation = 0, processed_at = NULL,
+				claim_owner = '', claim_expires_at = NULL, status = %s, updated_at = %s
+				WHERE status IN (%s, %s, %s) AND recommendation_generation < %d",
+				self::RECOMMENDATION_GENERATION,
+				self::STATUS_NEW,
+				$now,
+				self::STATUS_NEW,
+				self::STATUS_RECOMMENDED,
+				self::STATUS_MANUAL_REVIEW,
+				self::RECOMMENDATION_GENERATION
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( false === $result ) {
+			return self::write_error( 'convertrack_404_requeue_failed', __( 'Existing Broken URL suggestions could not be queued for rematching.', 'convertrack-click-conversion-analytics' ) );
+		}
+		if ( (int) $result > 0 ) {
+			self::clear_summary_cache();
+			Logger::info( 'matcher', 'Existing Broken URL suggestions queued for rematching.', array( 'rows' => (int) $result, 'generation' => self::RECOMMENDATION_GENERATION ) );
+		}
+		return true;
+	}
+
+	/**
 	 * Verify every table surface required by detection, redirect lookup and the
 	 * bounded workers before advancing (or trusting) the schema watermark.
 	 *
@@ -1679,8 +1960,8 @@ class Database {
 				'indexes' => array( 'PRIMARY', 'source_hash', 'status', 'health_check' ),
 			),
 			self::valid_urls_table() => array(
-				'columns' => array( 'id', 'url_hash', 'url', 'path', 'status', 'last_seen_at' ),
-				'indexes' => array( 'PRIMARY', 'url_hash', 'last_seen_at', 'status' ),
+				'columns' => array( 'id', 'url_hash', 'url', 'path', 'slug', 'status', 'last_seen_at' ),
+				'indexes' => array( 'PRIMARY', 'url_hash', 'last_seen_at', 'status', 'slug', 'path' ),
 			),
 			self::logs_table() => array(
 				'columns' => array( 'id', 'level', 'source', 'message', 'created_at' ),

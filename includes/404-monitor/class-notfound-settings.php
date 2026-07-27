@@ -30,7 +30,9 @@ class Settings {
 			'enabled'                => 1,
 			'mode'                   => 'recommend',
 			'auto_min_confidence'    => 90,
-			'fallback_url'           => home_url( '/' ),
+			// Empty by default: a blanket redirect to the homepage is worse than
+			// an honest "needs review", and is only useful when deliberately set.
+			'fallback_url'           => '',
 			'sitemap_urls'           => '',
 			'sitemap_refresh_hours'  => 24,
 			'scan_frequency'         => 'hourly',

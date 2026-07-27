@@ -48,6 +48,19 @@ Each keyword is matched to the page receiving its impressions, classified by typ
 
 Open **Convertrack -> Broken URLs** to capture frontend 404 requests, refresh valid URL candidates from WordPress objects and sitemaps, and review redirect recommendations. The default mode is recommendation/manual approval; automatic internal 301 redirects are disabled unless the administrator opts into high-confidence automation.
 
+The review queue sorts by what needs doing: rows with a suggestion ready to approve first, then manual review, then newly detected URLs, with already-redirected and ignored rows last. Hit count and recency order rows within each group. The status filter offers grouped **Needs action** and **Redirected** options as well as each individual status, and grouped filters carry through to the CSV export.
+
+Suggestions resolve in tiers, strongest evidence first:
+
+1. The exact path already exists as a known-good URL.
+2. The slug was renamed, per WordPress's own `_wp_old_slug` / `_wp_old_date` post meta. Note that core records this only for published, non-hierarchical post types, so it never covers pages, and core's own `wp_old_slug_redirect()` already handles the simple case before the request is recorded. This tier mainly serves the existing backlog, custom post types, permalink structure changes, and paths that never resolve to a `name` query var.
+3. The path matches once mechanical decoration is stripped: `/page/N/`, `/comment-page-N/`, `/amp/`, `/embed/`, `/trackback/`, `/feed/`, `index.php`, a `.html`/`.php` extension, or a leading date. Hierarchical content is resolved against the page tree.
+4. A known-good URL shares the slug. Scored below the automatic-redirect threshold so a slug collision under a different parent always gets a human look.
+5. The slug belongs to a draft or trashed post. This yields no destination unless a published ancestor exists, but marks the row as needing review rather than handing it an unrelated guess.
+6. Similarity scoring over a bounded candidate set, combining token coverage with character distance so both longer correct targets and slug typos are matched. Capped below the slug tier, so a guess can never outrank a real match, and archives are capped lower still so they surface only as a review hint.
+
+A fallback destination is used only when no tier produces anything at all; it never replaces a real match, and it is empty by default.
+
 The module does not write to Redirection, Rank Math, Yoast, SEOPress, or `.htaccess`. When those tools are detected, Convertrack shows read-only visibility where safely readable and blocks duplicate internal redirects for sources already handled elsewhere.
 
 404 Monitor stores the requested URL/path, referrer URL, a hashed user-agent value, timestamps, hit counts, recommendations, and internal redirect hit counts in this site's database. It does not store IP addresses and does not contact third-party APIs for 404 monitoring.

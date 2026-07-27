@@ -1,6 +1,6 @@
 {
   "name": "convertrack",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "private": true,
   "description": "Local quality checks for the Convertrack WordPress plugin.",
   "scripts": {

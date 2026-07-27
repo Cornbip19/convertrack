@@ -96,12 +96,16 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 					<span><?php esc_html_e( 'Status', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="404-status">
 						<option value="all"><?php esc_html_e( 'All active', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="new"><?php esc_html_e( 'New', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="recommended"><?php esc_html_e( 'Recommended', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="manual_review"><?php esc_html_e( 'Manual review', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="approved"><?php esc_html_e( 'Approved', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="auto_redirected"><?php esc_html_e( 'Auto redirected', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="needs_action"><?php esc_html_e( 'Needs action', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="redirected"><?php esc_html_e( 'Redirected', 'convertrack-click-conversion-analytics' ); ?></option>
+						<optgroup label="<?php esc_attr_e( 'Single status', 'convertrack-click-conversion-analytics' ); ?>">
+							<option value="new"><?php esc_html_e( 'New', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="recommended"><?php esc_html_e( 'Recommended', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="manual_review"><?php esc_html_e( 'Manual review', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="approved"><?php esc_html_e( 'Approved', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="auto_redirected"><?php esc_html_e( 'Auto redirected', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
+						</optgroup>
 					</select>
 				</label>
 				<label class="cvtrk-mini-field">
@@ -231,7 +235,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 						<th scope="row"><label for="cvtrk-404-fallback"><?php esc_html_e( 'Fallback destination', 'convertrack-click-conversion-analytics' ); ?></label></th>
 						<td>
 							<input type="url" id="cvtrk-404-fallback" class="regular-text" name="convertrack_404_settings[fallback_url]" value="<?php echo esc_attr( $s['fallback_url'] ); ?>" />
-							<p class="description"><?php esc_html_e( 'Used only as a low-confidence suggestion unless manually approved.', 'convertrack-click-conversion-analytics' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Optional last resort, used only when no plausible destination is found at all. It never replaces a real match. Leave empty to send those URLs to manual review instead.', 'convertrack-click-conversion-analytics' ); ?></p>
 						</td>
 					</tr>
 					<tr>
