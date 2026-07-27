@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.4.0
+Stable tag: 2.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,20 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.5.0 =
+* Broken URLs now sorts the review queue by what needs doing: rows with a suggestion to approve come first, then manual review, then newly detected URLs, with already-redirected and ignored rows at the end. Hit count and recency still order rows within each group.
+* Added "Needs action" and "Redirected" grouped options to the Broken URLs status filter, alongside the existing per-status options. Grouped filters also apply to the CSV export.
+* Rewrote the redirect suggestion engine. It now resolves in tiers, using WordPress's own record of renamed slugs (`_wp_old_slug` / `_wp_old_date`) and the page tree before falling back to similarity scoring, and it strips pagination, AMP, embed, trackback, comment-page, date and file-extension decoration so `/product/page/2/` and `/product.html` resolve to `/product/`.
+* Fixed a fallback destination bug that discarded a correct suggestion. Previously any match scoring under 50% was replaced outright by the fallback URL, which defaulted to the homepage, so the right target was computed and then thrown away. The fallback is now used only when nothing matches at all, and the fallback destination is empty by default on new installs.
+* Fixed the similarity measure that penalised correct-but-longer URLs: `/contact/` now suggests `/contact-us/` instead of falling through to the homepage. Slug typos are also matched now.
+* Fixed category and tag archives outranking real content. A single shared word with an archive used to score high enough to ship as a recommendation; archives are now capped below the recommendation threshold and surface only as a review hint.
+* Tightened two scoring bonuses that fired almost universally: the post type bonus now requires a whole path segment match rather than any substring, and the parent bonus requires the same depth.
+* A 404 whose URL belongs to a draft or trashed post is now identified as such and sent to manual review, instead of being given an unrelated guess.
+* Suggestions decided by slug or similarity alone can no longer reach the automatic-redirect confidence threshold, so only authoritative matches create a 301 without review.
+* Existing suggestions are recalculated once after updating. Rows you already approved or ignored are left untouched, and each row keeps showing its previous suggestion until the new one is ready.
+* Broken URL matching now scales past 5,000 known URLs by looking candidates up directly instead of scanning a capped snapshot in memory.
+* "Approve high-confidence recommendations" now reports how many matching rows remain when there are more than one batch.
 
 = 2.4.0 =
 * Hardened self-updates for the self-hosted build: release packages are now downloaded through a validated GitHub endpoint, verified against the release's SHA-256 digest before extraction, and cross-checked against the release version after extraction. Releases now also publish a `.sha256` checksum and a machine-readable manifest.

@@ -240,18 +240,23 @@ class Rest_Controller {
 			return new \WP_Error( 'convertrack_404_bad_bulk_action', __( 'Invalid bulk action.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
 		}
 
+		// Matched rows can exceed one page. The page size bounds a loop that runs
+		// a destination health check per row, so report the real total instead of
+		// silently stopping at the cap.
+		$matched = 0;
 		if ( 'approve_high_confidence' === $action ) {
 			$raw_threshold = absint( $this->json_value( $request, 'threshold' ) );
 			$threshold     = $raw_threshold ? max( 50, min( 100, $raw_threshold ) ) : (int) Settings::get( 'auto_min_confidence', 90 );
 			$rows = Database::list_events(
 				array(
-					'status'         => 'recommended',
+					'status'         => Database::STATUS_RECOMMENDED,
 					'confidence_min' => $threshold,
 					'page'           => 1,
 					'per_page'       => 100,
 				)
 			);
-			$ids = wp_list_pluck( $rows['rows'], 'id' );
+			$ids     = wp_list_pluck( $rows['rows'], 'id' );
+			$matched = (int) $rows['total'];
 		}
 
 		if ( empty( $ids ) ) {
@@ -275,8 +280,11 @@ class Rest_Controller {
 			}
 		}
 
-		Logger::info( 'manual', '404 bulk action completed.', array( 'action' => $action, 'updated' => $count, 'errors' => $errors ) );
-		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'updated' => $count, 'errors' => $errors ), 200 ) );
+		$matched   = $matched > 0 ? $matched : count( $ids );
+		$remaining = max( 0, $matched - count( $ids ) );
+
+		Logger::info( 'manual', '404 bulk action completed.', array( 'action' => $action, 'updated' => $count, 'errors' => $errors, 'matched' => $matched, 'remaining' => $remaining ) );
+		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'updated' => $count, 'errors' => $errors, 'matched' => $matched, 'remaining' => $remaining ), 200 ) );
 	}
 
 	/**
