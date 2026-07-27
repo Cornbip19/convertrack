@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.0
+Stable tag: 2.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,13 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.5.1 =
+* Broken URLs now recognises old URLs whose words all appear in exactly one page, which is the usual result of moving flat `/service-name.html` URLs to pages carrying a location suffix. `/senior-pet-grooming.html` now resolves to `/service/senior-pet-grooming-miami-fl/` at 88% confidence instead of falling through to a loose keyword guess.
+* Suggestions are no longer thrown off by singular/plural differences: a broken URL containing "flea" matches a page for "fleas", and "pets" matches "pet".
+* Fixed a case where a broken URL matching several pages by slug could hide a single clearly-better match. The remaining match types now compete on confidence instead of first-one-wins, while an exact path or renamed slug still resolves immediately.
+* A URL whose words fit many pages equally well is now left for review rather than being pointed at an arbitrary one of them.
+* Existing suggestions are recalculated once after updating. Rows you already approved or ignored are left untouched.
 
 = 2.5.0 =
 * Broken URLs now sorts the review queue by what needs doing: rows with a suggestion to approve come first, then manual review, then newly detected URLs, with already-redirected and ignored rows at the end. Hit count and recency still order rows within each group.

@@ -44,6 +44,51 @@ class Matcher {
 	const ARCHIVE_CEILING = 45;
 
 	/**
+	 * Confidence for a broken URL whose every word appears in exactly one page.
+	 *
+	 * The common case is a site migrated from flat /<service>.html URLs to pages
+	 * carrying an extra location suffix, e.g. /senior-pet-grooming.html against
+	 * /service/senior-pet-grooming-miami-fl/. Deliberately just below the default
+	 * auto_min_confidence of 90 so this sorts to the top of the queue as a strong
+	 * recommendation without creating a 301 unreviewed.
+	 */
+	const TOKEN_SUBSET_CONFIDENCE = 88;
+
+	/**
+	 * Same signal with exactly two qualifying pages: the tighter fit is offered,
+	 * but scored low enough that the choice is visibly a judgement call.
+	 */
+	const TOKEN_SUBSET_AMBIGUOUS = 68;
+
+	/**
+	 * Smallest share of a candidate's words that must come from the source before
+	 * a subset match counts.
+	 *
+	 * Uniqueness is the primary guard; this only rules out pathological pairs like
+	 * a two-word URL against a twelve-word page. Kept low on purpose: a location
+	 * suffix plus a post type rewrite base already adds three or four words, so a
+	 * stricter floor would reject exactly the migrations this tier exists to catch
+	 * (/dog-grooming.html against /service/dog-grooming-miami-florida-usa/).
+	 */
+	const SUBSET_MIN_DENSITY = 0.25;
+
+	/**
+	 * Most qualifying pages a subset match may have before the source is treated
+	 * as too generic to resolve this way. Beyond this the tier returns nothing and
+	 * similarity scoring handles it, because picking one of several equally valid
+	 * pages and presenting it as a recommendation is worse than not guessing.
+	 */
+	const SUBSET_MAX_MATCHES = 2;
+
+	/**
+	 * Rows to examine when looking for subset matches. Larger than
+	 * SUBSET_MAX_MATCHES because the SQL prefilter matches substrings and some
+	 * rows fail the authoritative check in PHP -- without headroom a fetch could
+	 * look unique when it is not.
+	 */
+	const SUBSET_SCAN_LIMIT = 12;
+
+	/**
 	 * Stop words dropped when tokenizing a path.
 	 *
 	 * @var array
@@ -134,25 +179,41 @@ class Matcher {
 
 		$variants = self::path_variants( $source_path );
 
-		// Braces are required: self::$tier() would be parsed as a static property.
-		foreach ( array( 'match_exact_path', 'match_renamed_slug', 'match_normalized_path', 'match_slug' ) as $tier ) {
+		// Authoritative tiers short-circuit: an exact or renamed path is not a
+		// judgement call. Braces are required -- self::$tier() would be parsed as
+		// a static property access.
+		foreach ( array( 'match_exact_path', 'match_renamed_slug', 'match_normalized_path' ) as $tier ) {
 			$hit = self::{$tier}( $source_path, $variants );
 			if ( is_array( $hit ) && '' !== $hit['url'] ) {
 				return $hit;
 			}
 		}
 
+		// A page whose slug *is* the source slug is a more literal match than one
+		// that merely contains those words, so a unique slug hit still wins
+		// outright even though it scores below the subset tier. An ambiguous slug
+		// hit does not short-circuit -- it competes below.
+		$slug_hit = self::match_slug( $source_path, $variants );
+		if ( is_array( $slug_hit ) && 'exact_slug' === $slug_hit['reason'] ) {
+			return $slug_hit;
+		}
+
 		// Nothing authoritative resolved. Before guessing, check whether the URL
 		// used to be real: a draft or trashed post means the honest answer is
 		// "needs review", not the best fuzzy guess or the homepage.
 		$unpublished = self::match_unpublished( $variants );
-		$fuzzy       = self::match_fuzzy( $source_path, $variants, $candidates );
 
-		// A published ancestor of a since-unpublished post is better evidence than
-		// a weak guess, but a strong fuzzy match still deserves to win. Ties go to
-		// the unpublished signal because it is grounded in real content.
+		// Remaining tiers compete on confidence rather than order, so an ambiguous
+		// slug can never mask a unique subset match. Ties resolve in listed order,
+		// strongest evidence first.
 		$best = null;
-		foreach ( array( $unpublished, $fuzzy ) as $option ) {
+		$options = array(
+			self::match_token_subset( $source_path, $variants ),
+			$slug_hit,
+			$unpublished,
+			self::match_fuzzy( $source_path, $variants, $candidates ),
+		);
+		foreach ( $options as $option ) {
 			if ( is_array( $option ) && '' !== $option['url'] && ( null === $best || $option['confidence'] > $best['confidence'] ) ) {
 				$best = $option;
 			}
@@ -318,7 +379,79 @@ class Matcher {
 				$best  = $row;
 			}
 		}
-		return self::from_candidate( $best, 62, 'ambiguous_slug' );
+		// Just above FUZZY_CEILING on purpose. Colliding slugs are identical
+		// strings, so character similarity scores them a perfect 1.0 and fuzzy
+		// would otherwise shadow this result -- reporting "similar_keywords" and
+		// hiding the fact that several pages share the slug. Still far below the
+		// auto-redirect gate, so the collision is always resolved by a human.
+		return self::from_candidate( $best, self::FUZZY_CEILING + 1, 'ambiguous_slug' );
+	}
+
+	/**
+	 * Tier 4b — every word of the broken URL appears in exactly one page.
+	 *
+	 * Catches the flat-to-suffixed migration that plain slug equality cannot:
+	 * /senior-pet-grooming.html against /service/senior-pet-grooming-miami-fl/.
+	 * Every source word is present and no other page qualifies, which is far
+	 * stronger evidence than the similarity score for that pair suggests.
+	 *
+	 * Uniqueness is the safety net. A generic source like /grooming/ has full
+	 * coverage against every grooming service, so it fails the uniqueness check
+	 * and correctly falls through to similarity instead.
+	 *
+	 * @param string $source_path Normalized source path.
+	 * @param array  $variants    Path variants.
+	 * @return array|null
+	 */
+	private static function match_token_subset( $source_path, array $variants ) {
+		$stems = self::stem_tokens( self::tokens( $variants['core'] ) );
+		// One generic word is not enough to justify this tier's confidence.
+		if ( count( $stems ) < 2 ) {
+			return null;
+		}
+
+		$rows      = Database::candidates_containing_tokens( $stems, self::SUBSET_SCAN_LIMIT );
+		$qualified = array();
+		foreach ( $rows as $row ) {
+			if ( empty( $row['url'] ) || empty( $row['path'] ) ) {
+				continue;
+			}
+			$candidate_stems = self::stem_tokens( self::tokens( ! empty( $row['tokens'] ) ? $row['tokens'] : (string) $row['path'] ) );
+			if ( empty( $candidate_stems ) ) {
+				continue;
+			}
+			// Authoritative check: the SQL prefilter matches substrings, so a
+			// candidate can reach here without truly containing every word.
+			if ( array_diff( $stems, $candidate_stems ) ) {
+				continue;
+			}
+			$density = count( $stems ) / count( $candidate_stems );
+			if ( $density < self::SUBSET_MIN_DENSITY ) {
+				continue;
+			}
+			$qualified[] = array( 'row' => $row, 'density' => $density );
+		}
+
+		if ( empty( $qualified ) || count( $qualified ) > self::SUBSET_MAX_MATCHES ) {
+			return null;
+		}
+
+		if ( 1 === count( $qualified ) ) {
+			return self::from_candidate( $qualified[0]['row'], self::TOKEN_SUBSET_CONFIDENCE, 'token_subset' );
+		}
+
+		// Two pages qualify. Prefer the tightest fit -- fewest extra words -- and
+		// score it low enough that the choice reads as a judgement call.
+		usort(
+			$qualified,
+			static function ( $a, $b ) {
+				if ( $a['density'] === $b['density'] ) {
+					return (int) $a['row']['id'] - (int) $b['row']['id'];
+				}
+				return $a['density'] < $b['density'] ? 1 : -1;
+			}
+		);
+		return self::from_candidate( $qualified[0]['row'], self::TOKEN_SUBSET_AMBIGUOUS, 'token_subset_ambiguous' );
 	}
 
 	/**
@@ -580,6 +713,49 @@ class Matcher {
 	}
 
 	/**
+	 * Reduce a token to a crude singular form.
+	 *
+	 * Deliberately not a real stemmer: only a trailing -s, and only on tokens of
+	 * four or more characters, so 'pet' and 'fl' survive intact. Applied at
+	 * compare time, so stored candidate token lists never need reindexing.
+	 *
+	 * Stripping -es as a unit was tried and is wrong: it maps 'services' to
+	 * 'servic' while 'service' stays put, so the pair never unifies. Removing a
+	 * single -s handles word+s and word+e+s alike ('services' -> 'service',
+	 * 'fleas' -> 'flea'), and the -ss guard protects 'address' and 'business'.
+	 *
+	 * @param string $token Token.
+	 * @return string
+	 */
+	public static function stem_token( $token ) {
+		$token = (string) $token;
+		if ( strlen( $token ) < 4 ) {
+			return $token;
+		}
+		if ( 's' === substr( $token, -1 ) && 'ss' !== substr( $token, -2 ) ) {
+			return substr( $token, 0, -1 );
+		}
+		return $token;
+	}
+
+	/**
+	 * Stem a token list, preserving uniqueness.
+	 *
+	 * @param array $tokens Tokens.
+	 * @return array
+	 */
+	public static function stem_tokens( array $tokens ) {
+		$out = array();
+		foreach ( $tokens as $token ) {
+			$stem = self::stem_token( $token );
+			if ( '' !== $stem ) {
+				$out[] = $stem;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	/**
 	 * Combined token and character similarity, 0..1.
 	 *
 	 * Token coverage replaces the previous Jaccard index, which divided by the
@@ -595,6 +771,9 @@ class Matcher {
 	 */
 	private static function similarity( array $source_tokens, array $candidate_tokens, $source_slug, $candidate_slug ) {
 		$token = 0.0;
+		// Compare stems so a plural in the old URL still matches a singular page.
+		$source_tokens    = self::stem_tokens( $source_tokens );
+		$candidate_tokens = self::stem_tokens( $candidate_tokens );
 		if ( ! empty( $source_tokens ) && ! empty( $candidate_tokens ) ) {
 			$shared   = count( array_intersect( $source_tokens, $candidate_tokens ) );
 			$coverage = $shared / count( $source_tokens );

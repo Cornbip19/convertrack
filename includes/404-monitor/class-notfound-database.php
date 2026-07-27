@@ -11,10 +11,13 @@ defined( 'ABSPATH' ) || exit;
 
 class Database {
 
-	const DB_VERSION        = '1.3.0';
+	// 1.3.1 carries no structural change. The version moves only so maybe_upgrade()
+	// calls install(), which requeues stored suggestions against the improved
+	// matcher via requeue_stale_recommendations().
+	const DB_VERSION        = '1.3.1';
 	const DB_VERSION_OPTION = 'convertrack_404_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_404_summary';
-	const RECOMMENDATION_GENERATION = 2;
+	const RECOMMENDATION_GENERATION = 3;
 	const MAX_RECOMMENDATION_ATTEMPTS = 3;
 	const RECOMMENDATION_LEASE_SECONDS = 300;
 	const REDIRECT_CACHE_GROUP = 'convertrack_404_redirects';
@@ -1347,6 +1350,42 @@ class Database {
 		$table = self::valid_urls_table();
 		$limit = max( 1, min( 50, (int) $limit ) );
 		return (array) $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $table WHERE status = 'active' AND slug = %s ORDER BY priority DESC, id ASC LIMIT %d", $slug, $limit ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Candidates whose token list mentions every one of the given stems.
+	 *
+	 * A bounded coarse prefilter for the token-subset tier: the caller still
+	 * verifies the superset relation in PHP. Matching each stem as a bare
+	 * substring is intentional -- '%pet%' hits both "pet" and "pets", so plural
+	 * handling needs no reindexing of the tokens column. It over-matches a little
+	 * and the caller filters the noise out; ANDing the stems keeps it selective.
+	 *
+	 * Archives are excluded outright so a tag or category can never win this tier.
+	 *
+	 * @param array $stems Stemmed source tokens.
+	 * @param int   $limit Max rows.
+	 * @return array
+	 */
+	public static function candidates_containing_tokens( array $stems, $limit = 25 ) {
+		global $wpdb;
+		$stems = array_values( array_unique( array_filter( array_map( 'strval', $stems ), 'strlen' ) ) );
+		if ( empty( $stems ) ) {
+			return array();
+		}
+
+		$table   = self::valid_urls_table();
+		$limit   = max( 1, min( 200, (int) $limit ) );
+		$where   = array( "status = 'active'", "source NOT IN ('taxonomy_archive','post_type_archive')" );
+		$prepare = array();
+		foreach ( array_slice( $stems, 0, 8 ) as $stem ) {
+			$where[]   = 'tokens LIKE %s';
+			$prepare[] = '%' . $wpdb->esc_like( $stem ) . '%';
+		}
+		$prepare[] = $limit;
+
+		$sql = "SELECT * FROM $table WHERE " . implode( ' AND ', $where ) . ' ORDER BY priority DESC, id ASC LIMIT %d';
+		return (array) $wpdb->get_results( $wpdb->prepare( $sql, $prepare ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	}
 
 	/**
