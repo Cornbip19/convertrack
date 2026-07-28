@@ -282,10 +282,21 @@ class API {
 		$indexing = isset( $result['indexingState'] ) ? (string) $result['indexingState'] : '';
 		$fetch    = isset( $result['pageFetchState'] ) ? (string) $result['pageFetchState'] : '';
 
-		$status = self::map_status( $verdict, $coverage, $robots, $indexing );
+		$fields = array(
+			'google_verdict'   => $verdict,
+			'coverage_state'   => $coverage,
+			'robots_txt_state' => $robots,
+			'indexing_state'   => $indexing,
+			'page_fetch_state' => $fetch,
+			'user_canonical'   => isset( $result['userCanonical'] ) ? $result['userCanonical'] : '',
+			'google_canonical' => isset( $result['googleCanonical'] ) ? $result['googleCanonical'] : '',
+		);
+		$reason = Index_Reasons::classify( $fields );
+		$status = self::map_status( $verdict, $coverage, $robots, $indexing, $fetch );
 
 		return array(
 			'index_status'           => $status,
+			'index_reason'           => $reason,
 			'coverage_state'         => $coverage,
 			'google_verdict'         => $verdict,
 			'robots_txt_state'       => $robots,
@@ -302,44 +313,54 @@ class API {
 	/**
 	 * Map Google states to Convertrack statuses.
 	 *
+	 * Derived from Index_Reasons so the two vocabularies cannot drift. The
+	 * existing status values are preserved exactly, because the queue filters,
+	 * summary buckets and stored rows all depend on them -- the finer-grained
+	 * detail lives in index_reason alongside, not instead of, this.
+	 *
+	 * Previously pageFetchState was ignored entirely, so a 404, a redirect, a 403
+	 * and a 5xx all collapsed into 'not_indexed'. They now map to real statuses.
+	 *
 	 * @param string $verdict  Verdict.
 	 * @param string $coverage Coverage state.
 	 * @param string $robots   Robots state.
 	 * @param string $indexing Indexing state.
+	 * @param string $fetch    Page fetch state.
 	 * @return string
 	 */
-	private static function map_status( $verdict, $coverage, $robots, $indexing ) {
-		$coverage_l = strtolower( $coverage );
-		$robots_l   = strtolower( $robots );
-		$robots_u   = strtoupper( trim( $robots ) );
-		$indexing_l = strtolower( $indexing );
+	private static function map_status( $verdict, $coverage, $robots, $indexing, $fetch = '' ) {
+		$reason = Index_Reasons::classify(
+			array(
+				'google_verdict'   => $verdict,
+				'coverage_state'   => $coverage,
+				'robots_txt_state' => $robots,
+				'indexing_state'   => $indexing,
+				'page_fetch_state' => $fetch,
+			)
+		);
 
-		if ( 'PASS' === strtoupper( $verdict ) ) {
-			return 'indexed';
-		}
-		if ( in_array( $robots_u, array( 'DISALLOWED', 'BLOCKED' ), true ) || false !== strpos( $robots_l, 'disallow' ) ) {
-			return 'blocked_by_robots';
-		}
-		if ( false !== strpos( $indexing_l, 'blocked_by_meta_tag' ) || false !== strpos( $coverage_l, 'noindex' ) ) {
-			return 'noindex_detected';
-		}
-		if ( false !== strpos( $coverage_l, 'duplicate' ) || false !== strpos( $coverage_l, 'canonical' ) ) {
-			return 'duplicate_canonical';
-		}
-		if ( false !== strpos( $coverage_l, 'discovered' ) && false !== strpos( $coverage_l, 'not indexed' ) ) {
-			return 'discovered_not_indexed';
-		}
-		if ( false !== strpos( $coverage_l, 'crawled' ) && false !== strpos( $coverage_l, 'not indexed' ) ) {
-			return 'crawled_not_indexed';
-		}
+		$map = array(
+			Index_Reasons::INDEXED                    => 'indexed',
+			Index_Reasons::BLOCKED_ROBOTS_TXT         => 'blocked_by_robots',
+			Index_Reasons::NOINDEX_TAG                => 'noindex_detected',
+			Index_Reasons::DUPLICATE_GOOGLE_CANONICAL => 'duplicate_canonical',
+			Index_Reasons::DUPLICATE_NO_CANONICAL     => 'duplicate_canonical',
+			Index_Reasons::ALTERNATE_CANONICAL        => 'duplicate_canonical',
+			Index_Reasons::DISCOVERED_NOT_INDEXED     => 'discovered_not_indexed',
+			Index_Reasons::CRAWLED_NOT_INDEXED        => 'crawled_not_indexed',
+			Index_Reasons::NOT_FOUND_404              => 'not_found',
+			Index_Reasons::PAGE_WITH_REDIRECT         => 'page_redirect',
+			Index_Reasons::SOFT_404                   => 'soft_404',
+			Index_Reasons::FORBIDDEN_403              => 'access_blocked',
+			Index_Reasons::UNAUTHORIZED_401           => 'access_blocked',
+			Index_Reasons::BLOCKED_4XX                => 'access_blocked',
+			Index_Reasons::SERVER_ERROR_5XX           => 'server_error',
+			Index_Reasons::CRAWL_ERROR                => 'server_error',
+			Index_Reasons::UNKNOWN                    => 'unknown',
+			Index_Reasons::NOT_INDEXED                => 'not_indexed',
+		);
 
-		if ( in_array( $robots_u, array( '', 'ROBOTS_TXT_STATE_UNSPECIFIED', 'UNSPECIFIED' ), true )
-			&& in_array( strtoupper( trim( $verdict ) ), array( '', 'VERDICT_UNSPECIFIED', 'NEUTRAL' ), true )
-			&& '' === trim( $coverage ) ) {
-			return 'unknown';
-		}
-
-		return 'not_indexed';
+		return isset( $map[ $reason ] ) ? $map[ $reason ] : 'not_indexed';
 	}
 
 	/**

@@ -318,6 +318,12 @@ class Processor {
 	 */
 	private static function post_process_result( array $row, array $result, array &$submitted_sitemaps ) {
 		$status = isset( $result['index_status'] ) ? $result['index_status'] : 'not_indexed';
+
+		// Advance any in-flight validation and refresh the fix proposal before the
+		// indexing-API and sitemap branches, so both happen even for rows that
+		// return early below.
+		self::sync_fix_state( $row, $result );
+
 		if ( 'indexed' === $status ) {
 			return $result;
 		}
@@ -352,6 +358,53 @@ class Processor {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Advance validation and refresh the fix proposal after an inspection.
+	 *
+	 * Failures here are logged but never abort the batch: a suggestion is
+	 * advisory, and losing one must not cost the inspection that was just paid for
+	 * out of the daily quota.
+	 *
+	 * @param array $row    Queue row as claimed.
+	 * @param array $result Fresh inspection result.
+	 * @return void
+	 */
+	private static function sync_fix_state( array $row, array $result ) {
+		$id = isset( $row['id'] ) ? (int) $row['id'] : 0;
+		if ( $id < 1 ) {
+			return;
+		}
+
+		$reason_now = isset( $result['index_reason'] ) && '' !== $result['index_reason']
+			? (string) $result['index_reason']
+			: Index_Reasons::classify( $result );
+		$state = isset( $row['fix_state'] ) ? (string) $row['fix_state'] : Index_Fixes::STATE_NONE;
+
+		// A fix is being validated: judge it on this re-inspection, and leave the
+		// proposal alone so the outcome is not overwritten by a re-suggestion.
+		if ( in_array( $state, array( Index_Fixes::STATE_APPLIED, Index_Fixes::STATE_VERIFYING ), true ) ) {
+			$advanced = Index_Fixes::advance_validation(
+				$state,
+				isset( $row['fix_reason_at_apply'] ) ? (string) $row['fix_reason_at_apply'] : '',
+				$reason_now,
+				isset( $row['fix_attempts'] ) ? (int) $row['fix_attempts'] : 0
+			);
+			$saved = Database::update_validation( $id, $advanced['state'], $advanced['attempts'] );
+			if ( is_wp_error( $saved ) ) {
+				Logger::warning( 'fix', 'Validation state could not be advanced.', array( 'id' => $id, 'error' => $saved->get_error_message() ) );
+			}
+			return;
+		}
+
+		// Otherwise re-propose against the fresh result.
+		$merged     = array_merge( $row, $result, array( 'index_reason' => $reason_now ) );
+		$suggestion = Index_Fixes::suggest( $merged );
+		$stored     = Database::save_fix_suggestion( $id, $suggestion );
+		if ( is_wp_error( $stored ) ) {
+			Logger::warning( 'fix', 'Suggested fix could not be stored.', array( 'id' => $id, 'error' => $stored->get_error_message() ) );
+		}
 	}
 
 	/**

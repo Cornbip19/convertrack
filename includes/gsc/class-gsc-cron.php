@@ -183,6 +183,18 @@ class Cron {
 		if ( ! Settings::get( 'enabled' ) ) {
 			return;
 		}
+
+		// Seed the non-sitemap sources first. These are bounded and synchronous,
+		// and they are the only way 404 and redirect coverage reasons can appear at
+		// all -- those URLs are by definition absent from a sitemap.
+		Url_Discovery::run();
+
+		// Label any rows still missing a reason, then propose fixes for rows that
+		// have one. Both are derived from stored inspection data, so neither spends
+		// inspection quota, and both are bounded and resumable.
+		Database::backfill_reasons( 500 );
+		Database::backfill_fix_suggestions( 100 );
+
 		$queued = Sitemap_Scanner::request_scan( 'scheduled' );
 		if ( ! is_wp_error( $queued ) ) {
 			self::kick_scan();

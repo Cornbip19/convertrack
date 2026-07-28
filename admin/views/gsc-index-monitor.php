@@ -292,6 +292,18 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
 
+	<div class="cvtrk-card" id="convertrack-gsc-reasons">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( 'Why pages are not indexed', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Grouped by cause, with a suggested fix where one can be applied safely', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="gsc-reasons" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+		</div>
+	</div>
+
 	<div class="cvtrk-card" id="convertrack-gsc-queue">
 		<div class="cvtrk-card-head">
 			<h2><?php esc_html_e( 'URL Index Queue', 'convertrack-click-conversion-analytics' ); ?></h2>
@@ -322,6 +334,28 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 						<option value="submitted_via_indexing_api"><?php esc_html_e( 'Submitted via Indexing API', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="error"><?php esc_html_e( 'Errors', 'convertrack-click-conversion-analytics' ); ?></option>
 						<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
+					</select>
+				</label>
+				<label class="cvtrk-field">
+					<?php esc_html_e( 'Reason', 'convertrack-click-conversion-analytics' ); ?>
+					<select data-cvtrk="gsc-reason">
+						<option value="all"><?php esc_html_e( 'Any reason', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="any_error"><?php esc_html_e( 'Any problem', 'convertrack-click-conversion-analytics' ); ?></option>
+						<?php foreach ( \Convertrack\GSC\Index_Reasons::all() as $cvtrk_code => $cvtrk_reason ) : ?>
+							<option value="<?php echo esc_attr( $cvtrk_code ); ?>"><?php echo esc_html( $cvtrk_reason['label'] ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				</label>
+				<label class="cvtrk-field">
+					<?php esc_html_e( 'Fix status', 'convertrack-click-conversion-analytics' ); ?>
+					<select data-cvtrk="gsc-fix-state">
+						<option value="all"><?php esc_html_e( 'Any', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="available"><?php esc_html_e( 'Fix available', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="applied"><?php esc_html_e( 'Fix applied', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="verifying"><?php esc_html_e( 'Validating', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="passed"><?php esc_html_e( 'Passed', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="failed"><?php esc_html_e( 'Failed', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="unavailable"><?php esc_html_e( 'No automatic fix', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
 				<label class="cvtrk-field">
