@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.1
+Stable tag: 2.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,19 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.6.0 =
+* Search & SEO now explains **why** each page is not indexed, grouped into the same categories Search Console uses: Not found (404), Page with redirect, Crawled - currently not indexed, Blocked by robots.txt, Excluded by 'noindex' tag, Duplicate canonical conflicts, Soft 404, 403, 401 and server errors. Each group shows whether the cause sits with your website or with Google's own systems.
+* Fixed the cause of the missing categories: page fetch results from Search Console were stored but never read, so 404s, redirects, 403s and server errors all showed as a generic "not indexed".
+* Added one-click suggested fixes, using the same approve-a-suggestion workflow as Broken URLs — never an automatic change. A 404 can be redirected to the closest matching page (reusing the Broken URLs matcher, confidence and all), a noindex flag removed, a robots.txt Allow rule added, a canonical aligned with Google's choice, a redirect chain flattened, or a recrawl requested.
+* Fixes can be applied to a whole category at once, in bounded batches that report how many URLs remain.
+* Added validation tracking: after you apply a fix, the URL is re-checked and moves through Not started, Started, Passed or Failed, so you can see whether what you did actually worked.
+* Added filters for coverage reason and fix status, and a "Show URLs" link from each category straight into the queue.
+* The URL queue now also discovers pages from Search Console search data and from the Broken URLs 404 log, not just your sitemap. Without this, 404 and redirect categories stay empty, because those URLs are never listed in a sitemap. New sources are queued below sitemap URLs so they cannot crowd out your important pages.
+* Existing inspected URLs are labelled and given fix suggestions in the background without using any of Google's daily inspection allowance.
+* "Alternate page with proper canonical tag" is now shown as informational rather than an error, because it means the page is set up correctly.
+* Site-wide settings are never changed by a per-page fix: if the "Discourage search engines" option is blocking your whole site, it is reported for you to change deliberately. A real robots.txt file on the server is never modified — the exact line to add is shown instead.
+* Fixed a bug where saving the Search & SEO settings form discarded any stored robots.txt Allow rules.
 
 = 2.5.1 =
 * Broken URLs now recognises old URLs whose words all appear in exactly one page, which is the usual result of moving flat `/service-name.html` URLs to pages carrying a location suffix. `/senior-pet-grooming.html` now resolves to `/service/senior-pet-grooming-miami-fl/` at 88% confidence instead of falling through to a loose keyword guess.

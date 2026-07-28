@@ -64,7 +64,7 @@ class Rest_Controller {
 			)
 		);
 
-		foreach ( array( 'recheck', 'ignore', 'priority', 'scan-sitemap', 'process', 'indexing-notify' ) as $action ) {
+		foreach ( array( 'recheck', 'ignore', 'priority', 'scan-sitemap', 'process', 'indexing-notify', 'apply-fix', 'bulk-fix' ) as $action ) {
 			register_rest_route(
 				$namespace,
 				'/gsc/' . $action,
@@ -100,6 +100,18 @@ class Rest_Controller {
 		$data['history']  = Database::summary_history( 30 );
 		$data['sitemap_scan'] = Sitemap_Scanner::state();
 		$data['last_batch_error'] = get_option( Processor::LAST_ERROR_OPTION ) ?: null; // phpcs:ignore Universal.Operators.DisallowShortTernary.Found
+
+		// Deliberately outside Database::summary()'s transient: reason counts move
+		// on every inspection and on every applied fix, so a stale breakdown would
+		// be actively misleading.
+		$data['reasons'] = Database::reason_breakdown();
+		$data['reason_meta'] = array(
+			// Google exposes no API for the Page indexing report or its validation
+			// states, so the screen must say whose numbers these are.
+			'inspected'      => Database::inspected_count(),
+			'property_url'   => (string) Settings::get( 'property_url' ),
+			'is_own_validation' => true,
+		);
 		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
 	}
 
@@ -136,6 +148,8 @@ class Rest_Controller {
 				'page'         => absint( $request->get_param( 'page' ) ),
 				'per_page'     => absint( $request->get_param( 'per_page' ) ),
 				'status'       => sanitize_key( (string) $request->get_param( 'status' ) ),
+				'reason'       => sanitize_key( (string) $request->get_param( 'reason' ) ),
+				'fix_state'    => sanitize_key( (string) $request->get_param( 'fix_state' ) ),
 				'post_type'    => sanitize_key( (string) $request->get_param( 'post_type' ) ),
 				'priority'     => $request->get_param( 'priority' ),
 				'sitemap_hash' => sanitize_text_field( (string) $request->get_param( 'sitemap_hash' ) ),
@@ -190,6 +204,108 @@ class Rest_Controller {
 		$this->update_row_action( $id, array( 'index_status' => 'ignored', 'next_check_at' => null ) );
 		Logger::info( 'manual', 'URL ignored.', array( 'id' => $id ) );
 		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true ), 200 ) );
+	}
+
+	/**
+	 * Apply the suggested fix for one URL.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function apply_fix( $request ) {
+		$id = absint( $this->json_value( $request, 'id' ) );
+		if ( ! $id ) {
+			return new \WP_Error( 'convertrack_gsc_bad_id', __( 'Missing URL row ID.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
+		}
+
+		$applied = $this->apply_fix_to_row( $id );
+		if ( is_wp_error( $applied ) ) {
+			return $applied;
+		}
+
+		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'message' => $applied['message'] ), 200 ) );
+	}
+
+	/**
+	 * Apply every available fix for one reason.
+	 *
+	 * Bounded per call, and reports what is left rather than silently truncating,
+	 * because each fix can perform a destination health check or an API call.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function bulk_fix( $request ) {
+		$reason = sanitize_key( (string) $this->json_value( $request, 'reason' ) );
+		if ( '' === $reason || ! Index_Reasons::is_valid( $reason ) ) {
+			return new \WP_Error( 'convertrack_gsc_bad_reason', __( 'Choose a valid coverage reason.', 'convertrack-click-conversion-analytics' ), array( 'status' => 400 ) );
+		}
+
+		$limit = absint( $this->json_value( $request, 'limit' ) );
+		$limit = $limit > 0 ? min( 25, $limit ) : 25;
+
+		$list = Database::list_urls(
+			array(
+				'reason'    => $reason,
+				'fix_state' => Index_Fixes::STATE_AVAILABLE,
+				'page'      => 1,
+				'per_page'  => $limit,
+			)
+		);
+
+		$applied = 0;
+		$errors  = array();
+		foreach ( $list['rows'] as $row ) {
+			$result = $this->apply_fix_to_row( (int) $row['id'] );
+			if ( is_wp_error( $result ) ) {
+				$errors[] = $result->get_error_message();
+				continue;
+			}
+			$applied++;
+		}
+
+		$remaining = max( 0, (int) $list['total'] - count( $list['rows'] ) );
+		Logger::info( 'manual', 'Bulk index fix completed.', array( 'reason' => $reason, 'applied' => $applied, 'errors' => count( $errors ), 'remaining' => $remaining ) );
+
+		return $this->no_cache(
+			new \WP_REST_Response(
+				array(
+					'ok'        => true,
+					'applied'   => $applied,
+					'errors'    => count( $errors ),
+					'messages'  => array_slice( array_unique( $errors ), 0, 5 ),
+					'remaining' => $remaining,
+				),
+				200
+			)
+		);
+	}
+
+	/**
+	 * Apply a fix and record the validation start.
+	 *
+	 * @param int $id Row ID.
+	 * @return array|\WP_Error
+	 */
+	private function apply_fix_to_row( $id ) {
+		$row = Database::get_url( $id );
+		if ( ! $row ) {
+			return new \WP_Error( 'convertrack_gsc_missing_row', __( 'That URL is no longer in the queue.', 'convertrack-click-conversion-analytics' ), array( 'status' => 404 ) );
+		}
+
+		$result = Index_Fixes::apply( $row );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$reason  = isset( $row['index_reason'] ) ? (string) $row['index_reason'] : '';
+		$flagged = Database::mark_fix_applied( $id, $reason );
+		if ( is_wp_error( $flagged ) ) {
+			return $flagged;
+		}
+
+		Logger::info( 'fix', 'Index coverage fix applied.', array( 'id' => (int) $id, 'reason' => $reason, 'fix' => (string) $row['fix_code'] ) );
+		return $result;
 	}
 
 	/**

@@ -353,10 +353,13 @@ class Sitemap_Scanner {
 	/**
 	 * Match a URL to a selected WordPress post.
 	 *
+	 * Public so Url_Discovery seeds rows with identical post matching, including
+	 * the selected-post-types filter, rather than keeping a copy that can drift.
+	 *
 	 * @param string $url URL.
 	 * @return array
 	 */
-	private static function match_post( $url ) {
+	public static function match_post( $url ) {
 		$post_id   = url_to_postid( $url );
 		$post_type = $post_id ? get_post_type( $post_id ) : '';
 		if ( $post_id && ! in_array( $post_type, Settings::get( 'selected_post_types', array() ), true ) ) {
@@ -372,7 +375,7 @@ class Sitemap_Scanner {
 	 * @param string $url URL.
 	 * @return bool
 	 */
-	private static function is_site_url( $url ) {
+	public static function is_site_url( $url ) {
 		$home = wp_parse_url( home_url( '/' ) );
 		$test = wp_parse_url( $url );
 		if ( empty( $home['host'] ) || empty( $test['host'] ) ) {

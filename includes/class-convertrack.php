@@ -154,6 +154,9 @@ final class Plugin {
 		$this->gsc_rest->register();
 		$this->gsc_cron->register();
 		$this->gsc_admin->register();
+		// Emits any Allow rules added by the "unblock in robots.txt" fix. Only
+		// affects WordPress's virtual robots.txt; a real file on disk is untouched.
+		\Convertrack\GSC\Settings::register_robots_filter();
 		$this->gsc_keywords_cron->register();
 		$this->gsc_keywords_analyzer->register();
 		$this->gsc_keywords_rest->register();

@@ -2774,6 +2774,8 @@
 		var proc = { running: false };
 		var indexingApiOn = root.getAttribute( 'data-gsc-indexing-api' ) === '1';
 		var statusSel = attr( 'gsc-status' );
+		var reasonSel = attr( 'gsc-reason' );
+		var fixStateSel = attr( 'gsc-fix-state' );
 		var postTypeSel = attr( 'gsc-post-type' );
 		var prioritySel = attr( 'gsc-priority' );
 		var sitemapSel = attr( 'gsc-sitemap' );
@@ -2799,6 +2801,7 @@
 				.then( function ( data ) {
 					setBusy( box, false );
 					renderGscSummary( data );
+					renderReasons( data );
 					renderGscSitemapOptions( data.sitemaps || [] );
 					reconcileSitemapScan( data.sitemap_scan || {} );
 					if ( ! proc.running && data.last_batch_error && data.last_batch_error.message ) {
@@ -3061,6 +3064,12 @@
 			var q = '?page=' + encodeURIComponent( state.page ) + '&per_page=' + encodeURIComponent( state.perPage );
 			q += '&status=' + encodeURIComponent( statusSel ? statusSel.value : 'all' );
 			q += '&post_type=' + encodeURIComponent( postTypeSel ? postTypeSel.value : 'all' );
+			if ( reasonSel && reasonSel.value && reasonSel.value !== 'all' ) {
+				q += '&reason=' + encodeURIComponent( reasonSel.value );
+			}
+			if ( fixStateSel && fixStateSel.value && fixStateSel.value !== 'all' ) {
+				q += '&fix_state=' + encodeURIComponent( fixStateSel.value );
+			}
 			if ( prioritySel && prioritySel.value !== '' ) {
 				q += '&priority=' + encodeURIComponent( prioritySel.value );
 			}
@@ -3129,6 +3138,105 @@
 			} );
 		}
 
+		// Search Console exposes no API for its Page indexing report or its
+		// validation states, so these are our own numbers over the URLs we have
+		// inspected. The panel says so rather than looking like it disagrees
+		// with Google.
+		function validationText( state ) {
+			var map = {
+				not_started: I18N.gscValNotStarted || 'Not started',
+				started: I18N.gscValStarted || 'Started',
+				passed: I18N.gscValPassed || 'Passed',
+				failed: I18N.gscValFailed || 'Failed'
+			};
+			return map[ state ] || map.not_started;
+		}
+
+		function ownerText( owner ) {
+			if ( owner === 'site' ) {
+				return I18N.gscOwnerSite || 'Website';
+			}
+			if ( owner === 'google' ) {
+				return I18N.gscOwnerGoogle || 'Google systems';
+			}
+			return '—';
+		}
+
+		function renderReasons( data ) {
+			var box = attr( 'gsc-reasons' );
+			if ( ! box ) {
+				return;
+			}
+			var reasons = ( data && data.reasons ) || [];
+			var meta = ( data && data.reason_meta ) || {};
+			clear( box );
+
+			if ( ! reasons.length ) {
+				empty( box, I18N.gscNoReasons || 'No coverage problems found in the URLs inspected so far.' );
+				return;
+			}
+
+			var note = el( 'p', 'cvtrk-card-sub cvtrk-gsc-reason-note' );
+			note.appendChild( document.createTextNode(
+				( I18N.gscReasonNote || 'Based on the URLs this plugin has inspected' ) +
+				' (' + num( meta.inspected || 0 ) + '). ' +
+				( I18N.gscReasonNoteTwo || 'Validation tracks whether the fix applied here worked; it is not Google\'s own validation state.' )
+			) );
+			box.appendChild( note );
+
+			var t = table( [
+				{ label: I18N.gscColReason || 'Reason' },
+				{ label: I18N.gscColSource || 'Source' },
+				{ label: I18N.gscColValidation || 'Validation' },
+				{ label: I18N.gscColUrls || 'URLs', num: true },
+				{ label: I18N.gscColFixable || 'Fixable', num: true },
+				{ label: I18N.actions || 'Actions' }
+			] );
+			var body = t.querySelector( 'tbody' );
+
+			reasons.forEach( function ( r ) {
+				var tr = el( 'tr' );
+
+				var reasonCell = el( 'td' );
+				var badge = el( 'span', 'cvtrk-badge cvtrk-gsc-severity-' + statusClass( r.severity ) );
+				badge.appendChild( el( 'span', 'cvtrk-badge-dot' ) );
+				badge.appendChild( document.createTextNode( r.label || r.reason ) );
+				reasonCell.appendChild( badge );
+				if ( r.summary ) {
+					reasonCell.appendChild( el( 'span', 'cvtrk-cell-sub', r.summary ) );
+				}
+				tr.appendChild( reasonCell );
+
+				tr.appendChild( el( 'td', null, ownerText( r.owner ) ) );
+
+				var valCell = el( 'td' );
+				valCell.appendChild( el( 'span', 'cvtrk-badge cvtrk-gsc-validation-' + statusClass( r.validation ), validationText( r.validation ) ) );
+				tr.appendChild( valCell );
+
+				tr.appendChild( numCell( r.total ) );
+				tr.appendChild( numCell( r.fixable ) );
+
+				var actions = el( 'td', 'cvtrk-gsc-actions' );
+				var show = el( 'button', 'button button-small', I18N.gscShowUrls || 'Show URLs' );
+				show.type = 'button';
+				show.setAttribute( 'data-gsc-show-reason', r.reason );
+				actions.appendChild( show );
+
+				if ( r.fixable > 0 ) {
+					var fixAll = el( 'button', 'button button-small button-primary',
+						( I18N.gscFixAll || 'Fix' ) + ' ' + num( r.fixable ) );
+					fixAll.type = 'button';
+					fixAll.setAttribute( 'data-gsc-bulk-fix', r.reason );
+					actions.appendChild( fixAll );
+				}
+				tr.appendChild( actions );
+
+				body.appendChild( tr );
+			} );
+
+			box.appendChild( t );
+		}
+
 		function loadUrls() {
 			syncPostTabs();
 			updateExport();
@@ -3161,17 +3269,18 @@
 				return;
 			}
 
-			var t = table( [
+			var headers = [
 				{ label: 'URL' },
-				{ label: 'Post Type' },
+				{ label: 'Post Type', hide: 'md' },
 				{ label: I18N.gscStatus || 'Google Index Status' },
-				{ label: I18N.coverageState || 'Coverage State' },
-				{ label: I18N.googleVerdict || 'Google Verdict' },
-				{ label: 'Last Checked' },
-				{ label: I18N.nextCheck || 'Next Check' },
-				{ label: I18N.attempts || 'Attempts', num: true },
+				{ label: I18N.gscColReason || 'Reason' },
+				{ label: I18N.gscColFix || 'Suggested fix' },
+				{ label: 'Last Checked', hide: 'sm' },
+				{ label: I18N.nextCheck || 'Next Check', hide: 'sm' },
+				{ label: I18N.attempts || 'Attempts', num: true, hide: 'md' },
 				{ label: I18N.actions || 'Actions' }
-			] );
+			];
+			var t = table( headers );
 			var body = t.querySelector( 'tbody' );
 			rows.forEach( function ( row ) {
 				var tr = el( 'tr' );
@@ -3184,15 +3293,96 @@
 				}
 				status.appendChild( badge );
 				tr.appendChild( status );
-				tr.appendChild( el( 'td', null, row.coverage_state || row.error_message || '-' ) );
-				tr.appendChild( el( 'td', null, row.google_verdict || '-' ) );
+
+				// Reason replaces the raw coverage string, which stays available as
+				// the cell's tooltip so nothing is lost.
+				var reasonCell = el( 'td' );
+				var reasonLabel = el( 'span', null, row.reason_label || '-' );
+				if ( row.coverage_state || row.google_verdict ) {
+					reasonLabel.title = [ row.coverage_state, row.google_verdict, row.page_fetch_state ]
+						.filter( Boolean ).join( ' · ' );
+				}
+				reasonCell.appendChild( reasonLabel );
+				if ( row.reason_summary ) {
+					reasonCell.appendChild( el( 'span', 'cvtrk-cell-sub', row.reason_summary ) );
+				}
+				tr.appendChild( reasonCell );
+
+				tr.appendChild( gscFixCell( row ) );
 				tr.appendChild( el( 'td', null, dateText( row.last_checked_at ) ) );
 				tr.appendChild( el( 'td', null, dateText( row.next_check_at ) ) );
 				tr.appendChild( numCell( row.attempt_count ) );
 				tr.appendChild( gscActionsCell( row ) );
+				applyHideClasses( tr, headers );
 				body.appendChild( tr );
 			} );
 			box.appendChild( t );
+		}
+
+		function fixLabel( code ) {
+			var map = {
+				create_redirect: I18N.gscFixRedirect || 'Create redirect',
+				remove_noindex: I18N.gscFixNoindex || 'Remove noindex',
+				robots_allow: I18N.gscFixRobots || 'Add Allow rule',
+				align_canonical: I18N.gscFixCanonical || 'Use Google’s canonical',
+				flatten_chain: I18N.gscFixChain || 'Flatten redirect',
+				request_indexing: I18N.gscFixIndexing || 'Request indexing'
+			};
+			return map[ code ] || '';
+		}
+
+		// The suggestion cell carries the whole story for a row: what we would do,
+		// where it would point, how sure we are, or -- when nothing can be done
+		// automatically -- why not.
+		function gscFixCell( row ) {
+			var td = el( 'td', 'cvtrk-gsc-fix' );
+			var state = row.fix_state || 'none';
+			var payload = row.fix_payload || {};
+
+			if ( state === 'passed' || state === 'failed' || state === 'applied' || state === 'verifying' ) {
+				var v = validationText( state === 'passed' ? 'passed' : ( state === 'failed' ? 'failed' : 'started' ) );
+				td.appendChild( el( 'span', 'cvtrk-badge cvtrk-gsc-validation-' + statusClass( state ), v ) );
+				if ( state === 'failed' ) {
+					td.appendChild( el( 'span', 'cvtrk-cell-sub', I18N.gscFixFailed || 'Still reported after re-checking. Needs a manual look.' ) );
+				}
+				return td;
+			}
+
+			if ( state === 'unavailable' ) {
+				td.appendChild( el( 'span', 'cvtrk-cell-note', payload.note || ( I18N.gscNoAutoFix || 'No automatic fix for this.' ) ) );
+				if ( payload.manual_line ) {
+					td.appendChild( el( 'code', 'cvtrk-cell-code', payload.manual_line ) );
+				}
+				return td;
+			}
+
+			if ( state !== 'available' || ! row.fix_code ) {
+				td.appendChild( document.createTextNode( '—' ) );
+				return td;
+			}
+
+			var btn = el( 'button', 'button button-small button-primary', fixLabel( row.fix_code ) );
+			btn.type = 'button';
+			btn.setAttribute( 'data-gsc-action', 'apply-fix' );
+			btn.setAttribute( 'data-gsc-id', row.id );
+			td.appendChild( btn );
+
+			// Show the destination and the matcher's confidence, so approving is an
+			// informed click rather than a blind one.
+			if ( payload.target ) {
+				var target = el( 'span', 'cvtrk-cell-sub' );
+				target.textContent = '→ ' + payload.target +
+					( payload.confidence ? ' (' + payload.confidence + '%)' : '' );
+				td.appendChild( target );
+			} else if ( payload.canonical ) {
+				td.appendChild( el( 'span', 'cvtrk-cell-sub', '→ ' + payload.canonical ) );
+			} else if ( payload.rule ) {
+				td.appendChild( el( 'span', 'cvtrk-cell-sub', payload.rule ) );
+			} else if ( payload.to ) {
+				td.appendChild( el( 'span', 'cvtrk-cell-sub', '→ ' + payload.to ) );
+			}
+
+			return td;
 		}
 
 		function gscActionsCell( row ) {
@@ -3334,7 +3524,7 @@
 			loadLogs();
 		}
 
-		[ statusSel, postTypeSel, prioritySel, sitemapSel, checkedFrom, checkedTo ].forEach( function ( node ) {
+		[ statusSel, reasonSel, fixStateSel, postTypeSel, prioritySel, sitemapSel, checkedFrom, checkedTo ].forEach( function ( node ) {
 			if ( node ) {
 				node.addEventListener( 'change', function () {
 					state.page = 1;
@@ -3399,15 +3589,79 @@
 				}
 				btn.disabled = true;
 				postApi( '/gsc/' + action, body )
-					.then( function () {
+					.then( function ( data ) {
 						if ( action === 'indexing-notify' ) {
 							setGscProgress( I18N.gscIndexingNotified || 'Google has been notified about this URL. The next recheck will show whether it was picked up.' );
+						} else if ( action === 'apply-fix' ) {
+							setGscProgress( ( data && data.message ) ||
+								( I18N.gscFixApplied || 'Fix applied. The URL will be re-checked to confirm it worked.' ) );
 						}
 						reloadAll();
 					} )
 					.catch( function ( err ) {
 						btn.disabled = false;
 						setGscProgress( errorMessage( err, 'Request failed.' ), true );
+					} );
+			} );
+		}
+
+		var reasonsBox = attr( 'gsc-reasons' );
+		if ( reasonsBox ) {
+			reasonsBox.addEventListener( 'click', function ( e ) {
+				if ( ! e.target || ! e.target.closest ) {
+					return;
+				}
+
+				// Jump the queue below straight to this reason's URLs.
+				var show = e.target.closest( '[data-gsc-show-reason]' );
+				if ( show ) {
+					if ( reasonSel ) {
+						reasonSel.value = show.getAttribute( 'data-gsc-show-reason' ) || 'all';
+					}
+					if ( statusSel ) {
+						statusSel.value = 'all';
+					}
+					if ( fixStateSel ) {
+						fixStateSel.value = 'all';
+					}
+					state.page = 1;
+					loadUrls();
+					var queue = document.getElementById( 'convertrack-gsc-queue' );
+					if ( queue && queue.scrollIntoView ) {
+						queue.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+					}
+					return;
+				}
+
+				var bulk = e.target.closest( '[data-gsc-bulk-fix]' );
+				if ( ! bulk ) {
+					return;
+				}
+				if ( ! window.confirm( I18N.gscBulkFixConfirm || 'Apply the suggested fix to every URL with this problem?' ) ) {
+					return;
+				}
+				bulk.disabled = true;
+				postApi( '/gsc/bulk-fix', { reason: bulk.getAttribute( 'data-gsc-bulk-fix' ) } )
+					.then( function ( data ) {
+						var msg = ( I18N.gscBulkFixDone || 'Applied' ) + ' ' + num( data.applied || 0 );
+						if ( Number( data.errors ) ) {
+							msg += ', ' + num( data.errors ) + ' ' + ( I18N.gscBulkFixErrors || 'could not be applied' );
+						}
+						// Each fix may run a destination health check or an API call,
+						// so the batch is bounded. Say what is left rather than
+						// implying the whole group was handled.
+						if ( Number( data.remaining ) > 0 ) {
+							msg += '. ' + num( data.remaining ) + ' ' + ( I18N.gscBulkFixRemaining || 'still to go — run it again to continue.' );
+						} else {
+							msg += '.';
+						}
+						setGscProgress( msg, Number( data.errors ) > 0 );
+						bulk.disabled = false;
+						reloadAll();
+					} )
+					.catch( function ( err ) {
+						bulk.disabled = false;
+						setGscProgress( errorMessage( err, 'Bulk fix failed.' ), true );
 					} );
 			} );
 		}

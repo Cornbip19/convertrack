@@ -11,7 +11,7 @@ defined( 'ABSPATH' ) || exit;
 
 class Database {
 
-	const DB_VERSION        = '1.1.0';
+	const DB_VERSION        = '1.2.0';
 	const DB_VERSION_OPTION = 'convertrack_gsc_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_gsc_summary';
 	const HISTORY_OPTION    = 'convertrack_gsc_status_history';
@@ -71,6 +71,15 @@ class Database {
 			sitemap_hash char(32) NOT NULL DEFAULT '',
 			priority tinyint(3) unsigned NOT NULL DEFAULT 0,
 			index_status varchar(40) NOT NULL DEFAULT 'queued',
+			index_reason varchar(60) NOT NULL DEFAULT '',
+			fix_code varchar(60) NOT NULL DEFAULT '',
+			fix_state varchar(20) NOT NULL DEFAULT 'none',
+			fix_payload text NULL,
+			fix_reason_at_apply varchar(60) NOT NULL DEFAULT '',
+			fix_attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
+			fix_applied_at datetime NULL DEFAULT NULL,
+			validation_started_at datetime NULL DEFAULT NULL,
+			validation_checked_at datetime NULL DEFAULT NULL,
 			coverage_state varchar(255) NOT NULL DEFAULT '',
 			google_verdict varchar(50) NOT NULL DEFAULT '',
 			robots_txt_state varchar(50) NOT NULL DEFAULT '',
@@ -96,6 +105,8 @@ class Database {
 			KEY post_id (post_id),
 			KEY post_type (post_type),
 			KEY index_status (index_status),
+			KEY index_reason (index_reason),
+			KEY fix_state (fix_state),
 			KEY next_check_at (next_check_at),
 			KEY priority_next (priority, next_check_at),
 			KEY sitemap_hash (sitemap_hash),
@@ -132,6 +143,14 @@ class Database {
 		$verified = self::verify_schema();
 		if ( is_wp_error( $verified ) ) {
 			return $verified;
+		}
+
+		// Rows inspected before reasons existed already hold every field the
+		// classifier needs, so they can be labelled without spending any of the
+		// 2,000/day inspection quota.
+		$backfilled = self::backfill_reasons();
+		if ( is_wp_error( $backfilled ) ) {
+			return $backfilled;
 		}
 
 		if ( ! update_option( self::DB_VERSION_OPTION, self::DB_VERSION, false ) && self::DB_VERSION !== get_option( self::DB_VERSION_OPTION ) ) {
@@ -655,6 +674,27 @@ class Database {
 				$prepare[] = sanitize_key( $args['status'] );
 			}
 		}
+		// Reason filter. 'any_error' is the cross-cutting "everything actually
+		// broken" view, which deliberately excludes indexed, alternate-canonical
+		// and not-yet-inspected rows.
+		if ( ! empty( $args['reason'] ) && 'all' !== $args['reason'] ) {
+			$requested = sanitize_key( $args['reason'] );
+			if ( 'any_error' === $requested ) {
+				$codes     = Index_Reasons::error_codes();
+				$where[]   = 'index_reason IN (' . implode( ',', array_fill( 0, count( $codes ), '%s' ) ) . ')';
+				$prepare   = array_merge( $prepare, $codes );
+			} elseif ( Index_Reasons::is_valid( $requested ) ) {
+				$where[]   = 'index_reason = %s';
+				$prepare[] = $requested;
+			} else {
+				// Unknown reason matches nothing rather than silently everything.
+				$where[] = '1=0';
+			}
+		}
+		if ( ! empty( $args['fix_state'] ) && 'all' !== $args['fix_state'] ) {
+			$where[]   = 'fix_state = %s';
+			$prepare[] = sanitize_key( $args['fix_state'] );
+		}
 		if ( ! empty( $args['post_type'] ) && 'all' !== $args['post_type'] ) {
 			$where[]   = 'post_type = %s';
 			$prepare[] = sanitize_key( $args['post_type'] );
@@ -693,6 +733,323 @@ class Database {
 			'per_page' => $per_page,
 			'pages'    => max( 1, (int) ceil( $total / $per_page ) ),
 		);
+	}
+
+	/**
+	 * Label already-inspected rows with a coverage reason.
+	 *
+	 * Runs in bounded batches so a large queue cannot stall an admin request, and
+	 * is idempotent -- only rows with no reason yet are touched, so a partial run
+	 * simply resumes on the next upgrade pass.
+	 *
+	 * @param int $limit Max rows per call.
+	 * @return int|\WP_Error Rows labelled.
+	 */
+	public static function backfill_reasons( $limit = 2000 ) {
+		global $wpdb;
+		$table = self::queue_table();
+		$limit = max( 1, min( 10000, (int) $limit ) );
+
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, google_verdict, coverage_state, robots_txt_state, indexing_state, page_fetch_state, user_canonical, google_canonical
+				FROM $table WHERE index_reason = '' AND last_checked_at IS NOT NULL ORDER BY id ASC LIMIT %d",
+				$limit
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$now     = current_time( 'mysql' );
+		$updated = 0;
+		foreach ( $rows as $row ) {
+			$reason = Index_Reasons::classify( $row );
+			$result = $wpdb->update(
+				$table,
+				array( 'index_reason' => $reason, 'updated_at' => $now ),
+				array( 'id' => (int) $row['id'] )
+			); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( false === $result ) {
+				return new \WP_Error( 'convertrack_gsc_backfill_failed', __( 'Index coverage reasons could not be backfilled.', 'convertrack-click-conversion-analytics' ) );
+			}
+			$updated++;
+		}
+
+		self::clear_summary_cache();
+		Logger::info( 'database', 'Index coverage reasons backfilled.', array( 'rows' => $updated ) );
+		return $updated;
+	}
+
+	/**
+	 * Fetch one queue row.
+	 *
+	 * @param int $id Row ID.
+	 * @return array|null
+	 */
+	public static function get_url( $id ) {
+		global $wpdb;
+		$table = self::queue_table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE id = %d", (int) $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? $row : null;
+	}
+
+	/**
+	 * Store a fix proposal against a row.
+	 *
+	 * @param int   $id         Row ID.
+	 * @param array $suggestion {fix_code, fix_state, payload}.
+	 * @return true|\WP_Error
+	 */
+	public static function save_fix_suggestion( $id, array $suggestion ) {
+		global $wpdb;
+		$state = isset( $suggestion['fix_state'] ) ? sanitize_key( $suggestion['fix_state'] ) : Index_Fixes::STATE_NONE;
+
+		// Never overwrite an in-flight or finished validation with a fresh
+		// proposal: the operator's action and its outcome outrank a re-suggestion.
+		$current = self::get_url( $id );
+		if ( $current && in_array( (string) $current['fix_state'], array( Index_Fixes::STATE_APPLIED, Index_Fixes::STATE_VERIFYING, Index_Fixes::STATE_PASSED, Index_Fixes::STATE_FAILED ), true ) ) {
+			return true;
+		}
+
+		$payload = isset( $suggestion['payload'] ) && ! empty( $suggestion['payload'] ) ? wp_json_encode( $suggestion['payload'] ) : null;
+		$result  = $wpdb->update(
+			self::queue_table(),
+			array(
+				'fix_code'    => isset( $suggestion['fix_code'] ) ? sanitize_key( $suggestion['fix_code'] ) : '',
+				'fix_state'   => $state,
+				'fix_payload' => $payload,
+				'updated_at'  => current_time( 'mysql' ),
+			),
+			array( 'id' => (int) $id )
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_fix_write_failed', __( 'The suggested fix could not be stored.', 'convertrack-click-conversion-analytics' ) );
+		}
+		self::clear_summary_cache();
+		return true;
+	}
+
+	/**
+	 * Record that a fix was applied and queue the row for re-inspection.
+	 *
+	 * @param int    $id     Row ID.
+	 * @param string $reason Reason at the moment of applying.
+	 * @return true|\WP_Error
+	 */
+	public static function mark_fix_applied( $id, $reason ) {
+		global $wpdb;
+		$now = current_time( 'mysql' );
+
+		$result = $wpdb->update(
+			self::queue_table(),
+			array(
+				'fix_state'           => Index_Fixes::STATE_APPLIED,
+				'fix_reason_at_apply' => sanitize_key( $reason ),
+				'fix_attempts'        => 0,
+				'fix_applied_at'      => $now,
+				'validation_started_at' => $now,
+				// Bring the re-inspection forward so validation can begin, without
+				// jumping the queue ahead of never-checked URLs.
+				'next_check_at'       => self::mysql_time( HOUR_IN_SECONDS ),
+				'updated_at'          => $now,
+			),
+			array( 'id' => (int) $id )
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_fix_state_failed', __( 'The applied fix could not be recorded.', 'convertrack-click-conversion-analytics' ) );
+		}
+		self::clear_summary_cache();
+		return true;
+	}
+
+	/**
+	 * Advance a row's validation state after a re-inspection.
+	 *
+	 * @param int    $id       Row ID.
+	 * @param string $state    New fix state.
+	 * @param int    $attempts Attempt count.
+	 * @return true|\WP_Error
+	 */
+	public static function update_validation( $id, $state, $attempts ) {
+		global $wpdb;
+		$result = $wpdb->update(
+			self::queue_table(),
+			array(
+				'fix_state'             => sanitize_key( $state ),
+				'fix_attempts'          => max( 0, (int) $attempts ),
+				'validation_checked_at' => current_time( 'mysql' ),
+				'updated_at'            => current_time( 'mysql' ),
+			),
+			array( 'id' => (int) $id )
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		if ( false === $result ) {
+			return new \WP_Error( 'convertrack_gsc_validation_failed', __( 'The validation state could not be updated.', 'convertrack-click-conversion-analytics' ) );
+		}
+		self::clear_summary_cache();
+		return true;
+	}
+
+	/**
+	 * How many live URLs have actually been inspected.
+	 *
+	 * The breakdown panel states this next to its counts, because Search Console
+	 * reports on every URL Google has ever seen while we only know about URLs we
+	 * have spent inspection quota on -- so the two totals will never match and the
+	 * screen should say why rather than look wrong.
+	 *
+	 * @return int
+	 */
+	public static function inspected_count() {
+		global $wpdb;
+		$table = self::queue_table();
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM $table WHERE retired_at IS NULL AND last_checked_at IS NOT NULL" ); // phpcs:ignore WordPress.DB
+	}
+
+	/**
+	 * Propose fixes for rows that have a reason but no suggestion yet.
+	 *
+	 * Every suggestion is derived from data already on the row, so this needs no
+	 * API call and none of the 2,000/day inspection quota. Without it a site would
+	 * see its reasons immediately but wait days for the fixes to trickle in behind
+	 * re-inspection, which is the whole point of the feature.
+	 *
+	 * Runs on cron rather than in install(), because proposing a redirect runs the
+	 * Broken URLs matcher and that is too much work for an admin request.
+	 *
+	 * @param int $limit Max rows per call.
+	 * @return int|\WP_Error Rows given a proposal.
+	 */
+	public static function backfill_fix_suggestions( $limit = 100 ) {
+		global $wpdb;
+		$table = self::queue_table();
+		$limit = max( 1, min( 500, (int) $limit ) );
+
+		// Only untouched rows: anything already proposed, applied or validated is
+		// left alone. Most-recently-checked first, so the freshest data wins.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM $table
+				WHERE retired_at IS NULL AND index_reason <> '' AND fix_state = %s
+					AND index_status <> 'ignored'
+				ORDER BY last_checked_at DESC, id DESC LIMIT %d",
+				Index_Fixes::STATE_NONE,
+				$limit
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		if ( empty( $rows ) ) {
+			return 0;
+		}
+
+		$updated = 0;
+		foreach ( $rows as $row ) {
+			$suggestion = Index_Fixes::suggest( $row );
+			// A row with genuinely nothing to propose would be re-examined on every
+			// pass. Record the outcome so it settles.
+			if ( Index_Fixes::STATE_NONE === $suggestion['fix_state'] ) {
+				$suggestion['fix_state'] = Index_Fixes::STATE_UNAVAILABLE;
+			}
+			$saved = self::save_fix_suggestion( (int) $row['id'], $suggestion );
+			if ( is_wp_error( $saved ) ) {
+				return $saved;
+			}
+			$updated++;
+		}
+
+		self::clear_summary_cache();
+		Logger::info( 'fix', 'Fix suggestions proposed for existing rows.', array( 'rows' => $updated ) );
+		return $updated;
+	}
+
+	/**
+	 * Counts per coverage reason, for the breakdown panel.
+	 *
+	 * Returned in the display order defined by Index_Reasons::all() -- actionable
+	 * site-owned problems first, Google judgements next, informational last --
+	 * rather than by count, so the list does not reshuffle between loads.
+	 *
+	 * @return array
+	 */
+	public static function reason_breakdown() {
+		global $wpdb;
+		$table = self::queue_table();
+
+		$rows = (array) $wpdb->get_results(
+			"SELECT index_reason, fix_state, COUNT(*) AS total
+			FROM $table WHERE retired_at IS NULL AND index_reason <> '' AND index_status <> 'ignored'
+			GROUP BY index_reason, fix_state",
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB
+
+		$totals = array();
+		foreach ( $rows as $row ) {
+			$reason = (string) $row['index_reason'];
+			$state  = (string) $row['fix_state'];
+			$count  = (int) $row['total'];
+			if ( ! isset( $totals[ $reason ] ) ) {
+				$totals[ $reason ] = array( 'total' => 0, 'fixable' => 0, 'applied' => 0, 'passed' => 0, 'failed' => 0 );
+			}
+			$totals[ $reason ]['total'] += $count;
+			if ( 'available' === $state ) {
+				$totals[ $reason ]['fixable'] += $count;
+			} elseif ( in_array( $state, array( 'applied', 'verifying' ), true ) ) {
+				$totals[ $reason ]['applied'] += $count;
+			} elseif ( 'passed' === $state ) {
+				$totals[ $reason ]['passed'] += $count;
+			} elseif ( 'failed' === $state ) {
+				$totals[ $reason ]['failed'] += $count;
+			}
+		}
+
+		$out = array();
+		foreach ( Index_Reasons::all() as $code => $descriptor ) {
+			if ( empty( $totals[ $code ] ) ) {
+				continue;
+			}
+			$counts = $totals[ $code ];
+			$out[]  = array(
+				'reason'     => $code,
+				'label'      => $descriptor['label'],
+				'owner'      => $descriptor['owner'],
+				'severity'   => $descriptor['severity'],
+				'is_error'   => (bool) $descriptor['is_error'],
+				'summary'    => $descriptor['summary'],
+				'total'      => $counts['total'],
+				'fixable'    => $counts['fixable'],
+				'applied'    => $counts['applied'],
+				'passed'     => $counts['passed'],
+				'failed'     => $counts['failed'],
+				// Mirrors Search Console's vocabulary without claiming to be it:
+				// this tracks whether OUR fix worked, not Google's validation.
+				'validation' => self::validation_label( $counts ),
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Roll per-row fix states up into one validation label for a reason group.
+	 *
+	 * @param array $counts Counts for one reason.
+	 * @return string not_started|started|passed|failed
+	 */
+	private static function validation_label( array $counts ) {
+		if ( $counts['applied'] > 0 ) {
+			return 'started';
+		}
+		if ( $counts['failed'] > 0 ) {
+			return 'failed';
+		}
+		if ( $counts['passed'] > 0 && $counts['passed'] === $counts['total'] ) {
+			return 'passed';
+		}
+		return 'not_started';
 	}
 
 	/**
@@ -985,6 +1342,27 @@ class Database {
 		$row['edit_link'] = $post_id > 0 ? get_edit_post_link( $post_id, 'raw' ) : '';
 		$row['post_title'] = $post_id > 0 ? get_the_title( $post_id ) : '';
 
+		// Reason labels are rendered from the code at output time, so stored rows
+		// stay locale-independent -- the same approach as keyword recommendations.
+		$reason = isset( $row['index_reason'] ) ? (string) $row['index_reason'] : '';
+		if ( '' === $reason ) {
+			$reason = Index_Reasons::classify( $row );
+		}
+		$descriptor              = Index_Reasons::descriptor( $reason );
+		$row['index_reason']     = $reason;
+		$row['reason_label']     = $descriptor['label'];
+		$row['reason_owner']     = $descriptor['owner'];
+		$row['reason_severity']  = $descriptor['severity'];
+		$row['reason_is_error']  = (bool) $descriptor['is_error'];
+		$row['reason_summary']   = $descriptor['summary'];
+		$row['fix_state']        = isset( $row['fix_state'] ) ? (string) $row['fix_state'] : 'none';
+		$row['fix_code']         = isset( $row['fix_code'] ) ? (string) $row['fix_code'] : '';
+		$row['fix_attempts']     = isset( $row['fix_attempts'] ) ? (int) $row['fix_attempts'] : 0;
+		$row['fix_payload']      = ! empty( $row['fix_payload'] ) ? json_decode( (string) $row['fix_payload'], true ) : null;
+		if ( ! is_array( $row['fix_payload'] ) ) {
+			$row['fix_payload'] = null;
+		}
+
 		// Output-only: give never-inspected rows a Search Console inspection
 		// deep link too, so "Request Indexing" is always one click away.
 		if ( empty( $row['inspection_result_link'] ) && ! empty( $row['url'] ) ) {
@@ -1019,8 +1397,8 @@ class Database {
 
 		$required = array(
 			self::queue_table() => array(
-				'columns' => array( 'id', 'url_hash', 'url', 'sitemap_url', 'sitemap_hash', 'in_sitemap', 'scan_generation', 'last_seen_at', 'retired_at', 'index_status', 'next_check_at' ),
-				'indexes' => array( 'PRIMARY', 'url_hash', 'scan_generation', 'last_seen_at', 'retired_at' ),
+				'columns' => array( 'id', 'url_hash', 'url', 'sitemap_url', 'sitemap_hash', 'in_sitemap', 'scan_generation', 'last_seen_at', 'retired_at', 'index_status', 'next_check_at', 'index_reason', 'fix_code', 'fix_state', 'fix_payload', 'fix_attempts', 'fix_applied_at' ),
+				'indexes' => array( 'PRIMARY', 'url_hash', 'scan_generation', 'last_seen_at', 'retired_at', 'index_reason', 'fix_state' ),
 			),
 			self::logs_table() => array(
 				'columns' => array( 'id', 'level', 'source', 'message', 'created_at' ),
