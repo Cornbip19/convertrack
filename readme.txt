@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.6.0
+Stable tag: 2.7.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,16 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.7.0 =
+* Broken URLs no longer suggests redirects for URLs that are already redirected. If this plugin, Redirection or Rank Math already handles a URL, its 404 record is closed as "Already redirected elsewhere" and moved out of the work queue, recording which tool owns it.
+* Fixed the dead end behind "An internal redirect already exists for this source URL". Approving such a row used to move it to Manual review, where pressing Approve again could only repeat the same error. The row is now either closed as already redirected, or reported as a conflict with a cause.
+* Added redirect conflict detection: when a rule exists but visitors still reach a 404, the plugin now works out why. It distinguishes a paused rule, a destination that has itself gone missing, a redirect loop, a rule that does not cover the URL's query string, another plugin's rule that is not firing, Broken URL monitoring being switched off, and a cache or server rule answering before WordPress.
+* Added one-click fixes for the causes that are safe to fix automatically: resume a paused rule, repoint a rule whose destination is broken (reusing the same matcher the Detected list uses), add a rule for an exact address with its query string, or close a record whose URL already redirects correctly. Causes that belong elsewhere are explained instead, and turning monitoring back on is deliberately left to you because it affects the whole site.
+* Added a Conflicts tab on Broken URLs listing every affected URL with its cause, which tool owns the rule, and the fix where one applies.
+* Added a Redirect conflicts card to the Dashboard's "Needs attention", so a rule that has silently stopped working is visible without opening the Broken URLs screen.
+* Every diagnosis is written to the Activity log under its own heading, so there is a visible history of what was found and what was changed.
+* Conflicts are found from data the plugin already has and confirmed with a bounded background check, which is sent as the plugin's own request so that testing a broken URL never records a new 404 against it.
 
 = 2.6.0 =
 * Search & SEO now explains **why** each page is not indexed, grouped into the same categories Search Console uses: Not found (404), Page with redirect, Crawled - currently not indexed, Blocked by robots.txt, Excluded by 'noindex' tag, Duplicate canonical conflicts, Soft 404, 403, 401 and server errors. Each group shows whether the cause sits with your website or with Google's own systems.

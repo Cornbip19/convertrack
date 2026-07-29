@@ -552,6 +552,7 @@
 		var recommended = Number( notFound && notFound.recommended ) || 0;
 		var redirected = Number( notFound && notFound.redirected ) || 0;
 		var redirectHits = Number( notFound && notFound.redirect_hits ) || 0;
+		var conflicts = Number( notFound && notFound.conflicts ) || 0;
 		var gscTotal = Number( gsc && gsc.total ) || 0;
 		var gscIndexed = Number( gsc && gsc.indexed ) || 0;
 		var gscIssues = ( Number( gsc && gsc.not_indexed ) || 0 ) + ( Number( gsc && gsc.errors ) || 0 ) +
@@ -581,6 +582,17 @@
 				icon: 'warning',
 				href: C.adminUrls && C.adminUrls.notFound,
 				show: notFoundError || unresolved > 0
+			},
+			{
+				// The one problem invisible everywhere else: the Detected list looks
+				// handled because a rule exists, yet visitors still hit a 404.
+				label: I18N.redirectConflicts || 'Redirect conflicts',
+				value: notFoundError ? ( I18N.unavailable || 'Unavailable' ) : ( notFound ? num( conflicts ) : I18N.loading || 'Loading...' ),
+				meta: I18N.redirectConflictsMeta || 'Rules exist but these URLs still return 404',
+				tone: conflicts > 0 ? 'red' : 'green',
+				icon: 'warning',
+				href: C.adminUrls && C.adminUrls.notFound ? C.adminUrls.notFound + '#convertrack-404-conflicts' : '',
+				show: conflicts > 0
 			},
 			{
 				label: I18N.activeRedirects || 'Active redirects',
@@ -3983,6 +3995,7 @@
 				new: 'New',
 				recommended: 'Recommended',
 				auto_redirected: 'Auto redirected',
+				already_redirected: 'Already redirected',
 				approved: 'Approved',
 				ignored: 'Ignored',
 				manual_review: 'Manual review',
@@ -4276,6 +4289,113 @@
 			updateSelectionCount();
 		}
 
+		// A conflict is the one problem the operator cannot see any other way: a
+		// rule exists, so the Detected list looks handled, yet visitors still hit a
+		// 404. The row states the cause, who owns the rule, and the fix if there is
+		// a safe one.
+		function renderConflicts( data ) {
+			var box = attr( '404-conflicts' );
+			if ( ! box ) {
+				return;
+			}
+			var rows = ( data && data.rows ) || [];
+			clear( box );
+
+			if ( ! rows.length ) {
+				empty( box, I18N.nfNoConflicts || 'No redirect conflicts. Every URL with a redirect rule is being redirected.' );
+				return;
+			}
+
+			var headers = [
+				{ label: I18N.nfColUrl || '404 URL' },
+				{ label: I18N.nfColCause || 'Cause' },
+				{ label: I18N.nfColRuleFrom || 'Rule from' },
+				{ label: I18N.nfColHits || 'Hits', num: true },
+				{ label: I18N.nfColDetected || 'Last hit', hide: 'sm' },
+				{ label: I18N.nfColActions || 'Actions' }
+			];
+			var wrap = table( headers );
+			var body = wrap.querySelector( 'tbody' );
+
+			rows.forEach( function ( row ) {
+				var tr = el( 'tr' );
+				tr.appendChild( labelCell( row.url || '-', row.source_full_url || '', safeUrl( row.source_full_url ) ) );
+
+				var cause = el( 'td' );
+				var badge = el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.conflict_severity || 'warning' ) );
+				badge.appendChild( el( 'span', 'cvtrk-badge-dot' ) );
+				badge.appendChild( document.createTextNode( row.conflict_label || '-' ) );
+				cause.appendChild( badge );
+				if ( row.conflict_summary ) {
+					cause.appendChild( el( 'span', 'cvtrk-cell-sub', row.conflict_summary ) );
+				}
+				// Detection is two-stage: flagged from stored data first, confirmed by
+				// a background request later. Say so, rather than letting a pending
+				// row read as though the cause could not be worked out.
+				var detail = row.conflict_detail || {};
+				if ( 'probe' !== detail.detected_by ) {
+					cause.appendChild( el( 'span', 'cvtrk-cell-note', I18N.nfConflictPending || 'Awaiting a background re-check to confirm the cause.' ) );
+				}
+				tr.appendChild( cause );
+
+				var from = el( 'td' );
+				from.appendChild( document.createTextNode( row.conflict_owner_label || '-' ) );
+				if ( row.rule_destination ) {
+					from.appendChild( el( 'span', 'cvtrk-cell-sub', '→ ' + row.rule_destination ) );
+				}
+				tr.appendChild( from );
+
+				tr.appendChild( numCell( row.hit_count ) );
+				tr.appendChild( el( 'td', null, dateText( row.last_detected_at ) ) );
+
+				var actions = el( 'td', 'cvtrk-404-actions' );
+				if ( row.conflict_fix && row.conflict_fix_label ) {
+					var fix = el( 'button', 'button button-small button-primary', row.conflict_fix_label );
+					fix.type = 'button';
+					fix.setAttribute( 'data-404-action', 'resolve-conflict' );
+					fix.setAttribute( 'data-404-id', row.id );
+					actions.appendChild( fix );
+				}
+				var recheck = el( 'button', 'button button-small', I18N.nfDiagnose || 'Re-check' );
+				recheck.type = 'button';
+				recheck.setAttribute( 'data-404-action', 'diagnose-conflict' );
+				recheck.setAttribute( 'data-404-id', row.id );
+				actions.appendChild( recheck );
+
+				// Site-wide and third-party causes have no button, so point at where
+				// the fix actually lives rather than leaving a dead end.
+				if ( ! row.conflict_fix ) {
+					if ( 'site' === row.conflict_scope ) {
+						var settings = el( 'a', 'button button-small', I18N.nfOpenSettings || 'Open settings' );
+						settings.href = '#convertrack-404-settings';
+						actions.appendChild( settings );
+					}
+				}
+				tr.appendChild( actions );
+
+				applyHideClasses( tr, headers );
+				body.appendChild( tr );
+			} );
+
+			box.appendChild( wrap );
+		}
+
+		function loadConflicts() {
+			var box = attr( '404-conflicts' );
+			setBusy( box, true );
+			api( '/404/conflicts?per_page=50' )
+				.then( function ( data ) {
+					setBusy( box, false );
+					renderConflicts( data );
+				} )
+				.catch( function ( err ) {
+					setBusy( box, false );
+					if ( box ) {
+						errorState( box, errorMessage( err, 'Could not load redirect conflicts.' ), loadConflicts );
+					}
+				} );
+		}
+
 		function loadEvents() {
 			var box = attr( '404-events' );
 			setBusy( box, true );
@@ -4437,6 +4557,7 @@
 			loadSummary();
 			loadEvents();
 			loadRedirects();
+			loadConflicts();
 			loadLogs();
 		}
 
@@ -4484,8 +4605,10 @@
 				body.destination = destination;
 			}
 			return postApi( '/404/' + action, body )
-				.then( function () {
-					setProgress( '404 row updated.' );
+				.then( function ( data ) {
+					// Conflict fixes report what they actually did, which matters more
+					// than a generic acknowledgement.
+					setProgress( ( data && data.message ) || '404 row updated.' );
 					reloadAll();
 				} )
 				.catch( function ( err ) {
@@ -4651,6 +4774,27 @@
 			document.addEventListener( 'keydown', onDestinationDialogKey );
 			input.focus();
 			input.select();
+		}
+
+		var conflictBox = attr( '404-conflicts' );
+		if ( conflictBox ) {
+			conflictBox.addEventListener( 'click', function ( e ) {
+				var conflictBtn = e.target && e.target.closest ? e.target.closest( '[data-404-action]' ) : null;
+				if ( ! conflictBtn ) {
+					return;
+				}
+				conflictBtn.disabled = true;
+				run404Action(
+					conflictBtn.getAttribute( 'data-404-action' ),
+					Number( conflictBtn.getAttribute( 'data-404-id' ) ) || 0,
+					''
+				).then( function () {
+					conflictBtn.disabled = false;
+				} ).catch( function () {
+					// run404Action already reported the failure in the status area.
+					conflictBtn.disabled = false;
+				} );
+			} );
 		}
 
 		var eventBox = attr( '404-events' );

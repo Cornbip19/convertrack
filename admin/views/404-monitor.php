@@ -80,6 +80,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<nav class="cvtrk-subview-nav" aria-label="<?php esc_attr_e( 'Broken URL views', 'convertrack-click-conversion-analytics' ); ?>">
 		<a class="cvtrk-subview-link is-active" href="#convertrack-404-events" data-cvtrk-404-view="detected" aria-current="page"><?php esc_html_e( 'Detected', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="cvtrk-subview-link" href="#convertrack-404-redirects" data-cvtrk-404-view="redirects"><?php esc_html_e( 'Redirects', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a class="cvtrk-subview-link" href="#convertrack-404-conflicts" data-cvtrk-404-view="conflicts"><?php esc_html_e( 'Conflicts', 'convertrack-click-conversion-analytics' ); ?></a>
 		<a class="cvtrk-subview-link" href="#convertrack-404-activity" data-cvtrk-404-view="activity"><?php esc_html_e( 'Activity', 'convertrack-click-conversion-analytics' ); ?></a>
 	</nav>
 
@@ -104,6 +105,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 							<option value="manual_review"><?php esc_html_e( 'Manual review', 'convertrack-click-conversion-analytics' ); ?></option>
 							<option value="approved"><?php esc_html_e( 'Approved', 'convertrack-click-conversion-analytics' ); ?></option>
 							<option value="auto_redirected"><?php esc_html_e( 'Auto redirected', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="already_redirected"><?php esc_html_e( 'Already redirected elsewhere', 'convertrack-click-conversion-analytics' ); ?></option>
 							<option value="ignored"><?php esc_html_e( 'Ignored', 'convertrack-click-conversion-analytics' ); ?></option>
 						</optgroup>
 					</select>
@@ -173,6 +175,18 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 		</div>
 		<div class="cvtrk-card-body">
 			<div data-cvtrk="404-redirects" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
+		</div>
+	</div>
+
+	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-conflicts" data-cvtrk-404-panel="conflicts">
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( 'Redirect Conflicts', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'URLs that still return 404 even though a redirect rule exists for them, with where the rule comes from', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<div data-cvtrk="404-conflicts" aria-busy="false"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 

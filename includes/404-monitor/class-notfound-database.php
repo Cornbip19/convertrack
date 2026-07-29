@@ -14,7 +14,7 @@ class Database {
 	// 1.3.1 carries no structural change. The version moves only so maybe_upgrade()
 	// calls install(), which requeues stored suggestions against the improved
 	// matcher via requeue_stale_recommendations().
-	const DB_VERSION        = '1.3.1';
+	const DB_VERSION        = '1.4.0';
 	const DB_VERSION_OPTION = 'convertrack_404_db_version';
 	const SUMMARY_CACHE_KEY = 'convertrack_404_summary';
 	const RECOMMENDATION_GENERATION = 3;
@@ -28,6 +28,7 @@ class Database {
 	const STATUS_MANUAL_REVIEW   = 'manual_review';
 	const STATUS_APPROVED        = 'approved';
 	const STATUS_AUTO_REDIRECTED = 'auto_redirected';
+	const STATUS_ALREADY_REDIRECTED = 'already_redirected';
 	const STATUS_IGNORED         = 'ignored';
 	const STATUS_DELETED         = 'deleted';
 
@@ -51,6 +52,9 @@ class Database {
 			self::STATUS_NEW,
 			self::STATUS_APPROVED,
 			self::STATUS_AUTO_REDIRECTED,
+			// A URL someone else already redirects is finished work, so it belongs
+			// in the back bucket next to our own approved redirects.
+			self::STATUS_ALREADY_REDIRECTED,
 			self::STATUS_IGNORED,
 		);
 	}
@@ -64,7 +68,7 @@ class Database {
 	public static function status_groups() {
 		return array(
 			'needs_action' => array( self::STATUS_RECOMMENDED, self::STATUS_MANUAL_REVIEW, self::STATUS_NEW ),
-			'redirected'   => array( self::STATUS_APPROVED, self::STATUS_AUTO_REDIRECTED ),
+			'redirected'   => array( self::STATUS_APPROVED, self::STATUS_AUTO_REDIRECTED, self::STATUS_ALREADY_REDIRECTED ),
 		);
 	}
 
@@ -195,6 +199,11 @@ class Database {
 			confidence tinyint(3) unsigned NOT NULL DEFAULT 0,
 			match_reason varchar(255) NOT NULL DEFAULT '',
 			destination_type varchar(50) NOT NULL DEFAULT '',
+			conflict_code varchar(40) NOT NULL DEFAULT '',
+			conflict_owner varchar(40) NOT NULL DEFAULT '',
+			conflict_redirect_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			conflict_detail text NULL,
+			conflict_checked_at datetime NULL DEFAULT NULL,
 			error_message text NULL,
 			created_at datetime NOT NULL,
 			updated_at datetime NOT NULL,
@@ -205,6 +214,7 @@ class Database {
 			KEY last_detected_at (last_detected_at),
 			KEY hit_count (hit_count),
 			KEY suggested_post_type (suggested_post_type),
+			KEY conflict_code (conflict_code),
 			KEY recommendation_queue (recommendation_state, recommendation_attempts, claim_expires_at)
 		) $charset_collate;";
 
@@ -761,6 +771,229 @@ class Database {
 	}
 
 	/**
+	 * Our redirect for a source regardless of status.
+	 *
+	 * find_active_redirect() filters status = 'active', which is right for serving
+	 * but wrong for diagnosis: a paused rule is invisible to it, and "the rule is
+	 * paused" is one of the most common reasons a URL still 404s. Uncached on
+	 * purpose -- it must never pollute the request-path redirect cache.
+	 *
+	 * @param string $source Source URL/path.
+	 * @return array|null
+	 */
+	public static function redirect_for_source_any_status( $source ) {
+		global $wpdb;
+		$src = self::normalize_source( $source );
+		if ( empty( $src ) ) {
+			return null;
+		}
+		$table = self::redirects_table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE source_hash = %s", $src['hash'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		return $row ? self::decorate_redirect( $row ) : null;
+	}
+
+	/**
+	 * Release a recommendation lease without storing a suggestion.
+	 *
+	 * For rows the matcher deliberately declines to recommend for -- something
+	 * already redirects the URL. The lease must be released or the row would sit
+	 * 'processing' until it expired, and the queue would keep reclaiming it.
+	 *
+	 * @param int    $id     Event ID.
+	 * @param string $owner  Claim owner token.
+	 * @param string $status New event status.
+	 * @return true|\WP_Error
+	 */
+	public static function release_claim( $id, $owner, $status ) {
+		global $wpdb;
+		$table = self::events_table();
+		$owner = self::truncate( sanitize_text_field( $owner ), 64 );
+		$now   = current_time( 'mysql' );
+
+		$result = $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $table SET status = %s, recommendation_state = 'completed',
+				processed_generation = %d, processed_at = %s, claim_owner = '',
+				claim_expires_at = NULL, updated_at = %s
+				WHERE id = %d AND claim_owner = %s",
+				sanitize_key( $status ),
+				self::RECOMMENDATION_GENERATION,
+				$now,
+				$now,
+				(int) $id,
+				$owner
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		if ( false === $result ) {
+			return self::write_error( 'convertrack_404_claim_release_failed', __( 'The recommendation claim could not be released.', 'convertrack-click-conversion-analytics' ) );
+		}
+		self::clear_summary_cache();
+		return true;
+	}
+
+	/**
+	 * Events still 404ing despite a redirect rule existing for them.
+	 *
+	 * The whole detection rests on one comparison the module never made: an event
+	 * whose last_detected_at post-dates the rule's activation is, by definition,
+	 * traffic that reached a 404 past a live rule. Nothing is inferred and no HTTP
+	 * is needed, so this can run continuously.
+	 *
+	 * A rule updated_at is used rather than created_at because pausing, resuming or
+	 * repointing a rule all touch it -- a hit before the last change tells us
+	 * nothing about the rule as it stands now.
+	 *
+	 * @param int $limit Max rows.
+	 * @return array Event rows joined to their rule.
+	 */
+	public static function conflict_suspects( $limit = 50 ) {
+		global $wpdb;
+		$events    = self::events_table();
+		$redirects = self::redirects_table();
+		$limit     = max( 1, min( 200, (int) $limit ) );
+
+		return (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT e.*, r.id AS rule_id, r.status AS rule_status, r.destination_url AS rule_destination,
+					r.health_status AS rule_health, r.source AS rule_source, r.updated_at AS rule_updated_at
+				FROM $events e
+				INNER JOIN $redirects r ON r.source_hash = e.url_hash
+				WHERE e.status NOT IN (%s, %s)
+					AND e.last_detected_at > r.updated_at
+				ORDER BY e.hit_count DESC, e.last_detected_at DESC, e.id DESC
+				LIMIT %d",
+				self::STATUS_DELETED,
+				self::STATUS_IGNORED,
+				$limit
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Whether an event predates the rule that now covers its URL.
+	 *
+	 * The inverse of conflict_suspects(): a hit that stopped before the rule was
+	 * last touched is simply a stale record, not a live problem.
+	 *
+	 * @param array $event Event row.
+	 * @param array $rule  Redirect row.
+	 * @return bool
+	 */
+	public static function event_predates_rule( array $event, array $rule ) {
+		$hit  = isset( $event['last_detected_at'] ) ? strtotime( (string) $event['last_detected_at'] ) : 0;
+		$rule_time = isset( $rule['updated_at'] ) ? strtotime( (string) $rule['updated_at'] ) : 0;
+		if ( ! $hit || ! $rule_time ) {
+			// Without both timestamps, assume stale rather than crying conflict --
+			// a false conflict sends the operator chasing nothing.
+			return true;
+		}
+		return $hit <= $rule_time;
+	}
+
+	/**
+	 * Store a conflict verdict against an event.
+	 *
+	 * @param int    $id       Event ID.
+	 * @param string $code     Verdict code.
+	 * @param string $owner    Redirect owner.
+	 * @param int    $rule_id  Our rule ID, when ours.
+	 * @param array  $detail   Extra diagnosis detail.
+	 * @return true|\WP_Error
+	 */
+	public static function save_conflict( $id, $code, $owner, $rule_id = 0, array $detail = array() ) {
+		return self::update_event(
+			$id,
+			array(
+				'conflict_code'        => sanitize_key( $code ),
+				'conflict_owner'       => sanitize_key( $owner ),
+				'conflict_redirect_id' => absint( $rule_id ),
+				'conflict_detail'      => empty( $detail ) ? null : wp_json_encode( $detail ),
+				'conflict_checked_at'  => current_time( 'mysql' ),
+			)
+		);
+	}
+
+	/**
+	 * Clear a conflict verdict, optionally settling the event's status.
+	 *
+	 * @param int    $id     Event ID.
+	 * @param string $status Optional new event status.
+	 * @return true|\WP_Error
+	 */
+	public static function clear_conflict( $id, $status = '' ) {
+		$data = array(
+			'conflict_code'        => '',
+			'conflict_owner'       => '',
+			'conflict_redirect_id' => 0,
+			'conflict_detail'      => null,
+			'conflict_checked_at'  => current_time( 'mysql' ),
+		);
+		if ( '' !== $status ) {
+			$data['status'] = sanitize_key( $status );
+		}
+		return self::update_event( $id, $data );
+	}
+
+	/**
+	 * Count events with an unresolved conflict.
+	 *
+	 * @return int
+	 */
+	public static function conflict_count() {
+		global $wpdb;
+		$table = self::events_table();
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM $table WHERE conflict_code <> '' AND conflict_code <> %s AND status <> %s",
+				Conflicts::RESOLVED,
+				self::STATUS_DELETED
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * List events carrying an unresolved conflict, for the Conflicts tab.
+	 *
+	 * @param array $args page, per_page.
+	 * @return array
+	 */
+	public static function list_conflicts( array $args = array() ) {
+		global $wpdb;
+		$table     = self::events_table();
+		$redirects = self::redirects_table();
+		$page      = max( 1, isset( $args['page'] ) ? (int) $args['page'] : 1 );
+		$per_page  = max( 1, min( 100, isset( $args['per_page'] ) ? (int) $args['per_page'] : 25 ) );
+		$offset    = ( $page - 1 ) * $per_page;
+
+		$where   = "e.conflict_code <> '' AND e.conflict_code <> %s AND e.status <> %s";
+		$prepare = array( Conflicts::RESOLVED, self::STATUS_DELETED );
+
+		$total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $table e WHERE $where", $prepare ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$rows  = (array) $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT e.*, r.status AS rule_status, r.destination_url AS rule_destination, r.health_status AS rule_health
+				FROM $table e
+				LEFT JOIN $redirects r ON r.id = e.conflict_redirect_id
+				WHERE $where
+				ORDER BY e.hit_count DESC, e.last_detected_at DESC, e.id DESC
+				LIMIT %d OFFSET %d",
+				array_merge( $prepare, array( $per_page, $offset ) )
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		return array(
+			'rows'     => array_map( array( __CLASS__, 'decorate_event' ), $rows ),
+			'total'    => $total,
+			'page'     => $page,
+			'per_page' => $per_page,
+			'pages'    => max( 1, (int) ceil( $total / $per_page ) ),
+		);
+	}
+
+	/**
 	 * Shared WHERE fragments for the event list and the CSV export cursor.
 	 *
 	 * Both callers must build identical predicates or a filtered export would
@@ -934,7 +1167,7 @@ class Database {
 				$counts['unresolved'] += $total;
 			} elseif ( 'recommended' === $status ) {
 				$counts['recommended'] += $total;
-			} elseif ( in_array( $status, array( 'approved', 'auto_redirected' ), true ) ) {
+			} elseif ( in_array( $status, array( self::STATUS_APPROVED, self::STATUS_AUTO_REDIRECTED, self::STATUS_ALREADY_REDIRECTED ), true ) ) {
 				$counts['redirected'] += $total;
 			} elseif ( 'ignored' === $status ) {
 				$counts['ignored'] += $total;
@@ -944,6 +1177,9 @@ class Database {
 		}
 
 		$counts['redirect_hits'] = (int) $wpdb->get_var( "SELECT COALESCE(SUM(hit_count),0) FROM $redirects" ); // phpcs:ignore WordPress.DB
+		// Surfaced on the Dashboard: a rule exists but the URL still 404s, which is
+		// the one class of problem the operator cannot see any other way.
+		$counts['conflicts'] = self::conflict_count();
 
 		$window = max( 5, (int) Settings::get( 'spike_window_minutes', 60 ) );
 		$since  = self::mysql_time( - $window * MINUTE_IN_SECONDS );
@@ -1896,6 +2132,25 @@ class Database {
 		$row['suggested_post_id'] = (int) $row['suggested_post_id'];
 		$row['confidence']        = (int) $row['confidence'];
 		$row['source_full_url']   = home_url( $row['url'] );
+
+		// Conflict labels render from the stored code at output time, so rows stay
+		// locale-independent.
+		$code = isset( $row['conflict_code'] ) ? (string) $row['conflict_code'] : '';
+		$row['conflict_code'] = $code;
+		if ( '' !== $code ) {
+			$descriptor                  = Conflicts::descriptor( $code );
+			$row['conflict_label']       = $descriptor['label'];
+			$row['conflict_summary']     = $descriptor['summary'];
+			$row['conflict_severity']    = $descriptor['severity'];
+			$row['conflict_scope']       = $descriptor['scope'];
+			$row['conflict_fix']         = $descriptor['fix'];
+			$row['conflict_fix_label']   = Conflicts::fix_label( $descriptor['fix'] );
+			$row['conflict_owner_label'] = Conflicts::owner_label( isset( $row['conflict_owner'] ) ? $row['conflict_owner'] : '' );
+			$row['conflict_detail']      = ! empty( $row['conflict_detail'] ) ? json_decode( (string) $row['conflict_detail'], true ) : null;
+			if ( ! is_array( $row['conflict_detail'] ) ) {
+				$row['conflict_detail'] = null;
+			}
+		}
 		return $row;
 	}
 
@@ -1991,8 +2246,8 @@ class Database {
 		global $wpdb;
 		$required = array(
 			self::events_table() => array(
-				'columns' => array( 'id', 'url_hash', 'url', 'path', 'hit_count', 'status', 'recommendation_generation', 'processed_generation', 'recommendation_state', 'recommendation_attempts', 'claim_owner', 'claim_expires_at', 'processed_at' ),
-				'indexes' => array( 'PRIMARY', 'url_hash', 'last_detected_at', 'recommendation_queue' ),
+				'columns' => array( 'id', 'url_hash', 'url', 'path', 'hit_count', 'status', 'recommendation_generation', 'processed_generation', 'recommendation_state', 'recommendation_attempts', 'claim_owner', 'claim_expires_at', 'processed_at', 'conflict_code', 'conflict_owner', 'conflict_redirect_id', 'conflict_detail', 'conflict_checked_at' ),
+				'indexes' => array( 'PRIMARY', 'url_hash', 'last_detected_at', 'recommendation_queue', 'conflict_code' ),
 			),
 			self::redirects_table() => array(
 				'columns' => array( 'id', 'source_hash', 'source_url', 'source_path', 'destination_url', 'status', 'event_id', 'health_status', 'last_checked_at' ),

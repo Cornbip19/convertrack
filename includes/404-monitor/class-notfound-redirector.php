@@ -92,9 +92,23 @@ class Redirector {
 		$validation = self::validate_pair( $source, $destination, true );
 		if ( is_wp_error( $validation ) ) {
 			if ( $event_id ) {
-				$updated = Database::set_event_status( $event_id, 'manual_review' );
-				if ( is_wp_error( $updated ) ) {
-					Logger::error( 'redirect', 'Failed to move an invalid redirect recommendation to manual review.', array( 'event_id' => $event_id, 'error' => $updated->get_error_message() ) );
+				// A duplicate is not a validation failure the operator can act on:
+				// parking the row in manual_review left it at the front of the queue
+				// in a state where pressing Approve could only repeat the same error.
+				// Settle it as already-redirected, or record the conflict when the
+				// URL is demonstrably still being hit past that rule.
+				$duplicate = in_array(
+					$validation->get_error_code(),
+					array( 'convertrack_404_duplicate_redirect', 'convertrack_404_external_conflict' ),
+					true
+				);
+				if ( $duplicate ) {
+					self::settle_duplicate( $event_id, $source, $validation->get_error_code() );
+				} else {
+					$updated = Database::set_event_status( $event_id, Database::STATUS_MANUAL_REVIEW );
+					if ( is_wp_error( $updated ) ) {
+						Logger::error( 'redirect', 'Failed to move an invalid redirect recommendation to manual review.', array( 'event_id' => $event_id, 'error' => $updated->get_error_message() ) );
+					}
 				}
 			}
 			Logger::warning( 'redirect', 'Redirect validation failed.', array( 'source' => $source, 'destination' => $destination, 'error' => $validation->get_error_message() ) );
@@ -114,6 +128,90 @@ class Redirector {
 		}
 		Logger::info( 'redirect', $auto ? 'Automatic 301 redirect created.' : 'Manual 301 redirect approved.', array( 'source' => $source, 'destination' => $destination ) );
 		return $created;
+	}
+
+	/**
+	 * Resolve an approval that failed because a redirect already exists.
+	 *
+	 * @param int    $event_id   Event ID.
+	 * @param string $source     Source URL.
+	 * @param string $error_code Validation error code.
+	 * @return void
+	 */
+	private static function settle_duplicate( $event_id, $source, $error_code ) {
+		$event = Database::get_event( $event_id );
+		if ( ! $event ) {
+			return;
+		}
+
+		$internal = Database::find_active_redirect( $source );
+		$external = 'convertrack_404_external_conflict' === $error_code ? Compatibility::external_redirect_for_source( $source ) : null;
+		$rule     = is_array( $internal ) ? $internal : ( is_array( $external ) ? $external : array() );
+
+		if ( is_array( $internal ) ) {
+			$owner = Conflicts::OWNER_INTERNAL;
+		} else {
+			$tools = wp_list_pluck( Compatibility::detected_tools(), 'key' );
+			$owner = in_array( 'redirection', $tools, true ) ? Conflicts::OWNER_REDIRECTION : Conflicts::OWNER_RANK_MATH;
+		}
+
+		if ( Database::event_predates_rule( $event, $rule ) ) {
+			Database::set_event_status( $event_id, Database::STATUS_ALREADY_REDIRECTED );
+			Database::save_conflict( $event_id, Conflicts::RESOLVED, $owner, isset( $rule['id'] ) ? (int) $rule['id'] : 0 );
+			Logger::info(
+				'redirect-conflict',
+				'This URL is already redirected, so the 404 record was closed.',
+				array( 'event_id' => (int) $event_id, 'url' => $source, 'owner' => $owner )
+			);
+			return;
+		}
+
+		$verdict = Conflicts::classify(
+			$event,
+			array(
+				'internal_rule'   => is_array( $internal ) ? $internal : null,
+				'external_rule'   => is_array( $external ) ? $external : null,
+				'monitor_enabled' => (bool) Settings::get( 'enabled' ),
+				'probe_status'    => 0,
+			)
+		);
+		Database::save_conflict(
+			$event_id,
+			$verdict,
+			$owner,
+			isset( $rule['id'] ) ? (int) $rule['id'] : 0,
+			array( 'rule_status' => isset( $rule['status'] ) ? (string) $rule['status'] : '', 'detected_by' => 'approval' )
+		);
+		Logger::warning(
+			'redirect-conflict',
+			'Approval was blocked because a redirect already exists, but this URL is still returning 404.',
+			array( 'event_id' => (int) $event_id, 'url' => $source, 'verdict' => $verdict, 'owner' => $owner )
+		);
+	}
+
+	/**
+	 * Probe a URL as the module itself, without recording a new 404.
+	 *
+	 * The user agent matters more than it looks: Detector::is_internal_user_agent()
+	 * skips requests carrying it, so without this a probe of a genuinely broken URL
+	 * would record a fresh 404 hit and the conflict would feed itself forever.
+	 *
+	 * @param string $url URL to probe.
+	 * @return int HTTP status, or 0 when unreachable.
+	 */
+	public static function probe_status( $url ) {
+		$response = wp_safe_remote_head(
+			$url,
+			array(
+				'timeout'     => 6,
+				'redirection' => 0,
+				'user-agent'  => 'Convertrack/' . CONVERTRACK_VERSION . ' 404-monitor',
+			)
+		);
+		if ( is_wp_error( $response ) ) {
+			return 0;
+		}
+		return (int) wp_remote_retrieve_response_code( $response );
 	}
 
 	/**

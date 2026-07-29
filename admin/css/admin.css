@@ -1112,6 +1112,7 @@ a.cvtrk-health-card:focus {
 .cvtrk-status-info,
 .cvtrk-status-active,
 .cvtrk-status-approved,
+.cvtrk-status-already_redirected,
 .cvtrk-status-auto_redirected {
 	border-color: transparent;
 	background: var(--cvtrk-green-soft);
