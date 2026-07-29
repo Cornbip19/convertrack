@@ -28,6 +28,7 @@ class Rest_Controller {
 			'/404/summary'   => 'summary',
 			'/404/events'    => 'events',
 			'/404/redirects' => 'redirects',
+			'/404/conflicts' => 'conflicts',
 			'/404/logs'      => 'logs',
 		) as $route => $method ) {
 			register_rest_route(
@@ -41,7 +42,7 @@ class Rest_Controller {
 			);
 		}
 
-		foreach ( array( 'approve', 'edit', 'ignore', 'delete', 'bulk', 'process', 'refresh', 'redirect-status', 'redirect-delete' ) as $action ) {
+		foreach ( array( 'approve', 'edit', 'ignore', 'delete', 'bulk', 'process', 'refresh', 'redirect-status', 'redirect-delete', 'resolve-conflict', 'diagnose-conflict' ) as $action ) {
 			register_rest_route(
 				$namespace,
 				'/404/' . $action,
@@ -119,6 +120,71 @@ class Rest_Controller {
 					'external' => $external,
 					'rows'     => array_merge( $internal, $external ),
 				),
+				200
+			)
+		);
+	}
+
+	/**
+	 * Redirect conflicts endpoint.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function conflicts( $request ) {
+		$data = Database::list_conflicts(
+			array(
+				'page'     => absint( $request->get_param( 'page' ) ),
+				'per_page' => absint( $request->get_param( 'per_page' ) ),
+			)
+		);
+		return $this->no_cache( new \WP_REST_Response( $data, 200 ) );
+	}
+
+	/**
+	 * Apply the fix a conflict verdict offers.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function resolve_conflict( $request ) {
+		$id = absint( $this->json_value( $request, 'id' ) );
+		if ( ! $id ) {
+			return $this->bad_id();
+		}
+		$event = Database::get_event( $id );
+		if ( ! $event ) {
+			return $this->bad_id();
+		}
+
+		$result = Conflicts::apply( $event );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+		return $this->no_cache( new \WP_REST_Response( array( 'ok' => true, 'message' => $result['message'] ), 200 ) );
+	}
+
+	/**
+	 * Re-run diagnosis for one URL, with a live probe.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function diagnose_conflict( $request ) {
+		$id = absint( $this->json_value( $request, 'id' ) );
+		if ( ! $id ) {
+			return $this->bad_id();
+		}
+		$event = Database::get_event( $id );
+		if ( ! $event ) {
+			return $this->bad_id();
+		}
+
+		$verdict    = Conflicts::diagnose( $event, true );
+		$descriptor = Conflicts::descriptor( $verdict );
+		return $this->no_cache(
+			new \WP_REST_Response(
+				array( 'ok' => true, 'verdict' => $verdict, 'message' => $descriptor['label'] ),
 				200
 			)
 		);

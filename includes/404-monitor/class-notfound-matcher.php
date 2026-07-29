@@ -122,7 +122,25 @@ class Matcher {
 		$auto_created = 0;
 		$failed = 0;
 
+		$already = 0;
+		$conflicts = 0;
+
 		foreach ( $rows as $row ) {
+			// A URL something already redirects is not work: recommending a
+			// destination for it produced a row that could only ever fail with
+			// "a redirect already exists". Settle it instead of queueing it.
+			$owned = self::redirect_owner( $row );
+			if ( null !== $owned ) {
+				$settled = self::settle_owned_row( $row, $owned, $owner );
+				if ( 'conflict' === $settled ) {
+					$conflicts++;
+				} else {
+					$already++;
+				}
+				$processed++;
+				continue;
+			}
+
 			try {
 				$result = self::recommend( $row );
 				$saved  = Database::save_recommendation(
@@ -152,8 +170,95 @@ class Matcher {
 		}
 
 		$pending = Database::has_pending_recommendations();
-		Logger::info( 'matcher', '404 recommendation batch completed.', array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'pending' => $pending ) );
-		return array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'pending' => $pending, 'skipped' => false );
+		Logger::info( 'matcher', '404 recommendation batch completed.', array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'already_redirected' => $already, 'conflicts' => $conflicts, 'pending' => $pending ) );
+		return array( 'processed' => $processed, 'auto_created' => $auto_created, 'failed' => $failed, 'already_redirected' => $already, 'conflicts' => $conflicts, 'pending' => $pending, 'skipped' => false );
+	}
+
+	/**
+	 * Who, if anyone, already redirects this URL.
+	 *
+	 * Checks our own rules first, then the third-party tools Compatibility can read.
+	 * Note that coverage is limited to Redirection and Rank Math -- SEOPress, Yoast
+	 * Premium, .htaccess and server rules are invisible here and surface only via
+	 * the live probe during conflict diagnosis.
+	 *
+	 * @param array $row Event row.
+	 * @return array|null {owner, rule} or null when nothing owns it.
+	 */
+	private static function redirect_owner( array $row ) {
+		$url = isset( $row['url'] ) ? (string) $row['url'] : '';
+		if ( '' === $url ) {
+			return null;
+		}
+
+		$internal = Database::find_active_redirect( $url );
+		if ( is_array( $internal ) ) {
+			return array( 'owner' => Conflicts::OWNER_INTERNAL, 'rule' => $internal );
+		}
+
+		$external = Compatibility::external_redirect_for_source( $url );
+		if ( is_array( $external ) ) {
+			$tools = wp_list_pluck( Compatibility::detected_tools(), 'key' );
+			$owner = in_array( 'redirection', $tools, true ) ? Conflicts::OWNER_REDIRECTION : Conflicts::OWNER_RANK_MATH;
+			return array( 'owner' => $owner, 'rule' => $external );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Settle a claimed row whose URL something already redirects.
+	 *
+	 * Two very different situations share this shape, separated purely by whether
+	 * the last 404 hit came before or after the rule was last touched.
+	 *
+	 * @param array  $row   Event row.
+	 * @param array  $owned {owner, rule}.
+	 * @param string $owner Claim owner token.
+	 * @return string 'already' or 'conflict'.
+	 */
+	private static function settle_owned_row( array $row, array $owned, $owner ) {
+		$id   = (int) $row['id'];
+		$rule = is_array( $owned['rule'] ) ? $owned['rule'] : array();
+
+		// Our rules carry updated_at; third-party rows may not, in which case
+		// event_predates_rule() errs toward "stale" rather than inventing a
+		// conflict the operator would chase for nothing.
+		$stale = Database::event_predates_rule( $row, $rule );
+
+		// Release the recommendation lease either way: this row is no longer
+		// pending work, so it must not sit holding a claim.
+		Database::release_claim( $id, $owner, $stale ? Database::STATUS_ALREADY_REDIRECTED : $row['status'] );
+
+		if ( $stale ) {
+			Database::save_conflict( $id, Conflicts::RESOLVED, $owned['owner'], isset( $rule['id'] ) ? (int) $rule['id'] : 0 );
+			return 'already';
+		}
+
+		// Fresh hits past a live rule. Diagnose from stored data now; the bounded
+		// live probe in the health cron confirms it later.
+		$verdict = Conflicts::classify(
+			$row,
+			array(
+				'internal_rule'   => Conflicts::OWNER_INTERNAL === $owned['owner'] ? $rule : null,
+				'external_rule'   => Conflicts::OWNER_INTERNAL === $owned['owner'] ? null : $rule,
+				'monitor_enabled' => (bool) Settings::get( 'enabled' ),
+				'probe_status'    => 0,
+			)
+		);
+		Database::save_conflict(
+			$id,
+			$verdict,
+			$owned['owner'],
+			isset( $rule['id'] ) ? (int) $rule['id'] : 0,
+			array( 'rule_status' => isset( $rule['status'] ) ? (string) $rule['status'] : '', 'detected_by' => 'matcher' )
+		);
+		Logger::warning(
+			'redirect-conflict',
+			'A redirect exists for this URL but it is still returning 404.',
+			array( 'event_id' => $id, 'url' => $row['url'], 'verdict' => $verdict, 'owner' => $owned['owner'] )
+		);
+		return 'conflict';
 	}
 
 	/**

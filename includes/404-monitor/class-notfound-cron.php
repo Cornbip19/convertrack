@@ -304,6 +304,40 @@ class Cron {
 				Logger::error( 'redirect-health', 'Redirect health result could not be stored.', array( 'id' => (int) $redirect['id'], 'error' => $stored->get_error_message() ) );
 			}
 		}
+
+		self::diagnose_conflicts( 25 );
+	}
+
+	/**
+	 * Confirm suspected redirect conflicts with a bounded live probe.
+	 *
+	 * Each diagnosis costs one HTTP request against this site, so the batch is
+	 * capped. Suspects are found from stored data alone -- an event hit again after
+	 * its rule was last touched -- so the expensive step only ever runs on URLs
+	 * that are genuinely contradictory.
+	 *
+	 * @param int $limit Max URLs to probe.
+	 * @return int Diagnosed count.
+	 */
+	public static function diagnose_conflicts( $limit = 25 ) {
+		$suspects  = Database::conflict_suspects( max( 1, min( 50, (int) $limit ) ) );
+		$diagnosed = 0;
+
+		foreach ( $suspects as $suspect ) {
+			try {
+				Conflicts::diagnose( $suspect, true );
+				$diagnosed++;
+			} catch ( \Throwable $error ) {
+				// One bad row must not abort the batch; the rest are still worth
+				// diagnosing and the next run retries this one.
+				Logger::error( 'redirect-conflict', 'Conflict diagnosis failed for one URL.', array( 'event_id' => isset( $suspect['id'] ) ? (int) $suspect['id'] : 0, 'error' => $error->getMessage() ) );
+			}
+		}
+
+		if ( $diagnosed > 0 ) {
+			Logger::info( 'redirect-conflict', 'Redirect conflicts diagnosed.', array( 'diagnosed' => $diagnosed ) );
+		}
+		return $diagnosed;
 	}
 
 	/**
