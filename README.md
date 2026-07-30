@@ -12,6 +12,13 @@ A self-hosted WordPress plugin that tracks **clicks on every button and link**, 
 - **Privacy-friendly** — form/editable values are never read, URL queries are stripped by default, IPs are not stored, and GPC, WordPress Consent API, Do Not Track, role, and URL exclusions are supported.
 - **Google Index Monitor** - optional Search Console OAuth integration that scans sitemaps and checks URL indexing status in background batches.
 - **404 Monitor** - captures real frontend 404s, recommends likely destinations, and creates internal 301 redirects only after approval or explicit high-confidence automation.
+- **Dashboard widget** — a Convertrack box on the WordPress dashboard with the last seven days of pageviews, clicks, conversions and live visitors, each against the previous week, plus a trend sparkline and the top five pages.
+
+### Dashboard widget
+
+Administrator-only, and hideable like any dashboard box through Screen Options. It is rendered entirely server-side: `Admin::enqueue()` deliberately loads nothing outside the plugin's own screens, so `admin.js` and `admin.css` are unavailable on `index.php`, and shipping ~9,600 lines of assets there for one widget would not be a fair trade. The widget therefore uses no JavaScript, makes no REST call, and loads only `admin/css/dashboard-widget.css`.
+
+Because the WordPress dashboard renders on every admin visit, the whole payload is cached for five minutes under a key that embeds `Database::report_cache_generation()` — so a completed rollup invalidates it immediately rather than leaving stale figures on screen. A cold build runs ~13 queries; a warm one runs none. The footer prints the time the figures were taken, since a cached number presented as live is worse than an older number labelled honestly.
 
 ## Architecture
 

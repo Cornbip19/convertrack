@@ -1,0 +1,252 @@
+/**
+ * Convertrack WordPress dashboard widget.
+ *
+ * Loaded only on wp-admin/index.php. The plugin's main stylesheet is not
+ * available on that screen, so everything the widget needs is here, scoped under
+ * .cvtrk-dw so it cannot collide with core dashboard styles.
+ *
+ * Colours are expressed against core's own admin palette rather than the
+ * plugin's, so the widget reads as part of the dashboard it sits in.
+ */
+
+.cvtrk-dw {
+	--cvtrk-dw-line: #dcdcde;
+	--cvtrk-dw-muted: #646970;
+	--cvtrk-dw-accent: #2271b1;
+	--cvtrk-dw-up: #00733c;
+	--cvtrk-dw-down: #b32d2e;
+	color: #1d2327;
+	/* Grid and flex items default to min-width:auto, so without this the widget
+	   can force its own dashboard column wider than the viewport instead of
+	   shrinking. A narrow dashboard column must never cause a horizontal scroll. */
+	min-width: 0;
+}
+
+/* KPI row -----------------------------------------------------------------
+   Grid rather than flex so the four tiles stay equal width, and auto-fit so a
+   narrow widget column reflows to two-up instead of overflowing. */
+.cvtrk-dw-kpis {
+	display: grid;
+	/* min() is what stops a bare minmax(96px,1fr) from overflowing: a plain 96px
+	   floor keeps four tracks at 96px even when the column cannot hold them, and
+	   the row runs off the edge rather than wrapping. Capping the floor at 100%
+	   of the container lets the tracks shrink, so they wrap two-up instead. */
+	grid-template-columns: repeat( auto-fit, minmax( min( 96px, 100% ), 1fr ) );
+	gap: 12px;
+	margin: 0 0 14px;
+	padding: 0;
+	list-style: none;
+	min-width: 0;
+}
+
+.cvtrk-dw-kpi {
+	position: relative;
+	margin: 0;
+	padding: 10px 8px 8px;
+	border: 1px solid var( --cvtrk-dw-line );
+	border-radius: 4px;
+	background: #fff;
+	text-align: center;
+	min-width: 0;
+}
+
+.cvtrk-dw-kpi-icon {
+	display: block;
+	color: var( --cvtrk-dw-muted );
+	line-height: 1;
+}
+
+.cvtrk-dw-kpi-icon .cvtrk-icon {
+	width: 18px;
+	height: 18px;
+}
+
+.cvtrk-dw-kpi-value {
+	display: block;
+	margin-top: 2px;
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.2;
+	/* Long numbers must shrink the label, never widen the tile. */
+	overflow-wrap: break-word;
+}
+
+.cvtrk-dw-kpi-label {
+	display: block;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .02em;
+	color: var( --cvtrk-dw-muted );
+}
+
+.cvtrk-dw-kpi-trend,
+.cvtrk-dw-kpi-live {
+	display: inline-block;
+	margin-top: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.cvtrk-dw-kpi-trend.is-up {
+	color: var( --cvtrk-dw-up );
+}
+
+.cvtrk-dw-kpi-trend.is-down {
+	color: var( --cvtrk-dw-down );
+}
+
+.cvtrk-dw-kpi-trend.is-flat {
+	color: var( --cvtrk-dw-muted );
+}
+
+/* "Online now" is live while the tiles beside it are a cached range, so it is
+   marked rather than left to look like the same kind of number. */
+.cvtrk-dw-kpi-live {
+	color: var( --cvtrk-dw-up );
+	text-transform: uppercase;
+	letter-spacing: .04em;
+}
+
+/* Sparkline -------------------------------------------------------------- */
+.cvtrk-dw-spark {
+	margin: 0 0 14px;
+	color: var( --cvtrk-dw-accent );
+}
+
+.cvtrk-dw-spark svg {
+	display: block;
+	width: 100%;
+	height: 34px;
+	/* preserveAspectRatio="none" stretches the stroke; vector-effect on the
+	   polyline keeps it an even weight, so only the box is scaled.
+	   Deliberately NOT overflow:visible -- the plot area is inset in PHP instead,
+	   so the stroke stays inside the box rather than escaping past its top edge. */
+}
+
+.cvtrk-dw-spark-meta {
+	display: block;
+	margin-top: 4px;
+	font-size: 11px;
+	color: var( --cvtrk-dw-muted );
+}
+
+/* Top pages -------------------------------------------------------------- */
+.cvtrk-dw-pages {
+	width: 100%;
+	max-width: 100%;
+	border-collapse: collapse;
+	margin: 0 0 12px;
+	/* Fixed layout is what lets a long page title ellipsis in its cell instead of
+	   widening the table past the widget. */
+	table-layout: fixed;
+}
+
+.cvtrk-dw-pages th,
+.cvtrk-dw-pages td {
+	padding: 6px 4px;
+	border-bottom: 1px solid var( --cvtrk-dw-line );
+	font-size: 12px;
+	text-align: left;
+	vertical-align: middle;
+}
+
+.cvtrk-dw-pages th {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .02em;
+	color: var( --cvtrk-dw-muted );
+	font-weight: 600;
+}
+
+.cvtrk-dw-pages tr:last-child td {
+	border-bottom: 0;
+}
+
+.cvtrk-dw-num {
+	width: 68px;
+	text-align: right !important;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+/* A long page title must ellipsis inside its cell, never widen the table.
+   table-layout:fixed above is what makes this hold. */
+.cvtrk-dw-page {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cvtrk-dw-page a {
+	text-decoration: none;
+}
+
+/* Footer ----------------------------------------------------------------- */
+.cvtrk-dw-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 6px;
+	margin: 0;
+	padding-top: 10px;
+	border-top: 1px solid var( --cvtrk-dw-line );
+}
+
+.cvtrk-dw-link {
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.cvtrk-dw-asof {
+	font-size: 11px;
+	color: var( --cvtrk-dw-muted );
+}
+
+.cvtrk-dw-warn {
+	margin: 0 0 10px;
+	padding: 8px 10px;
+	border-left: 4px solid #dba617;
+	background: #fcf9e8;
+	font-size: 12px;
+}
+
+.cvtrk-dw-empty p {
+	margin: 0 0 8px;
+}
+
+.cvtrk-dw-empty p:last-child {
+	margin-bottom: 0;
+}
+
+/* Narrow columns ---------------------------------------------------------
+   Dashboard widgets go single-column below 782px, but a widget can also be
+   narrow on a wide screen in a 3- or 4-column dashboard, so this keys off the
+   container width rather than only the viewport. */
+@media screen and ( max-width: 782px ) {
+	.cvtrk-dw-kpi-value {
+		font-size: 18px;
+	}
+
+	.cvtrk-dw-num {
+		width: 56px;
+	}
+}
+
+/* Dark scheme -----------------------------------------------------------
+   Honours a user-level dark admin scheme or OS preference. Core ships no dark
+   admin mode by default, so this only takes effect where something opts in. */
+@media ( prefers-color-scheme: dark ) {
+	body.admin-color-modern .cvtrk-dw,
+	body.admin-color-midnight .cvtrk-dw {
+		--cvtrk-dw-line: #3c434a;
+		--cvtrk-dw-muted: #a7aaad;
+		color: #f0f0f1;
+	}
+
+	body.admin-color-modern .cvtrk-dw-kpi,
+	body.admin-color-midnight .cvtrk-dw-kpi {
+		background: transparent;
+	}
+}
