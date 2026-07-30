@@ -283,7 +283,7 @@ class Dashboard_Widget {
 			echo '<span class="cvtrk-dw-kpi-value">' . esc_html( $kpi['value'] ) . '</span>';
 			echo '<span class="cvtrk-dw-kpi-label">' . esc_html( $kpi['label'] ) . '</span>';
 			if ( ! empty( $kpi['live'] ) ) {
-				echo '<span class="cvtrk-dw-kpi-live">' . esc_html__( 'live', 'convertrack-click-conversion-analytics' ) . '</span>';
+				echo '<span class="cvtrk-dw-kpi-live">' . esc_html__( 'Live', 'convertrack-click-conversion-analytics' ) . '</span>';
 			} elseif ( '' !== $kpi['metric'] ) {
 				self::render_trend( $data['comparison'], $kpi['metric'] );
 			}
@@ -319,9 +319,20 @@ class Dashboard_Widget {
 			$arrow = '▼';
 		}
 
+		// The arrow is the primary channel and the colour is secondary: a red/green
+		// delta pair is the classic colour-vision trap, so direction must survive
+		// without hue. The title names what the change is measured against --
+		// a bare percentage does not say "compared to what".
 		printf(
-			'<span class="cvtrk-dw-kpi-trend is-%1$s">%2$s %3$s%%</span>',
+			'<span class="cvtrk-dw-kpi-trend is-%1$s" title="%2$s"><span class="cvtrk-dw-arrow" aria-hidden="true">%3$s</span>%4$s%%</span>',
 			esc_attr( $tone ),
+			esc_attr(
+				sprintf(
+					/* translators: %d: number of days in the comparison window. */
+					__( 'Compared with the previous %d days', 'convertrack-click-conversion-analytics' ),
+					(int) self::RANGE_DAYS
+				)
+			),
 			esc_html( $arrow ),
 			esc_html( number_format_i18n( abs( $change ), 1 ) )
 		);
@@ -350,19 +361,37 @@ class Dashboard_Widget {
 		// half the stroke width renders outside the box.
 		$pad    = 2;
 		$usable = $height - ( 2 * $pad );
+		$base   = $height - $pad;
 
 		$coords = array();
+		$last_y = $base;
 		foreach ( $values as $index => $value ) {
 			$x = ( $points > 1 ) ? ( $index / ( $points - 1 ) ) * $width : 0;
 			// A flat series would divide by zero; pin it to the baseline instead.
-			$y = $max > 0 ? ( $height - $pad ) - ( ( $value / $max ) * $usable ) : ( $height - $pad );
+			$y = $max > 0 ? $base - ( ( $value / $max ) * $usable ) : $base;
 			$coords[] = round( $x, 2 ) . ',' . round( $y, 2 );
+			$last_y   = $y;
 		}
+
+		// The area is the line closed down to the baseline. A ~10% wash, never a
+		// saturated block: it gives the line something to sit on without competing.
+		$area = 'M0,' . $base . ' L' . implode( ' L', $coords ) . ' L' . $width . ',' . $base . ' Z';
 
 		$first = $series[0]['date'];
 		$last  = $series[ $points - 1 ]['date'];
+		$peak  = array_search( $max, $values, true );
 
 		echo '<div class="cvtrk-dw-spark">';
+
+		// A single series needs no legend box, but it does need to say what it
+		// plots -- a bare line leaves a sighted reader guessing between pageviews
+		// and clicks, and only the SVG's aria-label answered that.
+		printf(
+			'<h3 class="cvtrk-dw-heading">%s</h3>',
+			esc_html__( 'Daily pageviews', 'convertrack-click-conversion-analytics' )
+		);
+
+		echo '<div class="cvtrk-dw-spark-plot">';
 		printf(
 			'<svg viewBox="0 0 %1$d %2$d" preserveAspectRatio="none" role="img" aria-label="%3$s" focusable="false">',
 			(int) $width,
@@ -376,19 +405,46 @@ class Dashboard_Widget {
 				)
 			)
 		);
-		echo '<polyline points="' . esc_attr( implode( ' ', $coords ) ) . '" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />';
+		echo '<path class="cvtrk-dw-spark-area" d="' . esc_attr( $area ) . '" />';
+		echo '<polyline class="cvtrk-dw-spark-line" points="' . esc_attr( implode( ' ', $coords ) ) . '" vector-effect="non-scaling-stroke" />';
 		echo '</svg>';
+
+		// The end marker is an HTML element, not an SVG circle: preserveAspectRatio
+		// is "none" so the viewBox is stretched horizontally, and any circle drawn
+		// inside it would render as a flattened ellipse.
 		printf(
-			'<span class="cvtrk-dw-spark-meta">%s</span>',
+			'<span class="cvtrk-dw-spark-dot" style="top:%s%%"></span>',
+			esc_attr( round( ( $last_y / $height ) * 100, 2 ) )
+		);
+		echo '</div>';
+
+		// Label the extreme rather than every point, and name the window the trend
+		// covers so the shape has a scale to be read against.
+		echo '<p class="cvtrk-dw-spark-foot">';
+		printf(
+			'<span class="cvtrk-dw-spark-range">%s</span>',
 			esc_html(
 				sprintf(
 					/* translators: 1: start date, 2: end date. */
 					__( '%1$s to %2$s', 'convertrack-click-conversion-analytics' ),
-					mysql2date( get_option( 'date_format' ), $first . ' 00:00:00' ),
-					mysql2date( get_option( 'date_format' ), $last . ' 00:00:00' )
+					mysql2date( 'M j', $first . ' 00:00:00' ),
+					mysql2date( 'M j', $last . ' 00:00:00' )
 				)
 			)
 		);
+		printf(
+			'<span class="cvtrk-dw-spark-peak">%s</span>',
+			wp_kses(
+				sprintf(
+					/* translators: 1: highest daily pageview count, 2: date of that peak. */
+					__( 'Peak <b>%1$s</b> on %2$s', 'convertrack-click-conversion-analytics' ),
+					number_format_i18n( $max ),
+					mysql2date( 'M j', $series[ false === $peak ? $points - 1 : $peak ]['date'] . ' 00:00:00' )
+				),
+				array( 'b' => array() )
+			)
+		);
+		echo '</p>';
 		echo '</div>';
 	}
 
@@ -402,9 +458,16 @@ class Dashboard_Widget {
 			return;
 		}
 
+		// The section heading names the block; the first column then gets a real
+		// column header instead of doubling as the section title.
+		printf(
+			'<h3 class="cvtrk-dw-heading">%s</h3>',
+			esc_html__( 'Top pages', 'convertrack-click-conversion-analytics' )
+		);
+
 		echo '<table class="cvtrk-dw-pages">';
 		echo '<thead><tr>';
-		echo '<th scope="col">' . esc_html__( 'Top pages', 'convertrack-click-conversion-analytics' ) . '</th>';
+		echo '<th scope="col">' . esc_html__( 'Page', 'convertrack-click-conversion-analytics' ) . '</th>';
 		echo '<th scope="col" class="cvtrk-dw-num">' . esc_html__( 'Views', 'convertrack-click-conversion-analytics' ) . '</th>';
 		echo '<th scope="col" class="cvtrk-dw-num">' . esc_html__( 'Clicks', 'convertrack-click-conversion-analytics' ) . '</th>';
 		echo '</tr></thead><tbody>';

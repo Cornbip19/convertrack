@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.8.0
+Stable tag: 2.8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,14 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.8.1 =
+* Improved the readability of the WordPress dashboard widget. Figures, page titles and labels are now set in distinct weights and shades instead of a single pale grey, so the numbers stand out and the labels no longer blend into the background.
+* The four headline figures now sit on tinted tiles, so each one reads as its own panel rather than as text on a blank white box.
+* The trend line now says what it is plotting, carries a shaded area and a marker on the latest day, and names its highest day and the dates it covers.
+* Each part of the widget now carries a heading, and the top pages table gained a proper column heading for the page name.
+* Fixed the "View full dashboard" link being hard to read for anyone using a dark admin colour scheme.
+* Changes above are presentation only. No figures, calculations or stored data were altered.
 
 = 2.8.0 =
 * Added a Convertrack widget to the WordPress dashboard, so the numbers that matter are on the screen you land on. It shows pageviews, clicks, conversions and how many visitors are on the site right now, each with its change against the previous week, a seven-day trend line, and your five best-performing pages.
