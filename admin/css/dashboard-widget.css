@@ -5,35 +5,51 @@
  * available on that screen, so everything the widget needs is here, scoped under
  * .cvtrk-dw so it cannot collide with core dashboard styles.
  *
- * Colours are expressed against core's own admin palette rather than the
- * plugin's, so the widget reads as part of the dashboard it sits in.
+ * WordPress admin is the design system: these are core's own ink, link and
+ * status values rather than a foreign palette, so the widget reads as part of
+ * the dashboard it sits in. Every text colour below is measured against the
+ * white postbox surface -- the lowest is 5.17:1, so all of them clear WCAG AA
+ * for small text with room to spare.
  */
 
 .cvtrk-dw {
-	--cvtrk-dw-line: #dcdcde;
-	--cvtrk-dw-muted: #646970;
-	--cvtrk-dw-accent: #2271b1;
-	--cvtrk-dw-up: #00733c;
-	--cvtrk-dw-down: #b32d2e;
-	color: #1d2327;
+	/* Ink, in three deliberate steps. Painting everything "muted" is what makes a
+	   panel read washed out: hierarchy comes from the contrast between steps, not
+	   from any one value being dark enough. */
+	--cvtrk-ink:        #1d2327;  /* 15.89:1 - values, page titles */
+	--cvtrk-ink-2:      #50575e;  /*  7.33:1 - labels, column heads */
+	--cvtrk-ink-muted:  #646970;  /*  5.53:1 - timestamps only */
+
+	--cvtrk-accent:     #2271b1;  /*  5.17:1 - the series colour and links */
+	/* A touch over the ~10% wash spec: the plot band is only 46px tall, and at
+	   that height a true 10% tint on white does not register at all. */
+	--cvtrk-accent-wash: rgba( 34, 113, 177, .13 );
+	--cvtrk-up:         #007017;  /*  6.31:1 */
+	--cvtrk-down:       #b32d2e;  /*  6.30:1 */
+
+	--cvtrk-surface:    #fff;
+	/* Core's gray-5. The tile has to be visibly a tile against the white postbox
+	   -- a half-step like #f6f7f7 disappears and leaves the row looking like
+	   plain text with hairlines drawn round it. */
+	--cvtrk-tile:       #f0f0f1;
+	--cvtrk-line:       #dcdcde;
+	--cvtrk-line-soft:  #f0f0f1;
+
+	color: var( --cvtrk-ink );
 	/* Grid and flex items default to min-width:auto, so without this the widget
-	   can force its own dashboard column wider than the viewport instead of
-	   shrinking. A narrow dashboard column must never cause a horizontal scroll. */
+	   can force its own dashboard column wider than the viewport. */
 	min-width: 0;
 }
 
-/* KPI row -----------------------------------------------------------------
-   Grid rather than flex so the four tiles stay equal width, and auto-fit so a
-   narrow widget column reflows to two-up instead of overflowing. */
+/* KPI row ---------------------------------------------------------------- */
 .cvtrk-dw-kpis {
 	display: grid;
 	/* min() is what stops a bare minmax(96px,1fr) from overflowing: a plain 96px
-	   floor keeps four tracks at 96px even when the column cannot hold them, and
-	   the row runs off the edge rather than wrapping. Capping the floor at 100%
-	   of the container lets the tracks shrink, so they wrap two-up instead. */
-	grid-template-columns: repeat( auto-fit, minmax( min( 96px, 100% ), 1fr ) );
-	gap: 12px;
-	margin: 0 0 14px;
+	   floor keeps four tracks at 96px even when the column cannot hold them, so
+	   the row runs off the edge instead of wrapping. */
+	grid-template-columns: repeat( auto-fit, minmax( min( 104px, 100% ), 1fr ) );
+	gap: 8px;
+	margin: 0 0 16px;
 	padding: 0;
 	list-style: none;
 	min-width: 0;
@@ -42,93 +58,182 @@
 .cvtrk-dw-kpi {
 	position: relative;
 	margin: 0;
-	padding: 10px 8px 8px;
-	border: 1px solid var( --cvtrk-dw-line );
+	padding: 12px 10px 10px;
+	border: 1px solid var( --cvtrk-line );
 	border-radius: 4px;
-	background: #fff;
-	text-align: center;
+	/* A tinted tile against the white postbox gives each figure its own plane.
+	   White-on-white with only a hairline is what read as "plain". */
+	background: var( --cvtrk-tile );
 	min-width: 0;
 }
 
 .cvtrk-dw-kpi-icon {
 	display: block;
-	color: var( --cvtrk-dw-muted );
+	color: var( --cvtrk-ink-2 );
 	line-height: 1;
+	margin-bottom: 6px;
 }
 
 .cvtrk-dw-kpi-icon .cvtrk-icon {
-	width: 18px;
-	height: 18px;
+	width: 17px;
+	height: 17px;
 }
 
 .cvtrk-dw-kpi-value {
 	display: block;
-	margin-top: 2px;
-	font-size: 20px;
+	font-size: 23px;
 	font-weight: 600;
-	line-height: 1.2;
-	/* Long numbers must shrink the label, never widen the tile. */
+	line-height: 1.15;
+	color: var( --cvtrk-ink );
+	/* Proportional figures on purpose: tabular-nums gives every digit the width
+	   of a zero, which makes a value like 121 look loose at this size. Tabular is
+	   for columns that align vertically -- the table below, not here. */
 	overflow-wrap: break-word;
 }
 
 .cvtrk-dw-kpi-label {
 	display: block;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: .02em;
-	color: var( --cvtrk-dw-muted );
+	margin-top: 1px;
+	font-size: 12px;
+	line-height: 1.3;
+	/* Sentence case, not uppercase. Uppercase + letter-spacing + a muted grey at
+	   11px is precisely the combination that reads faint and unfinished. */
+	color: var( --cvtrk-ink-2 );
 }
 
 .cvtrk-dw-kpi-trend,
 .cvtrk-dw-kpi-live {
-	display: inline-block;
-	margin-top: 4px;
-	font-size: 11px;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	margin-top: 5px;
+	font-size: 12px;
 	font-weight: 600;
 	white-space: nowrap;
 }
 
+/* Direction is carried by the arrow first and the colour second. Red and green
+   are the classic colour-vision collision, so the glyph has to stand alone. */
+.cvtrk-dw-arrow {
+	font-size: 10px;
+	line-height: 1;
+}
+
 .cvtrk-dw-kpi-trend.is-up {
-	color: var( --cvtrk-dw-up );
+	color: var( --cvtrk-up );
 }
 
 .cvtrk-dw-kpi-trend.is-down {
-	color: var( --cvtrk-dw-down );
+	color: var( --cvtrk-down );
 }
 
 .cvtrk-dw-kpi-trend.is-flat {
-	color: var( --cvtrk-dw-muted );
+	color: var( --cvtrk-ink-2 );
 }
 
 /* "Online now" is live while the tiles beside it are a cached range, so it is
    marked rather than left to look like the same kind of number. */
 .cvtrk-dw-kpi-live {
-	color: var( --cvtrk-dw-up );
-	text-transform: uppercase;
-	letter-spacing: .04em;
+	color: var( --cvtrk-up );
+	font-size: 11px;
+	letter-spacing: .02em;
+}
+
+.cvtrk-dw-kpi-live::before {
+	content: "";
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+/* Section headings ------------------------------------------------------- */
+/* The widget is three blocks stacked with nothing naming them. These give it a
+   rhythm and, for the sparkline, answer "what is this a line of?" -- which
+   previously only the SVG's aria-label did. */
+.cvtrk-dw-heading {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 7px;
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.3;
+	color: var( --cvtrk-ink-2 );
+}
+
+/* A rule that runs out from the label to the edge, so the heading reads as the
+   start of a section rather than a stray line of text. */
+.cvtrk-dw-heading::after {
+	content: "";
+	flex: 1 1 auto;
+	height: 1px;
+	background: var( --cvtrk-line );
 }
 
 /* Sparkline -------------------------------------------------------------- */
 .cvtrk-dw-spark {
-	margin: 0 0 14px;
-	color: var( --cvtrk-dw-accent );
+	margin: 0 0 16px;
 }
 
-.cvtrk-dw-spark svg {
+.cvtrk-dw-spark-plot {
+	position: relative;
+	color: var( --cvtrk-accent );
+	/* A hairline baseline, solid and one step off the surface. Never dashed --
+	   dashing reads as "threshold" when it is only a rule. */
+	border-bottom: 1px solid var( --cvtrk-line );
+	padding-right: 5px;
+}
+
+.cvtrk-dw-spark-plot svg {
 	display: block;
 	width: 100%;
-	height: 34px;
-	/* preserveAspectRatio="none" stretches the stroke; vector-effect on the
-	   polyline keeps it an even weight, so only the box is scaled.
-	   Deliberately NOT overflow:visible -- the plot area is inset in PHP instead,
-	   so the stroke stays inside the box rather than escaping past its top edge. */
+	height: 46px;
+	/* Deliberately not overflow:visible -- the plot area is inset in PHP so the
+	   stroke stays inside the box rather than escaping past its top edge. */
 }
 
-.cvtrk-dw-spark-meta {
-	display: block;
-	margin-top: 4px;
-	font-size: 11px;
-	color: var( --cvtrk-dw-muted );
+.cvtrk-dw-spark-area {
+	fill: var( --cvtrk-accent-wash );
+	stroke: none;
+}
+
+.cvtrk-dw-spark-line {
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+
+/* The end marker anchors "now". It is an HTML element rather than an SVG circle
+   because the viewBox is stretched horizontally (preserveAspectRatio="none"),
+   which would render a circle as a flattened ellipse. The white ring keeps it
+   legible where it sits on the line. */
+.cvtrk-dw-spark-dot {
+	position: absolute;
+	right: 0;
+	width: 9px;
+	height: 9px;
+	margin: -4.5px 0 0;
+	border-radius: 50%;
+	background: var( --cvtrk-accent );
+	box-shadow: 0 0 0 2px var( --cvtrk-surface );
+}
+
+.cvtrk-dw-spark-foot {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 4px;
+	margin: 6px 0 0;
+	font-size: 12px;
+	color: var( --cvtrk-ink-2 );
+}
+
+.cvtrk-dw-spark-peak b {
+	color: var( --cvtrk-ink );
+	font-weight: 600;
 }
 
 /* Top pages -------------------------------------------------------------- */
@@ -136,7 +241,7 @@
 	width: 100%;
 	max-width: 100%;
 	border-collapse: collapse;
-	margin: 0 0 12px;
+	margin: 0 0 14px;
 	/* Fixed layout is what lets a long page title ellipsis in its cell instead of
 	   widening the table past the widget. */
 	table-layout: fixed;
@@ -144,33 +249,41 @@
 
 .cvtrk-dw-pages th,
 .cvtrk-dw-pages td {
-	padding: 6px 4px;
-	border-bottom: 1px solid var( --cvtrk-dw-line );
-	font-size: 12px;
+	padding: 7px 4px;
+	border-bottom: 1px solid var( --cvtrk-line-soft );
+	font-size: 13px;
 	text-align: left;
 	vertical-align: middle;
 }
 
 .cvtrk-dw-pages th {
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: .02em;
-	color: var( --cvtrk-dw-muted );
+	font-size: 12px;
 	font-weight: 600;
+	color: var( --cvtrk-ink-2 );
+	border-bottom: 1px solid var( --cvtrk-line );
+	padding-bottom: 6px;
 }
 
 .cvtrk-dw-pages tr:last-child td {
 	border-bottom: 0;
 }
 
-.cvtrk-dw-num {
-	width: 68px;
-	text-align: right !important;
-	font-variant-numeric: tabular-nums;
-	white-space: nowrap;
+/* A tinted hover rather than a grey one: --cvtrk-line-soft now matches the KPI
+   tile, so a grey wash here would read as a second tile rather than a hover. */
+.cvtrk-dw-pages tbody tr:hover td {
+	background: rgba( 34, 113, 177, .07 );
 }
 
-/* A long page title must ellipsis inside its cell, never widen the table.
+.cvtrk-dw-num {
+	width: 66px;
+	text-align: right !important;
+	/* Tabular here, where the digits form a column that must align. */
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	color: var( --cvtrk-ink );
+}
+
+/* A long page title ellipsises inside its cell rather than widening the table.
    table-layout:fixed above is what makes this hold. */
 .cvtrk-dw-page {
 	overflow: hidden;
@@ -180,6 +293,11 @@
 
 .cvtrk-dw-page a {
 	text-decoration: none;
+	color: var( --cvtrk-accent );
+}
+
+.cvtrk-dw-page a:hover {
+	text-decoration: underline;
 }
 
 /* Footer ----------------------------------------------------------------- */
@@ -190,63 +308,72 @@
 	justify-content: space-between;
 	gap: 6px;
 	margin: 0;
-	padding-top: 10px;
-	border-top: 1px solid var( --cvtrk-dw-line );
+	padding-top: 12px;
+	border-top: 1px solid var( --cvtrk-line );
 }
 
+/* The colour is set explicitly rather than left to the admin's global `a` rule:
+   that rule is a fixed #2271b1, which happens to match the accent on white but
+   only reaches 3.1:1 on the dark surface. */
 .cvtrk-dw-link {
 	font-weight: 600;
 	text-decoration: none;
+	color: var( --cvtrk-accent );
 }
 
+/* The one genuinely tertiary line in the widget, and the only thing still muted. */
 .cvtrk-dw-asof {
-	font-size: 11px;
-	color: var( --cvtrk-dw-muted );
+	font-size: 12px;
+	color: var( --cvtrk-ink-muted );
 }
 
 .cvtrk-dw-warn {
-	margin: 0 0 10px;
-	padding: 8px 10px;
+	margin: 0 0 12px;
+	padding: 9px 11px;
 	border-left: 4px solid #dba617;
 	background: #fcf9e8;
-	font-size: 12px;
+	font-size: 13px;
+	color: var( --cvtrk-ink );
 }
 
 .cvtrk-dw-empty p {
 	margin: 0 0 8px;
+	color: var( --cvtrk-ink-2 );
 }
 
 .cvtrk-dw-empty p:last-child {
 	margin-bottom: 0;
 }
 
-/* Narrow columns ---------------------------------------------------------
-   Dashboard widgets go single-column below 782px, but a widget can also be
-   narrow on a wide screen in a 3- or 4-column dashboard, so this keys off the
-   container width rather than only the viewport. */
+/* Narrow columns --------------------------------------------------------- */
 @media screen and ( max-width: 782px ) {
 	.cvtrk-dw-kpi-value {
-		font-size: 18px;
+		font-size: 21px;
 	}
 
 	.cvtrk-dw-num {
-		width: 56px;
+		width: 58px;
 	}
 }
 
 /* Dark scheme -----------------------------------------------------------
-   Honours a user-level dark admin scheme or OS preference. Core ships no dark
-   admin mode by default, so this only takes effect where something opts in. */
+   Selected for the dark surface rather than an automatic flip: the ink steps
+   are re-picked against #1e1e1e, and the accent and status hues are lifted so
+   they still clear contrast on a dark plane. Core ships no dark admin mode by
+   default, so this applies only where something opts in. */
 @media ( prefers-color-scheme: dark ) {
 	body.admin-color-modern .cvtrk-dw,
 	body.admin-color-midnight .cvtrk-dw {
-		--cvtrk-dw-line: #3c434a;
-		--cvtrk-dw-muted: #a7aaad;
-		color: #f0f0f1;
-	}
-
-	body.admin-color-modern .cvtrk-dw-kpi,
-	body.admin-color-midnight .cvtrk-dw-kpi {
-		background: transparent;
+		--cvtrk-ink:        #f0f0f1;
+		--cvtrk-ink-2:      #c3c4c7;
+		--cvtrk-ink-muted:  #a7aaad;
+		--cvtrk-accent:     #72aee6;
+		--cvtrk-accent-wash: rgba( 114, 174, 230, .14 );
+		--cvtrk-up:         #68de7c;
+		--cvtrk-down:       #f86368;
+		--cvtrk-surface:    #1e1e1e;
+		--cvtrk-tile:       #2c3338;
+		--cvtrk-line:       #3c434a;
+		--cvtrk-line-soft:  #2c3338;
 	}
 }
