@@ -21,6 +21,7 @@ class Admin {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
+		add_action( 'wp_dashboard_setup', array( '\\Convertrack\\Dashboard_Widget', 'register' ) );
 		add_filter( 'parent_file', array( $this, 'highlight_parent_menu' ), 99 );
 		add_filter( 'submenu_file', array( $this, 'highlight_submenu' ), 99, 2 );
 		add_filter( 'admin_title', array( $this, 'hidden_page_admin_title' ), 10, 2 );
@@ -538,6 +539,21 @@ class Admin {
 	 * @param string $hook Current admin page hook.
 	 */
 	public function enqueue( $hook ) {
+		// The WordPress dashboard gets only the widget's own small stylesheet.
+		// Loading the plugin's full admin CSS/JS on the busiest admin screen for
+		// one server-rendered widget would not be a fair trade.
+		if ( 'index.php' === $hook ) {
+			if ( current_user_can( 'manage_options' ) ) {
+				wp_enqueue_style(
+					'convertrack-dashboard-widget',
+					CONVERTRACK_URL . 'admin/css/dashboard-widget.css',
+					array(),
+					CONVERTRACK_VERSION
+				);
+			}
+			return;
+		}
+
 		if ( false === strpos( $hook, 'convertrack' ) ) {
 			return;
 		}

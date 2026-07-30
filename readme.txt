@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.7.0
+Stable tag: 2.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,12 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.8.0 =
+* Added a Convertrack widget to the WordPress dashboard, so the numbers that matter are on the screen you land on. It shows pageviews, clicks, conversions and how many visitors are on the site right now, each with its change against the previous week, a seven-day trend line, and your five best-performing pages.
+* The widget is administrator-only and can be hidden or moved like any other dashboard box, from Screen Options.
+* Figures are prepared in the background and refreshed every few minutes, and the widget states the time they were taken, so the WordPress dashboard stays fast on every visit.
+* Clear states rather than a row of zeros: the widget says so when tracking is switched off, when there is no activity yet, and when the database needs attention.
 
 = 2.7.0 =
 * Broken URLs no longer suggests redirects for URLs that are already redirected. If this plugin, Redirection or Rank Math already handles a URL, its 404 record is closed as "Already redirected elsewhere" and moved out of the work queue, recording which tool owns it.
