@@ -3,8 +3,8 @@
  *
  * Captures analytics clicks on configured "button-like" elements, records
  * all-click heatmap positions, pageviews, and presence heartbeats. Events are
- * batched over keepalive fetch with sendBeacon for navigation/pagehide so
- * tracking never blocks navigation.
+ * batched over normal fetch, with sendBeacon/keepalive fallback for
+ * navigation and pagehide so tracking never blocks navigation.
  */
 ( function () {
 	'use strict';
@@ -300,7 +300,9 @@
 		// pageshow is the only reliable resume signal for BFCache restores. A
 		// restore inside the inactivity window keeps the session and does not
 		// double-count a pageview; an expired restore starts a genuine session.
-		resumeLifecycle( !! ( event && event.persisted ) );
+		if ( event && event.persisted ) {
+			resumeLifecycle( true );
+		}
 	} );
 
 	publishTestApi();
@@ -402,13 +404,22 @@
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: body,
-				keepalive: true,
+				// Keepalive is reserved for the pagehide/visibility fallback.
+				// Normal requests must complete through the regular Fetch lifecycle
+				// so browsers and performance tooling can close the connection.
+				keepalive: !! preferBeacon,
 				credentials: 'omit'
 			} );
 			if ( request && request.then ) {
 				request.then( function ( response ) {
 					if ( canRetry && shouldRetryResponse( response ) ) {
 						scheduleRetry( url, payload, maxBytes, attempt );
+					}
+					// Drain the small REST response so the Fetch lifecycle closes.
+					// A body-read failure is not a transport failure and must not retry
+					// an HTTP response that the server already delivered.
+					if ( response && typeof response.text === 'function' ) {
+						response.text().catch( function () {} ); // eslint-disable-line no-empty-function
 					}
 				} ).catch( function () {
 					if ( canRetry ) {

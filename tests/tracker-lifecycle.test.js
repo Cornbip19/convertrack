@@ -308,3 +308,57 @@ test( 'retryable transport failures enqueue one bounded retry attempt', async ()
 	assert.equal( retries.length, 1 );
 	assert.equal( retries[ 0 ].attempt, 1 );
 } );
+
+test( 'initial pageshow does not send an extra heartbeat or pageview', () => {
+	const harness = makeHarness();
+	const initialRequests = harness.requests.length;
+	const initialPageviews = harness.api.getState().queue.length;
+	assert.equal( initialRequests, 1 );
+	harness.listeners.window.pageshow( { persisted: false } );
+	harness.listeners.window.pageshow();
+	assert.equal( harness.requests.length, initialRequests );
+	assert.equal( harness.api.getState().queue.length, initialPageviews );
+} );
+
+test( 'regular analytics uses normal fetch while pagehide keeps the keepalive fallback', () => {
+	const harness = makeHarness();
+	assert.equal( harness.requests[ 0 ].url, harness.config.heartbeatUrl );
+	assert.equal( harness.requests[ 0 ].init.keepalive, false );
+	harness.api.flush();
+	assert.equal( harness.requests[ 1 ].url, harness.config.collectUrl );
+	assert.equal( harness.requests[ 1 ].init.keepalive, false );
+	harness.requests.length = 0;
+	harness.listeners.window.pagehide();
+	assert.ok( harness.requests.length > 0 );
+	for ( const request of harness.requests ) {
+		assert.equal( request.init.keepalive, true );
+	}
+} );
+
+test( 'successful beacon delivery does not also send a fetch on pagehide', () => {
+	const beacons = [];
+	const harness = makeHarness( { beacon: ( url, body ) => {
+		beacons.push( { url, body } );
+		return true;
+	} } );
+	const initialRequests = harness.requests.length;
+	harness.listeners.window.pagehide();
+	assert.ok( beacons.length > 0 );
+	assert.equal( harness.requests.length, initialRequests );
+} );
+
+for ( const bodyReadFails of [ false, true ] ) {
+	test( 'response bodies are consumed without retrying delivered requests (read fails: ' + bodyReadFails + ')', async () => {
+		let bodyReads = 0;
+		const harness = makeHarness( {
+			fetch: () => Promise.resolve( { ok: true, status: 200, text() {
+				bodyReads++;
+				return bodyReadFails ? Promise.reject( new Error( 'Body read failed' ) ) : Promise.resolve( '{}' );
+			} } )
+		} );
+		harness.api.flush();
+		await new Promise( ( resolve ) => setImmediate( resolve ) );
+		assert.equal( bodyReads, 2 );
+		assert.equal( harness.api.getState().retries.length, 0 );
+	} );
+}

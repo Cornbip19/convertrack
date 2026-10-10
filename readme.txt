@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.8.1
+Stable tag: 2.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,11 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.8.2 =
+* Use normal Fetch requests for regular analytics traffic, reserving sendBeacon and keepalive for navigation and page-hide delivery.
+* Drain analytics response bodies without retrying requests whose response body could not be read.
+* Resume the tracker on back/forward-cache restores without sending an extra heartbeat on the initial pageshow event.
 
 = 2.8.1 =
 * Improved the readability of the WordPress dashboard widget. Figures, page titles and labels are now set in distinct weights and shades instead of a single pale grey, so the numbers stand out and the labels no longer blend into the background.
