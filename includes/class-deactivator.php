@@ -18,6 +18,7 @@ class Deactivator {
 		Cron::unschedule();
 		\Convertrack\GSC\Cron::unschedule();
 		\Convertrack\GSC\Keywords_Cron::unschedule();
+		\Convertrack\GSC\Keywords_Autoapply::unschedule();
 		\Convertrack\NotFound\Cron::unschedule();
 		if ( $network_wide && is_multisite() ) {
 			Lifecycle::network_deactivate();

@@ -70,9 +70,7 @@ class API {
 	 * @return true|\WP_Error
 	 */
 	public static function indexing_api_notify( $url, $post_id, $manual = false ) {
-		$eligible = self::default_indexing_eligibility( $url, $post_id );
-		$eligible = (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', $eligible, $post_id, $url, $manual );
-		if ( ! $eligible ) {
+		if ( ! self::is_indexing_eligible( $url, $post_id, $manual ) ) {
 			return new \WP_Error( 'convertrack_gsc_indexing_api_not_eligible', __( 'This URL is not eligible for the Google Indexing API.', 'convertrack-click-conversion-analytics' ) );
 		}
 
@@ -505,6 +503,19 @@ class API {
 	 *
 	 * @param string $url     URL.
 	 * @param int    $post_id Post id.
+	 * @return bool
+	 */
+	public static function is_indexing_eligible( $url, $post_id, $manual = false ) {
+		$eligible = self::default_indexing_eligibility( $url, $post_id );
+		return (bool) apply_filters( 'convertrack_gsc_indexing_api_eligible', $eligible, $post_id, $url, $manual );
+	}
+
+	/**
+	 * Built-in Indexing API eligibility: Google only accepts pages carrying
+	 * JobPosting or BroadcastEvent (livestream) structured data.
+	 *
+	 * @param string $url     URL.
+	 * @param int    $post_id Post ID.
 	 * @return bool
 	 */
 	private static function default_indexing_eligibility( $url, $post_id ) {

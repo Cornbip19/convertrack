@@ -7,6 +7,8 @@
 
 namespace Convertrack\GSC;
 
+use Convertrack\Scheduler;
+
 defined( 'ABSPATH' ) || exit;
 
 class Cron {
@@ -20,6 +22,10 @@ class Cron {
 
 	/**
 	 * Register hooks.
+	 *
+	 * The recurring actions are armed by Scheduler::heal() once Action
+	 * Scheduler is ready, not here: during plugins_loaded its API silently
+	 * drops every call.
 	 */
 	public function register() {
 		add_filter( 'cron_schedules', array( __CLASS__, 'add_schedules' ) );
@@ -28,8 +34,6 @@ class Cron {
 		add_action( self::SCAN, array( __CLASS__, 'run_scan' ) );
 		add_action( self::SCAN_NOW, array( __CLASS__, 'run_scan_now' ) );
 		add_action( self::FULL, array( __CLASS__, 'run_full_audit' ) );
-
-		self::schedule();
 	}
 
 	/**
@@ -49,10 +53,18 @@ class Cron {
 	}
 
 	/**
-	 * Schedule recurring actions.
+	 * Schedule recurring actions as soon as the scheduler can take them.
 	 */
 	public static function schedule() {
-		if ( self::action_scheduler_available() ) {
+		Scheduler::when_ready( array( __CLASS__, 'schedule_recurring' ) );
+	}
+
+	/**
+	 * Arm the recurring actions. Call schedule() instead unless you know the
+	 * scheduler is ready.
+	 */
+	public static function schedule_recurring() {
+		if ( Scheduler::available() ) {
 			if ( ! as_next_scheduled_action( self::PROCESS, array(), self::GROUP ) ) {
 				as_schedule_recurring_action( time() + 5 * MINUTE_IN_SECONDS, HOUR_IN_SECONDS, self::PROCESS, array(), self::GROUP );
 			}
@@ -80,7 +92,7 @@ class Cron {
 	 * Unschedule jobs.
 	 */
 	public static function unschedule() {
-		if ( self::action_scheduler_available() ) {
+		if ( Scheduler::available() ) {
 			as_unschedule_all_actions( self::PROCESS, array(), self::GROUP );
 			as_unschedule_all_actions( self::PROCESS_NOW, array(), self::GROUP );
 			as_unschedule_all_actions( self::SCAN, array(), self::GROUP );
@@ -104,19 +116,7 @@ class Cron {
 	 * @param int $delay Seconds from now.
 	 */
 	public static function kick_processing( $delay = 0 ) {
-		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
-			if ( ! as_next_scheduled_action( self::PROCESS_NOW, array(), self::GROUP ) ) {
-				as_schedule_single_action( time() + max( 0, (int) $delay ), self::PROCESS_NOW, array(), self::GROUP );
-			}
-			return;
-		}
-
-		if ( ! wp_next_scheduled( self::PROCESS_NOW ) ) {
-			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::PROCESS_NOW );
-			if ( function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
-		}
+		Scheduler::kick( self::PROCESS_NOW, $delay, self::GROUP );
 	}
 
 	/**
@@ -125,19 +125,29 @@ class Cron {
 	 * @param int $delay Seconds from now.
 	 */
 	public static function kick_scan( $delay = 0 ) {
-		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
-			if ( ! as_next_scheduled_action( self::SCAN_NOW, array(), self::GROUP ) ) {
-				as_schedule_single_action( time() + max( 0, (int) $delay ), self::SCAN_NOW, array(), self::GROUP );
-			}
-			return;
-		}
+		Scheduler::kick( self::SCAN_NOW, $delay, self::GROUP );
+	}
 
-		if ( ! wp_next_scheduled( self::SCAN_NOW ) ) {
-			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::SCAN_NOW );
-			if ( function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
+	/**
+	 * Restart a sitemap scan whose step chain was lost: a fatal mid-step, a
+	 * cancelled action, or the former duplicate guard that counted the
+	 * running step as already queued.
+	 *
+	 * @return bool Whether a step was queued.
+	 */
+	public static function resume() {
+		if ( ! Settings::get( 'enabled' ) ) {
+			return false;
 		}
+		$state = Sitemap_Scanner::state();
+		if ( ! in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
+			return false;
+		}
+		if ( Scheduler::is_scheduled( self::SCAN_NOW, self::GROUP ) ) {
+			return false;
+		}
+		self::kick_scan();
+		return true;
 	}
 
 	/**
@@ -203,9 +213,17 @@ class Cron {
 
 	/**
 	 * Execute and continue one sitemap scan step.
+	 *
+	 * A step only continues a generation that was explicitly requested (by
+	 * run_scan(), run_full_audit() or the REST "scan now"); a step left over
+	 * after completion must not start a fresh scan of its own.
 	 */
 	public static function run_scan_now() {
 		if ( ! Settings::get( 'enabled' ) ) {
+			return;
+		}
+		$current = Sitemap_Scanner::state();
+		if ( ! in_array( $current['status'], array( 'queued', 'running' ), true ) ) {
 			return;
 		}
 		$scan = Sitemap_Scanner::scan();
@@ -232,16 +250,5 @@ class Cron {
 		if ( ! is_wp_error( $queued ) ) {
 			self::kick_scan();
 		}
-	}
-
-	/**
-	 * Whether Action Scheduler functions are available.
-	 *
-	 * @return bool
-	 */
-	private static function action_scheduler_available() {
-		return function_exists( 'as_next_scheduled_action' )
-			&& function_exists( 'as_schedule_recurring_action' )
-			&& function_exists( 'as_unschedule_all_actions' );
 	}
 }

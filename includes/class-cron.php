@@ -75,6 +75,11 @@ class Cron {
 	 * Hourly job: roll up recent days and purge expired raw events.
 	 */
 	public static function run_hourly() {
+		// WP-Cron brought us here, so this is the one path that still runs when
+		// every Action Scheduler job is gone (a fatal inside a recurring action
+		// drops it for good): re-arm them and restart stalled step chains.
+		Scheduler::heal( true );
+
 		// Recover missed days oldest-first before refreshing recent buckets.
 		$catch_up = Rollup_Manager::catch_up( 10, 20 );
 		if ( is_wp_error( $catch_up ) ) {

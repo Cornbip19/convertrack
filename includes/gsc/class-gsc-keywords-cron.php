@@ -7,6 +7,8 @@
 
 namespace Convertrack\GSC;
 
+use Convertrack\Scheduler;
+
 defined( 'ABSPATH' ) || exit;
 
 class Keywords_Cron {
@@ -18,20 +20,29 @@ class Keywords_Cron {
 
 	/**
 	 * Register hooks.
+	 *
+	 * The daily tick is armed by Scheduler::heal() once Action Scheduler is
+	 * ready, not here: during plugins_loaded its API silently drops the call.
 	 */
 	public function register() {
 		add_action( self::TICK, array( __CLASS__, 'run_tick' ) );
 		add_action( self::SYNC_STEP, array( __CLASS__, 'run_sync_step' ) );
 		add_action( self::ANALYZE_NOW, array( __CLASS__, 'run_analyze_now' ) );
-
-		self::schedule();
 	}
 
 	/**
-	 * Schedule the daily tick.
+	 * Schedule the daily tick as soon as the scheduler can take it.
 	 */
 	public static function schedule() {
-		if ( self::action_scheduler_available() ) {
+		Scheduler::when_ready( array( __CLASS__, 'schedule_recurring' ) );
+	}
+
+	/**
+	 * Arm the daily tick. Call schedule() instead unless you know the
+	 * scheduler is ready.
+	 */
+	public static function schedule_recurring() {
+		if ( Scheduler::available() ) {
 			if ( ! as_next_scheduled_action( self::TICK, array(), self::GROUP ) ) {
 				as_schedule_recurring_action( time() + 15 * MINUTE_IN_SECONDS, DAY_IN_SECONDS, self::TICK, array(), self::GROUP );
 			}
@@ -47,7 +58,7 @@ class Keywords_Cron {
 	 * Unschedule jobs.
 	 */
 	public static function unschedule() {
-		if ( self::action_scheduler_available() ) {
+		if ( Scheduler::available() ) {
 			as_unschedule_all_actions( self::TICK, array(), self::GROUP );
 			as_unschedule_all_actions( self::SYNC_STEP, array(), self::GROUP );
 			as_unschedule_all_actions( self::ANALYZE_NOW, array(), self::GROUP );
@@ -64,7 +75,7 @@ class Keywords_Cron {
 	 * @param int $delay Seconds from now.
 	 */
 	public static function kick_sync( $delay = 0 ) {
-		self::kick( self::SYNC_STEP, $delay );
+		Scheduler::kick( self::SYNC_STEP, $delay, self::GROUP );
 	}
 
 	/**
@@ -73,7 +84,37 @@ class Keywords_Cron {
 	 * @param int $delay Seconds from now.
 	 */
 	public static function kick_analyze( $delay = 0 ) {
-		self::kick( self::ANALYZE_NOW, $delay );
+		Scheduler::kick( self::ANALYZE_NOW, $delay, self::GROUP );
+	}
+
+	/**
+	 * Restart the sync and analysis chains when work is waiting but no step
+	 * is queued or running.
+	 *
+	 * An analysis batch that stopped on consecutive errors is left alone for
+	 * an hour so a broken row cannot be retried every few minutes.
+	 *
+	 * @return array Chains restarted: any of 'sync', 'analysis'.
+	 */
+	public static function resume() {
+		if ( ! Keywords_Settings::ready() ) {
+			return array();
+		}
+		$resumed = array();
+
+		$sync = Keywords_Sync::state();
+		if ( in_array( $sync['status'], array( 'queued', 'running' ), true ) && ! Scheduler::is_scheduled( self::SYNC_STEP, self::GROUP ) ) {
+			$delay = ! empty( $sync['next_retry_at'] ) ? max( 0, (int) $sync['next_retry_at'] - time() ) : 0;
+			self::kick_sync( $delay );
+			$resumed[] = 'sync';
+		}
+
+		if ( ! self::analysis_backing_off() && Keywords_Database::pending_analysis_count() > 0 && ! Scheduler::is_scheduled( self::ANALYZE_NOW, self::GROUP ) ) {
+			self::kick_analyze();
+			$resumed[] = 'analysis';
+		}
+
+		return $resumed;
 	}
 
 	/**
@@ -186,35 +227,17 @@ class Keywords_Cron {
 	}
 
 	/**
-	 * Dupe-guarded one-shot scheduling with a WP-Cron fallback.
-	 *
-	 * @param string $hook  Hook name.
-	 * @param int    $delay Seconds from now.
-	 */
-	private static function kick( $hook, $delay = 0 ) {
-		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
-			if ( ! as_next_scheduled_action( $hook, array(), self::GROUP ) ) {
-				as_schedule_single_action( time() + max( 0, (int) $delay ), $hook, array(), self::GROUP );
-			}
-			return;
-		}
-
-		if ( ! wp_next_scheduled( $hook ) ) {
-			wp_schedule_single_event( time() + max( 30, (int) $delay ), $hook );
-			if ( function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
-		}
-	}
-
-	/**
-	 * Whether Action Scheduler functions are available.
+	 * Whether the last analysis batch stopped on consecutive errors less than
+	 * an hour ago.
 	 *
 	 * @return bool
 	 */
-	private static function action_scheduler_available() {
-		return function_exists( 'as_next_scheduled_action' )
-			&& function_exists( 'as_schedule_recurring_action' )
-			&& function_exists( 'as_unschedule_all_actions' );
+	private static function analysis_backing_off() {
+		$error = get_option( Keywords_Analyzer::LAST_ERROR_OPTION, array() );
+		if ( ! is_array( $error ) || empty( $error['time'] ) ) {
+			return false;
+		}
+		$time = strtotime( (string) $error['time'] );
+		return $time && ( current_time( 'timestamp' ) - $time ) < HOUR_IN_SECONDS;
 	}
 }

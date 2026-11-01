@@ -6220,6 +6220,9 @@
 				panels.forEach( function ( panel ) {
 					var active = panelName( panel ) === name;
 					panel.hidden = ! active;
+					// Panels styled with `:not(.is-active) { display: none }`
+					// (the Broken URLs views) need the class as well as `hidden`.
+					panel.classList.toggle( 'is-active', active );
 					panel.setAttribute( 'role', 'tabpanel' );
 					panel.setAttribute( 'tabindex', active ? '0' : '-1' );
 				} );

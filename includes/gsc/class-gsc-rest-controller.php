@@ -295,6 +295,12 @@ class Rest_Controller {
 
 		$result = Index_Fixes::apply( $row );
 		if ( is_wp_error( $result ) ) {
+			// A proposal that can no longer apply must leave the "available"
+			// pile, or bulk fix keeps retrying the same rows and never progresses.
+			if ( in_array( $result->get_error_code(), array( 'convertrack_gsc_indexing_api_not_eligible', 'convertrack_gsc_fix_unavailable', 'convertrack_gsc_fix_stale' ), true ) ) {
+				Database::save_fix_suggestion( $id, Index_Fixes::suggest( $row ) );
+				Database::clear_summary_cache();
+			}
 			return $result;
 		}
 

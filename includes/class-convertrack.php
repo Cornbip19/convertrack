@@ -76,6 +76,12 @@ final class Plugin {
 	 */
 	public $gsc_keywords_admin;
 
+	/** @var \Convertrack\GSC\Keywords_Autoapply */
+	public $gsc_keywords_autoapply;
+
+	/** @var \Convertrack\GSC\Keywords_Autoapply_Content */
+	public $gsc_keywords_autoapply_content;
+
 	/**
 	 * @var \Convertrack\NotFound\Rest_Controller
 	 */
@@ -141,6 +147,8 @@ final class Plugin {
 		$this->gsc_keywords_analyzer = new \Convertrack\GSC\Keywords_Analyzer();
 		$this->gsc_keywords_rest     = new \Convertrack\GSC\Keywords_Rest_Controller();
 		$this->gsc_keywords_admin    = new \Convertrack\GSC\Keywords_Admin();
+		$this->gsc_keywords_autoapply = new \Convertrack\GSC\Keywords_Autoapply();
+		$this->gsc_keywords_autoapply_content = new \Convertrack\GSC\Keywords_Autoapply_Content();
 		$this->notfound_rest      = new \Convertrack\NotFound\Rest_Controller();
 		$this->notfound_cron      = new \Convertrack\NotFound\Cron();
 		$this->notfound_admin     = new \Convertrack\NotFound\Admin();
@@ -161,11 +169,17 @@ final class Plugin {
 		$this->gsc_keywords_analyzer->register();
 		$this->gsc_keywords_rest->register();
 		$this->gsc_keywords_admin->register();
+		$this->gsc_keywords_autoapply->register();
+		$this->gsc_keywords_autoapply_content->register();
 		$this->notfound_rest->register();
 		$this->notfound_cron->register();
 		$this->notfound_admin->register();
 		$this->notfound_redirector->register();
 		$this->notfound_detector->register();
+
+		// Arms every recurring job once Action Scheduler is ready and repairs
+		// lost jobs or stalled step chains from then on.
+		Scheduler::register();
 
 		// Self-updater only exists in the self-hosted build (see main file).
 		if ( class_exists( __NAMESPACE__ . '\\Updater' ) ) {

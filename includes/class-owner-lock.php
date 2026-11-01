@@ -69,6 +69,13 @@ class Owner_Lock {
 		$replacement['heartbeat'] = $now;
 		$replacement['expires']   = $now + max( 15, (int) $ttl );
 
+		// Same-second heartbeat: the value would not change, and MySQL reports
+		// 0 affected rows for a no-op UPDATE, which compare_and_swap() would
+		// misread as a lost lease. Ownership was verified above, so keep it.
+		if ( $replacement === $existing ) {
+			return true;
+		}
+
 		return self::compare_and_swap( $option, $existing, $replacement );
 	}
 

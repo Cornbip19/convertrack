@@ -66,6 +66,7 @@ class Manifest {
 			'convertrack_rollup_last_error',
 			'convertrack_cleanup_last_error',
 			'convertrack_last_cleanup',
+			'convertrack_jobs_healed_at',
 		);
 	}
 
@@ -135,6 +136,7 @@ class Manifest {
 				'convertrack_gsc_keywords_tick',
 				'convertrack_gsc_keywords_sync_step',
 				'convertrack_gsc_keywords_analyze_now',
+				'convertrack_gsc_keywords_autoapply',
 				'convertrack_404_refresh_valid_urls',
 				'convertrack_404_process_recommendations',
 				'convertrack_404_process_now',

@@ -273,6 +273,7 @@ class Admin {
 			'search'    => array(
 				'gsc'      => array( 'label' => __( 'Indexing', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc' ),
 				'keywords' => array( 'label' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc-keywords' ),
+				'autoapply' => array( 'label' => __( 'Auto-Apply', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc-autoapply' ),
 			),
 		);
 
@@ -432,7 +433,7 @@ class Admin {
 	 */
 	public function highlight_parent_menu( $parent_file ) {
 		$page = self::current_admin_page_slug();
-		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels', 'convertrack-gsc-keywords' ), true ) ) {
+		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels', 'convertrack-gsc-keywords', 'convertrack-gsc-autoapply' ), true ) ) {
 			return self::MENU_SLUG;
 		}
 
@@ -455,7 +456,7 @@ class Admin {
 		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels' ), true ) ) {
 			return 'convertrack-pages';
 		}
-		if ( 'convertrack-gsc-keywords' === $page ) {
+		if ( in_array( $page, array( 'convertrack-gsc-keywords', 'convertrack-gsc-autoapply' ), true ) ) {
 			return 'convertrack-gsc';
 		}
 
@@ -480,6 +481,7 @@ class Admin {
 			'convertrack-heatmaps'     => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
 			'convertrack-funnels'      => __( 'Journeys', 'convertrack-click-conversion-analytics' ),
 			'convertrack-gsc-keywords' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ),
+			'convertrack-gsc-autoapply' => __( 'Keyword Auto-Apply', 'convertrack-click-conversion-analytics' ),
 		);
 
 		if ( ! isset( $titles[ $page ] ) ) {
