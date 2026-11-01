@@ -28,10 +28,14 @@ jobs:
             core_url: 'https://wordpress.org/wordpress-5.8.3.tar.gz'
             phpunit_phar: '7.5'
             polyfills_tag: '1.1.5'
+          # 'auto' resolves the current release at run time and pairs the test
+          # library tag with the matching core tarball. trunk's library requires
+          # classes that only exist in the next major (WP_Secrets_Store broke
+          # the 2.9.0 run against a 7.1 core).
           - wp: 'latest'
             php: '8.3'
-            tests_ref: 'trunk'
-            core_url: 'https://wordpress.org/latest.tar.gz'
+            tests_ref: 'auto'
+            core_url: 'auto'
             phpunit_phar: '9.6'
             polyfills_tag: '4.0.0'
     services:
@@ -100,6 +104,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "$WP_TESTS_REF" = "auto" ]; then
+            WP_VERSION="$(curl --fail --location --silent --show-error 'https://api.wordpress.org/core/version-check/1.7/' | php -r '$d = json_decode( stream_get_contents( STDIN ), true ); echo $d["offers"][0]["version"];')"
+            test -n "$WP_VERSION"
+            WP_TESTS_REF="tags/${WP_VERSION}"
+            WP_CORE_URL="https://wordpress.org/wordpress-${WP_VERSION}.tar.gz"
+            echo "Resolved latest WordPress to ${WP_VERSION}"
+          fi
           sudo apt-get update -qq
           sudo apt-get install -y -qq subversion default-mysql-client
           mkdir -p /tmp/wordpress-tests-lib

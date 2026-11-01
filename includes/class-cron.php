@@ -28,10 +28,9 @@ class Cron {
 		add_action( self::CLEANUP, array( __CLASS__, 'run_session_cleanup' ) );
 		add_action( self::ROLLUP_CONTINUE, array( __CLASS__, 'run_rollup_continuation' ) );
 
-		// Self-heal scheduling if an event was lost.
-		if ( ! wp_next_scheduled( self::HOURLY ) || ! wp_next_scheduled( self::CLEANUP ) ) {
-			self::schedule();
-		}
+		// Lost events are re-armed by Scheduler::heal() after init. Doing it
+		// here, on plugins_loaded, translated the schedule label before init,
+		// which WordPress 6.7+ reports as incorrect usage.
 	}
 
 	/**
