@@ -351,13 +351,39 @@
 			if ( h.hide ) {
 				th.classList.add( 'cvtrk-col-hide-' + h.hide );
 			}
+			if ( h.sticky ) {
+				th.classList.add( 'cvtrk-col-sticky-end' );
+			}
 			tr.appendChild( th );
 		} );
 		thead.appendChild( tr );
 		t.appendChild( thead );
 		t.appendChild( el( 'tbody' ) );
 		wrap.appendChild( t );
+		scheduleTableOverflowSync();
 		return wrap;
+	}
+
+	// A wide table scrolls inside its wrapper; the marker lets a pinned end
+	// column show a shadow only while there is something to scroll past.
+	var tableOverflowTimer = null;
+	function syncTableOverflow() {
+		tableOverflowTimer = null;
+		if ( ! document.querySelectorAll ) {
+			return;
+		}
+		var wraps = document.querySelectorAll( '.cvtrk-table-wrap' );
+		Array.prototype.forEach.call( wraps, function ( wrap ) {
+			wrap.classList.toggle( 'has-overflow', wrap.scrollWidth > wrap.clientWidth + 1 );
+		} );
+	}
+	function scheduleTableOverflowSync() {
+		if ( null === tableOverflowTimer ) {
+			tableOverflowTimer = window.setTimeout( syncTableOverflow, 0 );
+		}
+	}
+	if ( typeof window.addEventListener === 'function' ) {
+		window.addEventListener( 'resize', scheduleTableOverflowSync );
 	}
 
 	// Mirror a header's responsive-hide class onto the row's cells so the
@@ -366,6 +392,9 @@
 		headers.forEach( function ( h, i ) {
 			if ( h.hide && tr.cells[ i ] ) {
 				tr.cells[ i ].classList.add( 'cvtrk-col-hide-' + h.hide );
+			}
+			if ( h.sticky && tr.cells[ i ] ) {
+				tr.cells[ i ].classList.add( 'cvtrk-col-sticky-end' );
 			}
 		} );
 	}
@@ -504,21 +533,266 @@
 
 	/* Rendering ----------------------------------------------------------- */
 
-	function renderCards( totals ) {
+	/* Chart helpers (2.11) ------------------------------------------------ */
+
+	// Round a maximum up to a "nice" axis ceiling (1, 2, 2.5, 5 x 10^n).
+	function niceCeil( value ) {
+		if ( ! ( value > 0 ) ) {
+			return 1;
+		}
+		var exp = Math.pow( 10, Math.floor( Math.log( value ) / Math.LN10 ) );
+		var f = value / exp;
+		var nice = f <= 1 ? 1 : ( f <= 2 ? 2 : ( f <= 2.5 ? 2.5 : ( f <= 5 ? 5 : 10 ) ) );
+		// Five steps divide every nice ceiling from 5 upward into whole numbers.
+		return Math.max( 5, nice * exp );
+	}
+
+	function parseDay( iso ) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})/.exec( String( iso || '' ) );
+		return m ? new Date( Number( m[ 1 ] ), Number( m[ 2 ] ) - 1, Number( m[ 3 ] ) ) : null;
+	}
+
+	function formatDay( iso ) {
+		var d = parseDay( iso );
+		if ( ! d ) {
+			return String( iso || '' );
+		}
+		try {
+			return d.toLocaleDateString( undefined, { month: 'short', day: 'numeric' } );
+		} catch ( e ) {
+			return String( iso ).slice( 5 );
+		}
+	}
+
+	function formatDayLong( iso ) {
+		var d = parseDay( iso );
+		if ( ! d ) {
+			return String( iso || '' );
+		}
+		try {
+			return d.toLocaleDateString( undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' } );
+		} catch ( e ) {
+			return String( iso );
+		}
+	}
+
+	function chartTip( box ) {
+		var tip = box.querySelector( '.cvtrk-chart-tip' );
+		if ( ! tip ) {
+			tip = el( 'div', 'cvtrk-chart-tip' );
+			tip.hidden = true;
+			box.appendChild( tip );
+		}
+		return tip;
+	}
+
+	// Place the tooltip at a chart point. x/y are pixels inside the chart box.
+	function showChartTip( box, tip, title, rows, x, y ) {
+		clear( tip );
+		tip.appendChild( el( 'span', 'cvtrk-chart-tip-title', title ) );
+		rows.forEach( function ( r ) {
+			var row = el( 'span', 'cvtrk-chart-tip-row' );
+			var label = el( 'span' );
+			if ( r.cls ) {
+				label.appendChild( el( 'span', 'cvtrk-swatch ' + r.cls ) );
+			}
+			label.appendChild( document.createTextNode( r.label ) );
+			row.appendChild( label );
+			row.appendChild( el( 'b', null, r.value ) );
+			tip.appendChild( row );
+		} );
+		tip.hidden = false;
+		var w = box.clientWidth || 1;
+		tip.style.left = Math.max( 84, Math.min( w - 84, x ) ) + 'px';
+		tip.style.top = Math.max( 56, y ) + 'px';
+	}
+
+	// Pixel position of an SVG viewBox point inside the chart box.
+	function svgPoint( box, svg, vx, vy, width, height ) {
+		var rect = svg.getBoundingClientRect();
+		var boxRect = box.getBoundingClientRect();
+		return {
+			x: ( rect.left - boxRect.left ) + vx * ( ( rect.width || width ) / width ),
+			y: ( rect.top - boxRect.top ) + vy * ( ( rect.height || height ) / height )
+		};
+	}
+
+	function drawGrid( svg, pad, innerW, innerH, width, leftMax, rightMax, showRight ) {
+		var steps = 5;
+		for ( var g = 0; g <= steps; g++ ) {
+			var y = pad.top + innerH - ( innerH * g / steps );
+			svg.appendChild( svgEl( 'line', { class: 'cvtrk-chart-gridline', x1: pad.left, y1: y, x2: width - pad.right, y2: y } ) );
+			var lt = svgEl( 'text', { class: 'cvtrk-chart-axis is-tick', x: pad.left - 8, y: y + 4, 'text-anchor': 'end' } );
+			lt.textContent = num( Math.round( leftMax * g / steps ) );
+			svg.appendChild( lt );
+			if ( showRight ) {
+				var rt = svgEl( 'text', { class: 'cvtrk-chart-axis is-tick is-right', x: width - pad.right + 8, y: y + 4 } );
+				rt.textContent = num( Math.round( rightMax * g / steps ) );
+				svg.appendChild( rt );
+			}
+		}
+	}
+
+	function setCaption( key, text ) {
+		var node = document.querySelector( '[data-cvtrk-caption="' + key + '"]' );
+		if ( node ) {
+			node.textContent = text || '';
+		}
+	}
+
+	function renderSparkline( key, values ) {
+		var svg = document.querySelector( '[data-cvtrk-spark="' + key + '"]' );
+		if ( ! svg ) {
+			return;
+		}
+		clear( svg );
+		if ( ! values || values.length < 2 ) {
+			return;
+		}
+		var w = 120;
+		var h = 36;
+		var padY = 3;
+		var max = Math.max.apply( null, values.concat( [ 1 ] ) );
+		var pts = values.map( function ( v, i ) {
+			return [ ( i / ( values.length - 1 ) ) * w, padY + ( h - 2 * padY ) - ( v / max ) * ( h - 2 * padY ) ];
+		} );
+		var d = pts.map( function ( p, i ) {
+			return ( i === 0 ? 'M' : 'L' ) + p[ 0 ].toFixed( 1 ) + ' ' + p[ 1 ].toFixed( 1 );
+		} ).join( ' ' );
+		svg.appendChild( svgEl( 'path', { class: 'cvtrk-spark-area', d: d + ' L' + w + ' ' + h + ' L0 ' + h + ' Z' } ) );
+		svg.appendChild( svgEl( 'path', { class: 'cvtrk-spark-line', d: d } ) );
+		var last = pts[ pts.length - 1 ];
+		svg.appendChild( svgEl( 'circle', { class: 'cvtrk-spark-dot', cx: last[ 0 ].toFixed( 1 ), cy: last[ 1 ].toFixed( 1 ), r: 2.4 } ) );
+	}
+
+	function renderSparklines( series ) {
+		var dates = Object.keys( series || {} );
+		function pick( key ) {
+			return dates.map( function ( d ) {
+				return Number( ( series[ d ] || {} )[ key ] ) || 0;
+			} );
+		}
+		renderSparkline( 'visitors', pick( 'visitors' ) );
+		renderSparkline( 'pageviews', pick( 'pageviews' ) );
+		renderSparkline( 'conversion_events', dates.map( function ( d ) {
+			var row = series[ d ] || {};
+			return Number( row.conversion_events !== undefined ? row.conversion_events : row.conversions ) || 0;
+		} ) );
+		renderSparkline( 'conversions', pick( 'conversions' ) );
+	}
+
+	// Sticky section navigation: smooth scroll on click, highlight on scroll.
+	function initSectionNav() {
+		var nav = attr( 'section-nav' );
+		if ( ! nav ) {
+			return;
+		}
+		var links = Array.prototype.slice.call( nav.querySelectorAll( 'a[href^="#"]' ) );
+		var sections = links.map( function ( a ) {
+			return document.getElementById( a.getAttribute( 'href' ).slice( 1 ) );
+		} );
+		function activate( id ) {
+			links.forEach( function ( a ) {
+				var on = a.getAttribute( 'href' ) === '#' + id;
+				a.classList.toggle( 'is-active', on );
+				if ( on ) {
+					a.setAttribute( 'aria-current', 'location' );
+				} else {
+					a.removeAttribute( 'aria-current' );
+				}
+			} );
+		}
+		var suppressUntil = 0;
+		links.forEach( function ( a ) {
+			a.addEventListener( 'click', function ( e ) {
+				var target = document.getElementById( a.getAttribute( 'href' ).slice( 1 ) );
+				if ( ! target ) {
+					return;
+				}
+				e.preventDefault();
+				suppressUntil = Date.now() + 700;
+				activate( target.id );
+				target.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+				if ( window.history && history.replaceState ) {
+					history.replaceState( null, '', '#' + target.id );
+				}
+			} );
+		} );
+		var timer = null;
+		function update() {
+			timer = null;
+			if ( Date.now() < suppressUntil ) {
+				return;
+			}
+			var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+			var line = y + 120;
+			var doc = document.documentElement;
+			var atBottom = ( window.innerHeight + y ) >= ( doc.scrollHeight - 2 );
+			var current = null;
+			sections.forEach( function ( section ) {
+				if ( ! section ) {
+					return;
+				}
+				var top = section.getBoundingClientRect().top + y;
+				if ( top <= line ) {
+					current = section;
+				}
+			} );
+			// Only a page that was actually scrolled to its end lights the last
+			// section; a page that fits the viewport stays on the first one.
+			if ( atBottom && y > 0 ) {
+				for ( var k = sections.length - 1; k >= 0; k-- ) {
+					if ( sections[ k ] ) {
+						current = sections[ k ];
+						break;
+					}
+				}
+			}
+			if ( ! current ) {
+				current = sections[ 0 ];
+			}
+			if ( current ) {
+				activate( current.id );
+			}
+		}
+		function onScroll() {
+			// A short timer instead of requestAnimationFrame: frames stop in
+			// background tabs, scroll events do not.
+			if ( null === timer ) {
+				timer = window.setTimeout( update, 60 );
+			}
+		}
+		window.addEventListener( 'scroll', onScroll, { passive: true } );
+		window.addEventListener( 'resize', onScroll );
+		update();
+	}
+
+	function renderCards( totals, series ) {
 		if ( ! totals ) {
 			return;
 		}
+		// "Conversions" is conversion events everywhere on the dashboard; the
+		// rate is still session based and says so in its caption.
+		var events = totals.conversion_events !== undefined && totals.conversion_events !== null ? totals.conversion_events : totals.conversions;
 		set( 'pageviews', num( totals.pageviews ) );
 		set( 'clicks', num( totals.clicks ) );
-		set( 'conversions', num( totals.conversions ) );
+		set( 'conversions', num( events ) );
 		set( 'unique_visitors', num( totals.unique_visitors ) );
 		set( 'conversion_rate', ( Number( totals.conversion_rate ) || 0 ) + '%' );
 		set( 'click_through', ( Number( totals.click_through ) || 0 ) + '%' );
 
 		var cmp = totals.comparison || {};
-		[ 'pageviews', 'clicks', 'conversions', 'unique_visitors', 'conversion_rate', 'click_through' ].forEach( function ( k ) {
+		[ 'pageviews', 'clicks', 'unique_visitors', 'conversion_rate', 'click_through' ].forEach( function ( k ) {
 			setDelta( k, cmp[ k ] );
 		} );
+		setDelta( 'conversions', cmp.conversion_events !== undefined ? cmp.conversion_events : cmp.conversions );
+
+		var days = Object.keys( series || {} ).length;
+		setCaption( 'unique_visitors', totals.sessions !== undefined ? formatTemplate( I18N.sessionsCount || '%1$s sessions', num( totals.sessions ), '' ) : '' );
+		setCaption( 'pageviews', days > 1 ? formatTemplate( I18N.avgPerDay || 'avg %1$s per day', num( Math.round( ( Number( totals.pageviews ) || 0 ) / days ) ), '' ) : '' );
+		setCaption( 'conversions', formatTemplate( I18N.convertingSessionsCount || '%1$s converting sessions', num( totals.conversions ), '' ) );
+		setCaption( 'conversion_rate', formatTemplate( I18N.ofSessions || '%1$s of %2$s sessions', num( totals.conversions ), num( totals.sessions ) ) );
+		renderSparklines( series );
 	}
 
 	function healthCard( item ) {
@@ -551,7 +825,7 @@
 		var active = Number( stats && stats.active ) || 0;
 		var pageviews = Number( totals.pageviews ) || 0;
 		var clicks = Number( totals.clicks ) || 0;
-		var conversions = Number( totals.conversions ) || 0;
+		var conversions = Number( totals.conversion_events !== undefined ? totals.conversion_events : totals.conversions ) || 0;
 		var total404 = Number( notFound && notFound.total ) || 0;
 		var unresolved = Number( notFound && notFound.unresolved ) || 0;
 		var recommended = Number( notFound && notFound.recommended ) || 0;
@@ -801,24 +1075,43 @@
 			empty( box );
 			return;
 		}
+		var lastIndex = dates.length - 1;
 
 		var seriesMeta = [
-			{ key: 'pageviews', cls: 'is-pageviews', label: I18N.pageviews || 'Pageviews' },
-			{ key: 'clicks', cls: 'is-clicks', label: I18N.clicks || 'Clicks' },
-			{ key: 'conversions', cls: 'is-conversions', label: I18N.conversions || 'Conversions' }
+			{ key: 'pageviews', cls: 'is-pageviews', label: I18N.pageviews || 'Pageviews', axis: 'left' },
+			{ key: 'clicks', cls: 'is-clicks', label: I18N.clicks || 'Clicks', axis: 'left' },
+			{ key: 'conversions', cls: 'is-conversions', label: I18N.conversions || 'Conversions', axis: 'right' }
 		];
+		// Conversions are conversion events; converting sessions ride along in
+		// the tooltip for the rate.
+		function value( d, key ) {
+			var row = series[ d ] || {};
+			if ( key === 'conversions' && row.conversion_events !== undefined ) {
+				return Number( row.conversion_events ) || 0;
+			}
+			return Number( row[ key ] ) || 0;
+		}
 		var visible = seriesMeta.filter( function ( s ) { return ! seriesHidden[ s.key ]; } );
+		var showRight = visible.some( function ( s ) { return s.axis === 'right'; } );
 
-		var max = 1;
+		var leftMax = 0;
+		var rightMax = 0;
 		dates.forEach( function ( d ) {
 			visible.forEach( function ( s ) {
-				max = Math.max( max, Number( series[ d ][ s.key ] ) || 0 );
+				var v = value( d, s.key );
+				if ( s.axis === 'right' ) {
+					rightMax = Math.max( rightMax, v );
+				} else {
+					leftMax = Math.max( leftMax, v );
+				}
 			} );
 		} );
+		leftMax = niceCeil( leftMax );
+		rightMax = niceCeil( rightMax );
 
 		var width = 920;
-		var height = 280;
-		var pad = { top: 20, right: 24, bottom: 42, left: 50 };
+		var height = 300;
+		var pad = { top: 18, right: showRight ? 54 : 24, bottom: 40, left: 54 };
 		var innerW = width - pad.left - pad.right;
 		var innerH = height - pad.top - pad.bottom;
 		var svg = svgEl( 'svg', {
@@ -827,55 +1120,115 @@
 			role: 'img',
 			'aria-label': I18N.activityTrend || 'Activity trend'
 		} );
+		drawGrid( svg, pad, innerW, innerH, width, leftMax, rightMax, showRight );
 
-		[ 0, 0.25, 0.5, 0.75, 1 ].forEach( function ( step ) {
-			var y = pad.top + ( innerH * step );
-			svg.appendChild( svgEl( 'line', { class: 'cvtrk-chart-gridline', x1: pad.left, y1: y, x2: width - pad.right, y2: y } ) );
+		function xAt( i ) {
+			return pad.left + ( lastIndex === 0 ? innerW / 2 : ( innerW * i ) / lastIndex );
+		}
+		function yAt( v, axis ) {
+			var max = axis === 'right' ? rightMax : leftMax;
+			return pad.top + innerH - ( v / ( max || 1 ) ) * innerH;
+		}
+
+		// Date ticks: at most ~8, always including the first and last day.
+		var tickEvery = Math.max( 1, Math.ceil( dates.length / 8 ) );
+		var ticks = [];
+		for ( var ti = 0; ti < dates.length; ti += tickEvery ) {
+			ticks.push( ti );
+		}
+		if ( ticks[ ticks.length - 1 ] !== lastIndex ) {
+			if ( ticks.length > 1 && lastIndex - ticks[ ticks.length - 1 ] < tickEvery / 2 ) {
+				ticks.pop();
+			}
+			ticks.push( lastIndex );
+		}
+		ticks.forEach( function ( i ) {
+			var t = svgEl( 'text', {
+				class: 'cvtrk-chart-axis is-tick',
+				x: xAt( i ).toFixed( 2 ),
+				y: height - 14,
+				'text-anchor': i === lastIndex && lastIndex > 0 ? 'end' : ( i === 0 ? 'start' : 'middle' )
+			} );
+			t.textContent = formatDay( dates[ i ] );
+			svg.appendChild( t );
 		} );
 
-		function xy( d, i, key ) {
-			var x = pad.left + ( dates.length === 1 ? innerW / 2 : ( innerW * i ) / ( dates.length - 1 ) );
-			var y = pad.top + innerH - ( ( Number( series[ d ][ key ] ) || 0 ) / max ) * innerH;
-			return { x: x, y: y };
+		if ( ! seriesHidden.pageviews && lastIndex > 0 ) {
+			var areaD = dates.map( function ( d, i ) {
+				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( d, 'pageviews' ), 'left' ).toFixed( 2 );
+			} ).join( ' ' ) + ' L' + xAt( lastIndex ).toFixed( 2 ) + ' ' + ( pad.top + innerH ) + ' L' + xAt( 0 ).toFixed( 2 ) + ' ' + ( pad.top + innerH ) + ' Z';
+			svg.appendChild( svgEl( 'path', { class: 'cvtrk-area is-pageviews', d: areaD } ) );
 		}
 
-		function pathFor( key ) {
-			return dates.map( function ( d, i ) {
-				var p = xy( d, i, key );
-				return ( i === 0 ? 'M' : 'L' ) + p.x.toFixed( 2 ) + ' ' + p.y.toFixed( 2 );
+		var dots = {};
+		visible.forEach( function ( s ) {
+			var d = dates.map( function ( date, i ) {
+				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( date, s.key ), s.axis ).toFixed( 2 );
 			} ).join( ' ' );
-		}
+			svg.appendChild( svgEl( 'path', { class: 'cvtrk-line ' + s.cls, d: d } ) );
+			if ( dates.length <= 31 ) {
+				dates.forEach( function ( date, i ) {
+					var dot = svgEl( 'circle', {
+						class: 'cvtrk-line-dot ' + s.cls,
+						cx: xAt( i ).toFixed( 2 ),
+						cy: yAt( value( date, s.key ), s.axis ).toFixed( 2 ),
+						r: 2.5
+					} );
+					svg.appendChild( dot );
+					dots[ s.key + ':' + i ] = dot;
+				} );
+			}
+		} );
 
-		function drawLine( key, cls ) {
-			svg.appendChild( svgEl( 'path', { class: 'cvtrk-line ' + cls, d: pathFor( key ) } ) );
-			dates.forEach( function ( d, i ) {
-				if ( dates.length > 31 && i !== dates.length - 1 ) {
-					return;
-				}
-				var p = xy( d, i, key );
-				var dot = svgEl( 'circle', { class: 'cvtrk-line-dot ' + cls, cx: p.x.toFixed( 2 ), cy: p.y.toFixed( 2 ), r: 2.5 } );
-				var title = svgEl( 'title' );
-				title.textContent = d + ' - ' + key + ': ' + num( series[ d ][ key ] );
-				dot.appendChild( title );
-				svg.appendChild( dot );
+		var guide = svgEl( 'line', { class: 'cvtrk-chart-guide', x1: 0, x2: 0, y1: pad.top, y2: pad.top + innerH } );
+		guide.style.display = 'none';
+		svg.appendChild( guide );
+		var hit = svgEl( 'rect', { class: 'cvtrk-chart-hit', x: pad.left - 8, y: pad.top, width: innerW + 16, height: innerH } );
+		svg.appendChild( hit );
+
+		var tip = chartTip( box );
+		var hovered = -1;
+		function highlight( i ) {
+			Object.keys( dots ).forEach( function ( k ) {
+				dots[ k ].classList.toggle( 'is-hover', k.split( ':' )[ 1 ] === String( i ) );
 			} );
 		}
-
-		visible.forEach( function ( s ) { drawLine( s.key, s.cls ); } );
-
-		var zero = svgEl( 'text', { class: 'cvtrk-chart-axis', x: 8, y: height - pad.bottom + 4 } );
-		zero.textContent = '0';
-		svg.appendChild( zero );
-		var maxLabel = svgEl( 'text', { class: 'cvtrk-chart-axis', x: 8, y: pad.top + 4 } );
-		maxLabel.textContent = num( max );
-		svg.appendChild( maxLabel );
-
-		var firstLabel = svgEl( 'text', { class: 'cvtrk-chart-axis', x: pad.left, y: height - 12 } );
-		firstLabel.textContent = dates[ 0 ].slice( 5 );
-		svg.appendChild( firstLabel );
-		var lastLabel = svgEl( 'text', { class: 'cvtrk-chart-axis is-end', x: width - pad.right, y: height - 12 } );
-		lastLabel.textContent = dates[ dates.length - 1 ].slice( 5 );
-		svg.appendChild( lastLabel );
+		function showAt( i ) {
+			if ( i === hovered ) {
+				return;
+			}
+			hovered = i;
+			var date = dates[ i ];
+			var row = series[ date ] || {};
+			guide.setAttribute( 'x1', xAt( i ).toFixed( 2 ) );
+			guide.setAttribute( 'x2', xAt( i ).toFixed( 2 ) );
+			guide.style.display = '';
+			highlight( i );
+			var rows = seriesMeta.map( function ( s ) {
+				return { cls: s.cls, label: s.label, value: num( value( date, s.key ) ) };
+			} );
+			if ( row.conversion_events !== undefined && row.conversions !== undefined ) {
+				rows.push( { label: I18N.convertingSessions || 'Converting sessions', value: num( row.conversions ) } );
+			}
+			if ( row.visitors !== undefined ) {
+				rows.push( { label: I18N.visitors || 'Visitors', value: num( row.visitors ) } );
+			}
+			var p = svgPoint( box, svg, xAt( i ), pad.top, width, height );
+			showChartTip( box, tip, formatDayLong( date ), rows, p.x, p.y + 6 );
+		}
+		function indexFromEvent( e ) {
+			var rect = svg.getBoundingClientRect();
+			var px = ( e.clientX - rect.left ) * ( width / ( rect.width || width ) );
+			var rel = ( px - pad.left ) / ( innerW || 1 );
+			return Math.max( 0, Math.min( lastIndex, Math.round( rel * lastIndex ) ) );
+		}
+		hit.addEventListener( 'mousemove', function ( e ) { showAt( indexFromEvent( e ) ); } );
+		hit.addEventListener( 'mouseleave', function () {
+			hovered = -1;
+			tip.hidden = true;
+			guide.style.display = 'none';
+			highlight( -1 );
+		} );
 
 		function toggleSeries( key ) {
 			var visibleCount = seriesMeta.filter( function ( s ) { return ! seriesHidden[ s.key ]; } ).length;
@@ -889,31 +1242,33 @@
 
 		var legend = el( 'div', 'cvtrk-legend' );
 		seriesMeta.forEach( function ( s ) {
-			legend.appendChild( legendToggle( s.key, s.cls, s.label, toggleSeries ) );
+			legend.appendChild( legendToggle( s.key, s.cls, s.label + ( s.axis === 'right' ? ' (' + ( I18N.rightScale || 'right scale' ) + ')' : '' ), toggleSeries ) );
 		} );
 
 		box.appendChild( svg );
 		box.appendChild( legend );
-		var totals = { pageviews: 0, clicks: 0, conversions: 0 };
+
+		var totals = { pageviews: 0, clicks: 0, conversions: 0, sessions: 0 };
 		var peakDate = dates[ 0 ];
 		var peakValue = -1;
 		dates.forEach( function ( date ) {
-			var dayTotal = 0;
-			Object.keys( totals ).forEach( function ( key ) {
-				var value = Number( series[ date ][ key ] ) || 0;
-				totals[ key ] += value;
-				dayTotal += value;
-			} );
-			if ( dayTotal > peakValue ) {
-				peakValue = dayTotal;
+			var pv = value( date, 'pageviews' );
+			var ck = value( date, 'clicks' );
+			totals.pageviews += pv;
+			totals.clicks += ck;
+			totals.conversions += value( date, 'conversions' );
+			totals.sessions += Number( ( series[ date ] || {} ).conversions ) || 0;
+			if ( pv + ck > peakValue ) {
+				peakValue = pv + ck;
 				peakDate = date;
 			}
 		} );
-		appendChartSummary( box, dates[ 0 ] + ' to ' + dates[ dates.length - 1 ] + ': ' +
-			num( totals.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ) + ', ' +
-			num( totals.clicks ) + ' ' + ( I18N.clicks || 'clicks' ) + ', and ' +
-			num( totals.conversions ) + ' ' + ( I18N.conversions || 'conversions' ) +
-			'. Peak activity was ' + peakDate + '.' );
+		appendChartSummary( box, formatDay( dates[ 0 ] ) + ' – ' + formatDay( dates[ lastIndex ] ) + ': ' +
+			num( totals.pageviews ) + ' ' + String( I18N.pageviews || 'pageviews' ).toLowerCase() + ', ' +
+			num( totals.clicks ) + ' ' + String( I18N.clicks || 'clicks' ).toLowerCase() + ', ' +
+			num( totals.conversions ) + ' ' + String( I18N.conversions || 'conversions' ).toLowerCase() +
+			' (' + num( totals.sessions ) + ' ' + String( I18N.convertingSessions || 'converting sessions' ).toLowerCase() + '). ' +
+			( I18N.peakDay || 'Peak day' ) + ': ' + formatDay( peakDate ) + '.' );
 	}
 
 	function renderHourlyChart( items ) {
@@ -929,71 +1284,137 @@
 			return;
 		}
 
-		var max = 1;
+		// Pageviews and clicks are distinct events, so they stack into a bar of
+		// events per hour. Conversions are a subset of those events and get a
+		// line on their own scale instead of being stacked on top.
+		var width = 920;
+		var height = 260;
+		var pad = { top: 18, right: 46, bottom: 36, left: 46 };
+		var innerW = width - pad.left - pad.right;
+		var innerH = height - pad.top - pad.bottom;
+		var leftMax = 0;
+		var rightMax = 0;
 		items.forEach( function ( it ) {
-			max = Math.max( max, ( Number( it.pageviews ) || 0 ) + ( Number( it.clicks ) || 0 ) + ( Number( it.conversions ) || 0 ) );
+			leftMax = Math.max( leftMax, ( Number( it.pageviews ) || 0 ) + ( Number( it.clicks ) || 0 ) );
+			rightMax = Math.max( rightMax, Number( it.conversions ) || 0 );
+		} );
+		leftMax = niceCeil( leftMax );
+		rightMax = niceCeil( rightMax );
+
+		var svg = svgEl( 'svg', {
+			class: 'cvtrk-hourchart',
+			viewBox: '0 0 ' + width + ' ' + height,
+			role: 'img',
+			'aria-label': I18N.activityByHour || 'Activity by hour'
+		} );
+		drawGrid( svg, pad, innerW, innerH, width, leftMax, rightMax, true );
+
+		var n = items.length;
+		var slot = innerW / n;
+		var barW = Math.max( 6, slot * 0.62 );
+		var base = pad.top + innerH;
+		function xCenter( i ) {
+			return pad.left + slot * i + slot / 2;
+		}
+		function yLeft( v ) {
+			return base - ( v / ( leftMax || 1 ) ) * innerH;
+		}
+		function yRight( v ) {
+			return base - ( v / ( rightMax || 1 ) ) * innerH;
+		}
+
+		var groups = [];
+		items.forEach( function ( it, i ) {
+			var pv = Number( it.pageviews ) || 0;
+			var ck = Number( it.clicks ) || 0;
+			var x = xCenter( i ) - barW / 2;
+			var g = svgEl( 'g', { class: 'cvtrk-hbar-group' } );
+			if ( pv > 0 ) {
+				g.appendChild( svgEl( 'rect', { class: 'cvtrk-hbar is-pageviews', x: x.toFixed( 2 ), y: yLeft( pv ).toFixed( 2 ), width: barW.toFixed( 2 ), height: ( base - yLeft( pv ) ).toFixed( 2 ), rx: 2 } ) );
+			}
+			if ( ck > 0 ) {
+				g.appendChild( svgEl( 'rect', { class: 'cvtrk-hbar is-clicks', x: x.toFixed( 2 ), y: yLeft( pv + ck ).toFixed( 2 ), width: barW.toFixed( 2 ), height: ( yLeft( pv ) - yLeft( pv + ck ) ).toFixed( 2 ), rx: 2 } ) );
+			}
+			svg.appendChild( g );
+			groups.push( g );
+			if ( i % 3 === 0 ) {
+				var t = svgEl( 'text', { class: 'cvtrk-chart-axis is-tick', x: xCenter( i ).toFixed( 2 ), y: height - 12, 'text-anchor': 'middle' } );
+				t.textContent = String( it.hour || '' ).slice( 0, 2 );
+				svg.appendChild( t );
+			}
 		} );
 
-		var chart = el( 'div', 'cvtrk-hour-bars' );
-		items.forEach( function ( it, index ) {
-			var pv = Number( it.pageviews ) || 0;
-			var clicks = Number( it.clicks ) || 0;
-			var conversions = Number( it.conversions ) || 0;
-			var total = pv + clicks + conversions;
-			var col = el( 'div', 'cvtrk-hour-col' );
-			var stack = el( 'div', 'cvtrk-hour-stack' );
-			if ( total <= 0 ) {
-				stack.className += ' is-empty';
-				stack.style.height = '2px';
-			} else {
-				stack.style.height = Math.max( 4, ( total / max ) * 100 ) + '%';
+		var lineD = items.map( function ( it, i ) {
+			return ( i === 0 ? 'M' : 'L' ) + xCenter( i ).toFixed( 2 ) + ' ' + yRight( Number( it.conversions ) || 0 ).toFixed( 2 );
+		} ).join( ' ' );
+		svg.appendChild( svgEl( 'path', { class: 'cvtrk-hline', d: lineD } ) );
+		items.forEach( function ( it, i ) {
+			if ( ( Number( it.conversions ) || 0 ) > 0 ) {
+				svg.appendChild( svgEl( 'circle', { class: 'cvtrk-hline-dot', cx: xCenter( i ).toFixed( 2 ), cy: yRight( Number( it.conversions ) || 0 ).toFixed( 2 ), r: 3 } ) );
 			}
-			stack.title = it.hour + ' - ' + ( I18N.pageviews || 'Pageviews' ) + ': ' + num( pv ) + ', ' +
-				( I18N.clicks || 'Clicks' ) + ': ' + num( clicks ) + ', ' +
-				( I18N.conversions || 'Conversions' ) + ': ' + num( conversions );
+		} );
 
-			var pvSeg = el( 'span', 'cvtrk-hour-seg is-pageviews' );
-			var clickSeg = el( 'span', 'cvtrk-hour-seg is-clicks' );
-			var convSeg = el( 'span', 'cvtrk-hour-seg is-conversions' );
-			pvSeg.style.flexGrow = Math.max( pv, 0 );
-			clickSeg.style.flexGrow = Math.max( clicks, 0 );
-			convSeg.style.flexGrow = Math.max( conversions, 0 );
-			stack.appendChild( convSeg );
-			stack.appendChild( clickSeg );
-			stack.appendChild( pvSeg );
-			col.appendChild( stack );
-			if ( index % 4 === 0 ) {
-				col.appendChild( el( 'span', 'cvtrk-hour-label', it.hour.slice( 0, 2 ) ) );
+		var guide = svgEl( 'line', { class: 'cvtrk-chart-guide', x1: 0, x2: 0, y1: pad.top, y2: base } );
+		guide.style.display = 'none';
+		svg.appendChild( guide );
+		var hit = svgEl( 'rect', { class: 'cvtrk-chart-hit', x: pad.left, y: pad.top, width: innerW, height: innerH } );
+		svg.appendChild( hit );
+		var tip = chartTip( box );
+		var hovered = -1;
+		function showAt( i ) {
+			if ( i === hovered ) {
+				return;
 			}
-			chart.appendChild( col );
+			hovered = i;
+			var it = items[ i ];
+			groups.forEach( function ( g, gi ) { g.classList.toggle( 'is-hover', gi === i ); } );
+			guide.setAttribute( 'x1', xCenter( i ).toFixed( 2 ) );
+			guide.setAttribute( 'x2', xCenter( i ).toFixed( 2 ) );
+			guide.style.display = '';
+			var p = svgPoint( box, svg, xCenter( i ), pad.top, width, height );
+			showChartTip( box, tip, String( it.hour || '' ) + ' – ' + ( String( it.hour || '' ).slice( 0, 2 ) ) + ':59', [
+				{ cls: 'is-pageviews', label: I18N.pageviews || 'Pageviews', value: num( it.pageviews ) },
+				{ cls: 'is-clicks', label: I18N.clicks || 'Clicks', value: num( it.clicks ) },
+				{ cls: 'is-conversions', label: I18N.conversions || 'Conversions', value: num( it.conversions ) }
+			], p.x, p.y + 6 );
+		}
+		hit.addEventListener( 'mousemove', function ( e ) {
+			var rect = svg.getBoundingClientRect();
+			var px = ( e.clientX - rect.left ) * ( width / ( rect.width || width ) );
+			showAt( Math.max( 0, Math.min( n - 1, Math.floor( ( px - pad.left ) / slot ) ) ) );
+		} );
+		hit.addEventListener( 'mouseleave', function () {
+			hovered = -1;
+			tip.hidden = true;
+			guide.style.display = 'none';
+			groups.forEach( function ( g ) { g.classList.remove( 'is-hover' ); } );
 		} );
 
 		var legend = el( 'div', 'cvtrk-legend' );
 		legend.appendChild( legendItem( 'is-pageviews', I18N.pageviews || 'Pageviews' ) );
 		legend.appendChild( legendItem( 'is-clicks', I18N.clicks || 'Clicks' ) );
-		legend.appendChild( legendItem( 'is-conversions', I18N.conversions || 'Conversions' ) );
+		legend.appendChild( legendItem( 'is-conversions', ( I18N.conversions || 'Conversions' ) + ' (' + ( I18N.rightScale || 'right scale' ) + ')' ) );
 
-		box.appendChild( chart );
+		box.appendChild( svg );
 		box.appendChild( legend );
+
 		var hourTotals = { pageviews: 0, clicks: 0, conversions: 0 };
 		var peak = items[ 0 ];
 		var peakTotal = -1;
 		items.forEach( function ( item ) {
-			var itemTotal = 0;
-			Object.keys( hourTotals ).forEach( function ( key ) {
-				var value = Number( item[ key ] ) || 0;
-				hourTotals[ key ] += value;
-				itemTotal += value;
-			} );
-			if ( itemTotal > peakTotal ) {
-				peakTotal = itemTotal;
+			var activity = ( Number( item.pageviews ) || 0 ) + ( Number( item.clicks ) || 0 );
+			hourTotals.pageviews += Number( item.pageviews ) || 0;
+			hourTotals.clicks += Number( item.clicks ) || 0;
+			hourTotals.conversions += Number( item.conversions ) || 0;
+			if ( activity > peakTotal ) {
+				peakTotal = activity;
 				peak = item;
 			}
 		} );
 		appendChartSummary( box, ( I18N.busiestHour || 'Busiest hour' ) + ': ' + ( peak.hour || '-' ) + '. ' +
-			num( hourTotals.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ) + ', ' +
-			num( hourTotals.clicks ) + ' ' + ( I18N.clicks || 'clicks' ) + ', and ' +
-			num( hourTotals.conversions ) + ' ' + ( I18N.conversions || 'conversions' ) + ' overall.' );
+			num( hourTotals.pageviews ) + ' ' + String( I18N.pageviews || 'pageviews' ).toLowerCase() + ', ' +
+			num( hourTotals.clicks ) + ' ' + String( I18N.clicks || 'clicks' ).toLowerCase() + ', and ' +
+			num( hourTotals.conversions ) + ' ' + String( I18N.conversions || 'conversions' ).toLowerCase() + ' overall.' );
 	}
 
 	function renderEngagement( data ) {
@@ -1005,48 +1426,57 @@
 		box.removeAttribute( 'role' );
 		box.removeAttribute( 'aria-label' );
 
-		var items = [
-			{ key: 'pageviews', label: I18N.pageviews || 'Pageviews', value: Number( data && data.pageviews ) || 0, color: '#145c63' },
-			{ key: 'clicks', label: I18N.clicks || 'Clicks', value: Number( data && data.clicks ) || 0, color: '#188a6b' },
-			{ key: 'scrolls', label: I18N.scrolls || 'Scrolls', value: Number( data && data.scrolls ) || 0, color: '#c58a24' },
-			{ key: 'conversions', label: I18N.conversions || 'Conversions', value: Number( data && data.conversions ) || 0, color: '#b84a62' }
-		];
-		var total = items.reduce( function ( sum, it ) { return sum + it.value; }, 0 );
-		if ( total <= 0 ) {
+		var pv = Number( data && data.pageviews ) || 0;
+		var ck = Number( data && data.clicks ) || 0;
+		var cv = Number( data && data.conversions ) || 0;
+		var sc = Number( data && data.scrolls ) || 0;
+		if ( pv + ck + cv <= 0 ) {
 			empty( box, I18N.noData );
 			return;
 		}
+		var basis = Math.max( pv, ck, cv, 1 );
+		function pctOf( a, b ) {
+			return b > 0 ? Math.round( ( a / b ) * 1000 ) / 10 : 0;
+		}
+		function row( cls, label, value, meta ) {
+			var r = el( 'div', 'cvtrk-ladder-row ' + cls );
+			var head = el( 'div', 'cvtrk-ladder-head' );
+			head.appendChild( el( 'span', 'cvtrk-ladder-label', label ) );
+			head.appendChild( el( 'span', 'cvtrk-ladder-value', num( value ) ) );
+			var track = el( 'span', 'cvtrk-ladder-track' );
+			var fill = el( 'span', 'cvtrk-ladder-fill' );
+			fill.style.width = ( value > 0 ? Math.max( 1.5, ( value / basis ) * 100 ) : 0 ) + '%';
+			track.appendChild( fill );
+			r.appendChild( head );
+			r.appendChild( track );
+			if ( meta ) {
+				r.appendChild( el( 'span', 'cvtrk-ladder-meta', meta ) );
+			}
+			return r;
+		}
 
-		var start = 0;
-		var stops = items.map( function ( it ) {
-			var end = start + ( it.value / total ) * 100;
-			var part = it.color + ' ' + start.toFixed( 2 ) + '% ' + end.toFixed( 2 ) + '%';
-			start = end;
-			return part;
-		} );
+		var ladder = el( 'div', 'cvtrk-ladder' );
+		ladder.appendChild( row( 'is-pageviews', I18N.pageviews || 'Pageviews', pv, '' ) );
+		ladder.appendChild( row( 'is-clicks', I18N.clicks || 'Clicks', ck, formatTemplate( I18N.ofPageviews || '%1$s of pageviews', pctOf( ck, pv ) + '%', '' ) ) );
+		ladder.appendChild( row( 'is-conversions', I18N.conversions || 'Conversions', cv,
+			formatTemplate( I18N.ofClicks || '%1$s of clicks', pctOf( cv, ck ) + '%', '' ) + ' · ' + formatTemplate( I18N.ofPageviews || '%1$s of pageviews', pctOf( cv, pv ) + '%', '' ) ) );
 
-		var wrap = el( 'div', 'cvtrk-donut-wrap' );
-		var donut = el( 'div', 'cvtrk-donut' );
-		donut.style.background = 'conic-gradient(' + stops.join( ',' ) + ')';
-		donut.appendChild( el( 'span', null, num( total ) ) );
-		wrap.appendChild( donut );
+		var note = el( 'div', 'cvtrk-ladder-note' );
+		var noteLabel = el( 'span' );
+		noteLabel.appendChild( el( 'b', null, num( sc ) ) );
+		noteLabel.appendChild( document.createTextNode( ' ' + ( I18N.scrollCheckpoints || 'Scroll checkpoints' ) ) );
+		note.appendChild( noteLabel );
+		note.appendChild( el( 'span', null, I18N.scrollHint || 'Scroll-depth events recorded alongside page visits' ) );
+		ladder.appendChild( note );
+		box.appendChild( ladder );
 
-		var list = el( 'div', 'cvtrk-donut-list' );
-		items.forEach( function ( it ) {
-			var row = el( 'div', 'cvtrk-donut-row' );
-			row.appendChild( el( 'span', 'cvtrk-donut-key is-' + it.key ) );
-			row.appendChild( el( 'span', 'cvtrk-donut-label', it.label ) );
-			row.appendChild( el( 'span', 'cvtrk-donut-value', num( it.value ) ) );
-			list.appendChild( row );
-		} );
-		wrap.appendChild( list );
-		box.appendChild( wrap );
-		appendChartSummary( box, items.map( function ( item ) {
-			return item.label + ': ' + num( item.value );
-		} ).join( '. ' ) + '.' );
+		appendChartSummary( box, ( I18N.pageviews || 'Pageviews' ) + ': ' + num( pv ) + '. ' +
+			( I18N.clicks || 'Clicks' ) + ': ' + num( ck ) + ' (' + pctOf( ck, pv ) + '%). ' +
+			( I18N.conversions || 'Conversions' ) + ': ' + num( cv ) + ' (' + pctOf( cv, pv ) + '% ' + String( I18N.ofPageviews || 'of pageviews' ).replace( '%1$s ', '' ) + '). ' +
+			( I18N.scrollCheckpoints || 'Scroll checkpoints' ) + ': ' + num( sc ) + '.' );
 	}
 
-	function renderButtons( items ) {
+	function renderButtons( items, limit ) {
 		var box = attr( 'top-buttons' );
 		if ( ! box ) {
 			return;
@@ -1055,6 +1485,9 @@
 		if ( ! items || ! items.length ) {
 			empty( box, I18N.noData );
 			return;
+		}
+		if ( limit && items.length > limit ) {
+			items = items.slice( 0, limit );
 		}
 		var max = items[ 0 ].clicks || 1;
 		var t = table( [
@@ -1075,7 +1508,7 @@
 		box.appendChild( t );
 	}
 
-	function renderPages( items, onPick ) {
+	function renderPages( items, onPick, limit ) {
 		var box = attr( 'top-pages' );
 		if ( ! box ) {
 			return;
@@ -1085,6 +1518,9 @@
 			empty( box, I18N.noData );
 			return;
 		}
+		if ( limit && items.length > limit ) {
+			items = items.slice( 0, limit );
+		}
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
 
@@ -1092,7 +1528,8 @@
 			{ label: '' },
 			{ label: I18N.page || 'Page' },
 			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.pageviews || 'Pageviews', num: true },
+			// Narrow two-up cards drop pageviews first; the Analytics page keeps it.
+			{ label: I18N.pageviews || 'Pageviews', num: true, hide: 'grid' },
 			{ label: I18N.conversions || 'Conversions', num: true }
 		];
 		if ( onPick ) {
@@ -1673,7 +2110,7 @@
 		items.forEach( function ( it ) {
 			var tr = el( 'tr' );
 			var sub = it.selector || it.href || '';
-			tr.appendChild( labelCell( it.label || it.selector || '', sub ) );
+			tr.appendChild( labelCell( it.label || ( I18N.unlabelledElement || 'Unlabelled element' ), sub ) );
 			tr.appendChild( clicksCell( it.clicks, max ) );
 			tr.appendChild( convCell( it.conversions ) );
 			body.appendChild( tr );
@@ -2455,6 +2892,7 @@
 	}
 
 	function initOverview() {
+		initSectionNav();
 		var rangeSel = attr( 'range' );
 		var timelineView = attr( 'timeline-view' );
 		var timelineType = attr( 'timeline-type' );
@@ -2476,7 +2914,7 @@
 				.then( function ( data ) {
 					setRegionsBusy( overviewRegions, false );
 					try {
-						renderCards( data.totals );
+						renderCards( data.totals, data.series );
 						set( 'avg_duration', formatDuration( data.avg_session_seconds ) );
 						setLastUpdated();
 						setLive( data.active );
@@ -2491,8 +2929,8 @@
 					renderRegionSafely( 'chart', function () { renderChart( data.series ); }, load );
 					renderRegionSafely( 'hourly-chart', function () { renderHourlyChart( data.activity_hours ); }, load );
 					renderRegionSafely( 'engagement-chart', function () { renderEngagement( data.engagement ); }, load );
-					renderRegionSafely( 'top-buttons', function () { renderButtons( data.top_buttons ); }, load );
-					renderRegionSafely( 'top-pages', function () { renderPages( data.top_pages, null ); }, load );
+					renderRegionSafely( 'top-buttons', function () { renderButtons( data.top_buttons, 10 ); }, load );
+					renderRegionSafely( 'top-pages', function () { renderPages( data.top_pages, null, 8 ); }, load );
 					renderRegionSafely( 'top-sources', function () { renderSources( data.top_sources ); }, load );
 					renderRegionSafely( 'top-search-terms', function () { renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled ); }, load );
 					renderRegionSafely( 'top-countries', function () { renderCountries( data.top_countries, data.geo_enabled ); }, load );
@@ -4397,7 +4835,8 @@
 			state.lastRows.forEach( function ( row ) {
 				var tr = el( 'tr' );
 				tr.appendChild( checkboxCell( row ) );
-				tr.appendChild( labelCell( row.url || '-', row.source_full_url || '', safeUrl( row.source_full_url ) ) );
+				// The full URL repeats the path with the host; it stays in the Details row.
+				tr.appendChild( labelCell( row.url || '-', '', '' ) );
 				tr.appendChild( labelCell( row.referrer_url || '-', '', safeUrl( row.referrer_url ) ) );
 				tr.appendChild( labelCell( dateText( row.last_detected_at ), ( I18N.nfFirstSeen || 'First' ) + ': ' + dateText( row.first_detected_at ) ) );
 				tr.appendChild( numCell( row.hit_count ) );
@@ -5435,6 +5874,9 @@
 				if ( h.hide ) {
 					th.classList.add( 'cvtrk-col-hide-' + h.hide );
 				}
+				if ( h.sticky ) {
+					th.classList.add( 'cvtrk-col-sticky-end' );
+				}
 				if ( h.sort ) {
 					// Real button inside the header so keyboard and screen-reader
 					// users can sort; aria-sort announces the current direction.
@@ -5515,13 +5957,13 @@
 		function typeBadgesCell( labels ) {
 			var td = el( 'td' );
 			var group = el( 'span', 'cvtrk-badge-group' );
-			var shown = ( labels || [] ).slice( 0, 3 );
+			var shown = ( labels || [] ).slice( 0, 2 );
 			shown.forEach( function ( slug ) {
 				group.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray', typeLabels[ slug ] || slug ) );
 			} );
-			if ( ( labels || [] ).length > 3 ) {
-				var more = el( 'span', 'cvtrk-badge cvtrk-badge-gray', '+' + ( labels.length - 3 ) );
-				more.title = labels.slice( 3 ).map( function ( slug ) {
+			if ( ( labels || [] ).length > 2 ) {
+				var more = el( 'span', 'cvtrk-badge cvtrk-badge-gray', '+' + ( labels.length - 2 ) );
+				more.title = labels.slice( 2 ).map( function ( slug ) {
 					return typeLabels[ slug ] || slug;
 				} ).join( ', ' );
 				group.appendChild( more );
@@ -5577,15 +6019,18 @@
 				{ label: '' },
 				{ label: I18N.kwKeyword || 'Keyword', sort: 'query' },
 				{ label: I18N.page || 'Page' },
-				{ label: I18N.kwTypes || 'Type', hide: 'sm' },
+				// Type chips need a wide screen; the Keyword type filter covers the rest.
+				{ label: I18N.kwTypes || 'Type', hide: 'lg' },
 				{ label: I18N.clicks || 'Clicks', num: true, sort: 'clicks' },
 				{ label: I18N.kwImpressions || 'Impressions', num: true, sort: 'impressions' },
 				{ label: I18N.kwCtrShort || 'CTR', num: true, sort: 'ctr' },
 				{ label: I18N.kwPosition || 'Position', num: true, sort: 'position' },
 				{ label: I18N.kwPresence || 'Presence' },
 				{ label: I18N.kwOpportunity || 'Opportunity', num: true, sort: 'opportunity_score' },
-				{ label: I18N.kwAction || 'Recommended action' },
-				{ label: I18N.actions || 'Actions' }
+				// The recommendation repeats in Details; below 1600px it gives way.
+				{ label: I18N.kwAction || 'Recommended action', hide: 'lg' },
+				// Pinned so the buttons stay reachable while the row scrolls.
+				{ label: I18N.actions || 'Actions', sticky: true }
 			];
 			var wrap = sortableTable( kwHeaders );
 			var firstTh = wrap.querySelector( 'thead th' );
@@ -5630,6 +6075,7 @@
 			} );
 
 			tableBox.appendChild( wrap );
+			scheduleTableOverflowSync();
 			updatePagination();
 			updateSelectionCount();
 		}

@@ -516,16 +516,74 @@
 }
 
 .cvtrk-kpi {
+	position: relative;
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
 	min-width: 0;
-	min-height: 98px;
+	min-height: 104px;
 	padding: 15px;
 	border: 1px solid var(--cvtrk-border);
 	border-radius: var(--cvtrk-radius);
 	background: #fff;
 	box-shadow: var(--cvtrk-shadow-sm);
+	overflow: hidden;
+}
+
+.cvtrk-kpi-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 10px;
+	min-height: 15px;
+}
+
+.cvtrk-kpi-caption {
+	color: var(--cvtrk-muted);
+	font-size: 11px;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-kpi-caption:empty {
+	display: none;
+}
+
+.cvtrk-spark {
+	position: absolute;
+	right: 14px;
+	bottom: 12px;
+	width: 112px;
+	height: 34px;
+	color: var(--cvtrk-teal);
+	opacity: 0.9;
+	pointer-events: none;
+}
+
+.cvtrk-kpi.is-accent .cvtrk-spark {
+	color: var(--cvtrk-green);
+}
+
+.cvtrk-spark .cvtrk-spark-area {
+	fill: currentColor;
+	opacity: 0.12;
+}
+
+.cvtrk-spark .cvtrk-spark-line {
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+	vector-effect: non-scaling-stroke;
+}
+
+.cvtrk-spark .cvtrk-spark-dot {
+	fill: currentColor;
+}
+
+.cvtrk-kpi .cvtrk-kpi-body {
+	padding-right: 120px;
 }
 
 .cvtrk-kpi-icon {
@@ -3797,4 +3855,382 @@ a.cvtrk-health-card:focus {
 	margin: 8px 0 0;
 	color: var(--cvtrk-muted);
 	font-size: 12px;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2.11: section navigation, chart tooltips, hourly SVG, engagement ladder */
+
+.cvtrk-section-nav {
+	position: sticky;
+	top: 32px;
+	z-index: 20;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin: 0 0 16px;
+	padding: 6px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius);
+	background: rgba(255, 255, 255, 0.96);
+	box-shadow: var(--cvtrk-shadow-sm);
+	backdrop-filter: blur(6px);
+}
+
+.cvtrk-section-nav a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+	padding: 4px 12px;
+	border-radius: 999px;
+	color: var(--cvtrk-secondary);
+	font-size: 12.5px;
+	font-weight: 600;
+	text-decoration: none;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.cvtrk-section-nav a:hover {
+	background: var(--cvtrk-teal-soft);
+	color: var(--cvtrk-teal-dark);
+}
+
+.cvtrk-section-nav a:focus-visible {
+	outline: none;
+	box-shadow: var(--cvtrk-focus);
+}
+
+.cvtrk-section-nav a.is-active {
+	background: var(--cvtrk-navy);
+	color: #fff;
+}
+
+.cvtrk-section {
+	margin: 0 0 4px;
+	scroll-margin-top: 92px;
+}
+
+.cvtrk-section.cvtrk-grid {
+	margin-bottom: 16px;
+}
+
+.cvtrk-section.cvtrk-grid > .cvtrk-card {
+	margin-bottom: 0;
+}
+
+@media (max-width: 782px) {
+	.cvtrk-section-nav {
+		top: 46px;
+	}
+}
+
+/* Charts: tooltip and guide line shared by the trend and hourly charts. */
+.cvtrk-chart {
+	position: relative;
+}
+
+.cvtrk-chart-tip {
+	position: absolute;
+	z-index: 3;
+	min-width: 150px;
+	padding: 9px 11px;
+	border-radius: var(--cvtrk-radius-sm);
+	background: var(--cvtrk-navy);
+	color: #fff;
+	font-size: 12px;
+	line-height: 1.45;
+	box-shadow: var(--cvtrk-shadow);
+	pointer-events: none;
+	transform: translate(-50%, calc(-100% - 12px));
+	white-space: nowrap;
+}
+
+.cvtrk-chart-tip[hidden] {
+	display: none;
+}
+
+.cvtrk-chart-tip-title {
+	display: block;
+	margin-bottom: 5px;
+	font-weight: 600;
+	opacity: 0.9;
+}
+
+.cvtrk-chart-tip-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+}
+
+.cvtrk-chart-tip-row .cvtrk-swatch {
+	width: 9px;
+	height: 9px;
+	margin-right: 6px;
+}
+
+.cvtrk-chart-tip-row b {
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-chart-guide {
+	stroke: #9fb3c0;
+	stroke-width: 1;
+	stroke-dasharray: 3 3;
+}
+
+.cvtrk-chart-hit {
+	fill: transparent;
+	cursor: crosshair;
+}
+
+.cvtrk-area {
+	fill: var(--cvtrk-teal);
+	opacity: 0.08;
+}
+
+.cvtrk-chart-axis.is-right {
+	fill: var(--cvtrk-red-dark);
+}
+
+.cvtrk-chart-axis.is-tick {
+	font-size: 11px;
+}
+
+.cvtrk-line-dot.is-hover {
+	r: 4;
+	stroke-width: 2;
+}
+
+.cvtrk-chart-summary-line {
+	display: block;
+}
+
+/* Hourly chart as SVG. */
+.cvtrk-hourchart {
+	display: block;
+	width: 100%;
+	height: 240px;
+	overflow: visible;
+}
+
+.cvtrk-hbar.is-pageviews {
+	fill: var(--cvtrk-teal);
+}
+
+.cvtrk-hbar.is-clicks {
+	fill: var(--cvtrk-green);
+}
+
+.cvtrk-hbar-group.is-hover .cvtrk-hbar {
+	opacity: 0.78;
+}
+
+.cvtrk-hline {
+	fill: none;
+	stroke: var(--cvtrk-red);
+	stroke-width: 2;
+	stroke-linejoin: round;
+	stroke-linecap: round;
+}
+
+.cvtrk-hline-dot {
+	fill: #fff;
+	stroke: var(--cvtrk-red);
+	stroke-width: 1.6;
+}
+
+/* Engagement ladder. */
+.cvtrk-ladder {
+	display: grid;
+	gap: 14px;
+	padding: 4px 0 2px;
+}
+
+.cvtrk-ladder-row {
+	display: grid;
+	grid-template-columns: minmax(96px, 128px) 1fr;
+	align-items: center;
+	gap: 8px 14px;
+	min-width: 0;
+}
+
+.cvtrk-ladder-head {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.cvtrk-ladder-label {
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.cvtrk-ladder-value {
+	color: var(--cvtrk-ink);
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-ladder-track {
+	display: block;
+	width: 100%;
+	height: 12px;
+	border-radius: 999px;
+	background: #e9f0f2;
+	overflow: hidden;
+}
+
+.cvtrk-ladder-fill {
+	display: block;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--cvtrk-teal);
+	transition: width 0.4s ease;
+}
+
+.cvtrk-ladder-row.is-clicks .cvtrk-ladder-fill {
+	background: var(--cvtrk-green);
+}
+
+.cvtrk-ladder-row.is-conversions .cvtrk-ladder-fill {
+	background: var(--cvtrk-red);
+}
+
+.cvtrk-ladder-meta {
+	grid-column: 2;
+	margin-top: -4px;
+	color: var(--cvtrk-muted);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-ladder-note {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-top: 4px;
+	padding: 10px 12px;
+	border: 1px dashed var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius-sm);
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+}
+
+.cvtrk-ladder-note b {
+	color: var(--cvtrk-ink);
+	font-variant-numeric: tabular-nums;
+}
+
+/* Wide tables: keep text columns bounded so nine-column layouts fit the
+   card at common admin widths; the wrapper still scrolls as a last resort. */
+/* Two-up cards are 400-580px wide between the 1100px grid breakpoint and
+   1440px, so the text column gives way first, then the bar, then the
+   least important column. */
+.cvtrk-grid .cvtrk-table .cvtrk-label,
+.cvtrk-grid .cvtrk-table .cvtrk-sub {
+	max-width: clamp(110px, calc(50vw - 490px), 280px);
+}
+
+.cvtrk-grid .cvtrk-table .cvtrk-meter {
+	width: 56px;
+	min-width: 0;
+}
+
+@media (min-width: 1200px) and (max-width: 1320px) {
+	.cvtrk-grid .cvtrk-table .cvtrk-col-hide-grid {
+		display: none;
+	}
+}
+
+/* Below 1200px the dashboard's two-up sections stack; the narrow cards
+   cannot hold a five-column table without scrolling. */
+@media (max-width: 1199px) {
+	.cvtrk-section.cvtrk-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+.cvtrk-404-view-panel .cvtrk-table .cvtrk-label,
+.cvtrk-404-view-panel .cvtrk-table .cvtrk-sub,
+.cvtrk-gsc-keywords .cvtrk-table .cvtrk-label,
+.cvtrk-gsc-keywords .cvtrk-table .cvtrk-sub,
+#convertrack-gsc-keywords .cvtrk-table .cvtrk-label,
+#convertrack-gsc-keywords .cvtrk-table .cvtrk-sub {
+	max-width: min(260px, 22vw);
+}
+
+/* Wide-screen-only columns and a pinned end column for long tables. */
+@media (max-width: 1600px) {
+	.cvtrk-table th.cvtrk-col-hide-lg,
+	.cvtrk-table td.cvtrk-col-hide-lg {
+		display: none;
+	}
+}
+
+.cvtrk-table th.cvtrk-col-sticky-end,
+.cvtrk-table td.cvtrk-col-sticky-end {
+	position: sticky;
+	right: 0;
+	z-index: 1;
+	background: #fff;
+}
+
+.cvtrk-table th.cvtrk-col-sticky-end {
+	z-index: 2;
+	background: var(--cvtrk-card-soft);
+}
+
+.cvtrk-table tbody tr:hover td.cvtrk-col-sticky-end {
+	background: #f7fbfb;
+}
+
+.cvtrk-table-wrap.has-overflow .cvtrk-col-sticky-end {
+	box-shadow: -12px 0 12px -12px rgba(15, 36, 56, 0.28);
+}
+
+/* Keyword Opportunities: twelve columns, so cells are tighter, the page
+   column shorter and the two row buttons stacked. */
+#convertrack-gsc-keywords .cvtrk-table th,
+#convertrack-gsc-keywords .cvtrk-table td {
+	padding: 10px 8px;
+}
+
+#convertrack-gsc-keywords .cvtrk-table .cvtrk-label,
+#convertrack-gsc-keywords .cvtrk-table .cvtrk-sub {
+	max-width: min(220px, 18vw);
+}
+
+#convertrack-gsc-keywords .cvtrk-table .cvtrk-badge-group {
+	gap: 4px;
+	min-width: 176px;
+}
+
+.cvtrk-table td.cvtrk-kw-actions {
+	display: table-cell;
+	min-width: 104px;
+}
+
+.cvtrk-table td.cvtrk-kw-actions .button {
+	display: block;
+	width: 100%;
+	margin: 0 0 4px;
+	text-align: center;
+}
+
+.cvtrk-table td.cvtrk-kw-actions .button:last-child {
+	margin-bottom: 0;
+}
+
+.cvtrk-table-wrap::-webkit-scrollbar {
+	height: 8px;
+}
+
+.cvtrk-table-wrap::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: #c9d6dd;
 }

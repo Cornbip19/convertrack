@@ -272,7 +272,7 @@ class Keywords_Rest_Controller {
 			'page'            => array(
 				'post_id'    => $post_id,
 				'page_url'   => (string) $first['page_url'],
-				'post_title' => $post_id > 0 ? get_the_title( $post_id ) : '',
+				'post_title' => $post_id > 0 ? \Convertrack\Database::display_title( get_the_title( $post_id ) ) : '',
 				'post_type'  => $post_id > 0 ? (string) get_post_type( $post_id ) : '',
 				'edit_link'  => $post_id > 0 ? get_edit_post_link( $post_id, 'raw' ) : '',
 			),

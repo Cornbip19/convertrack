@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.10.1
+Stable tag: 2.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,14 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.11.0 =
+* Change: the dashboard now uses one definition of "Conversions" everywhere: conversion events. The Conversions card, the Performance trend, the hourly chart, the engagement card, Journeys and the timeline all agree, and the conversion rate card says how many sessions converted out of how many.
+* New: Performance trend with a real axis on both sides (conversions on their own scale), dated ticks, hover details for every day and a subtle area for pageviews; KPI cards carry a mini trend line for the selected range.
+* New: Activity by hour redrawn as pageview and click bars with conversions as a line, with hover details; the engagement card shows the pageview, click and conversion ladder instead of a pie of unrelated event counts.
+* New: the dashboard is one page with a sticky section navigation (Overview, Trend, Content, Engagement, Sources, Audience, Timeline, Live) instead of a collapsed "More analytics" section; Top content shows the eight strongest pages with their numbers.
+* Fix: page titles containing apostrophes and other special characters no longer show HTML entity codes in reports.
+* Fix: wide tables (Broken URLs, Keyword Opportunities, Journeys) keep their columns readable at common admin widths instead of overflowing the card.
 
 = 2.10.1 =
 * Fix: the database upgrade now runs on the first request after the plugin files change, in any context, so an unattended auto-update no longer pauses collection until someone opens wp-admin. A failing attempt is retried every two minutes; administrators still see the error notice.

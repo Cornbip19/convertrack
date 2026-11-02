@@ -496,6 +496,13 @@ class Rest_Controller {
 		$range = max( 1, min( 365, (int) $request->get_param( 'range' ) ) );
 		$metadata = Database::range_metadata( $range, 'raw' );
 		$data  = Database::funnel_data( max( 1, (int) $metadata['effective_range'] ), 10 );
+		if ( ! empty( $data['dropoffs'] ) && is_array( $data['dropoffs'] ) ) {
+			foreach ( $data['dropoffs'] as $index => $row ) {
+				if ( isset( $row['title'] ) ) {
+					$data['dropoffs'][ $index ]['title'] = Database::display_title( $row['title'] );
+				}
+			}
+		}
 		$data['range'] = $range;
 		$data = array_merge( $data, $metadata );
 
@@ -607,7 +614,7 @@ class Rest_Controller {
 			$out[] = array(
 				'page_key'   => $page_key,
 				'post_id'     => $post_id,
-				'title'       => $title,
+				'title'       => Database::display_title( $title ),
 				'url'         => $url ? $url : '',
 				'clicks'      => (int) $row['clicks'],
 				'pageviews'   => (int) $row['pageviews'],
