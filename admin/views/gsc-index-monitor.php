@@ -26,7 +26,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
 			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Indexing', 'convertrack-click-conversion-analytics' ); ?></h1>
-			<p class="cvtrk-page-desc"><?php esc_html_e( 'Monitor Google index coverage and work through URLs that need attention.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Whether Google lists your pages in its search results, and what to do about the ones it does not.', 'convertrack-click-conversion-analytics' ); ?></p>
 			<span class="cvtrk-page-head-meta">
 				<?php if ( $credentials['connected'] ) : ?>
 					<?php echo Admin::icon( 'conversions' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
@@ -102,6 +102,36 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 			?>
 		</div>
 	<?php endif; ?>
+
+	<?php
+	Admin::render_guide(
+		'indexing',
+		array(
+			'lead'   => __( 'Google only sends visitors to pages it has listed ("indexed"). Convertrack asks Google about each page on your site and sorts the answers into three groups.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Indexed', 'convertrack-click-conversion-analytics' ), __( 'Google shows the page in its search results.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Pending', 'convertrack-click-conversion-analytics' ), __( 'Google knows the page exists but has not decided yet. Normal for new pages; it can take weeks.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Issues', 'convertrack-click-conversion-analytics' ), __( 'Google chose not to list the page. The reason, and a fix where one can be applied safely, is shown further down.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'Open "Why pages are not indexed", press Fix wherever a button is offered, then come back after the next check to see whether Google agreed.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
+
+	<nav class="cvtrk-section-nav" data-cvtrk="section-nav" aria-label="<?php esc_attr_e( 'Sections on this screen', 'convertrack-click-conversion-analytics' ); ?>">
+		<?php if ( ! $credentials['connected'] ) : ?>
+			<a href="#convertrack-gsc-setup" class="is-active" aria-current="location"><?php esc_html_e( 'Setup', 'convertrack-click-conversion-analytics' ); ?></a>
+			<a href="#cvtrk-gsc-coverage"><?php esc_html_e( 'Coverage', 'convertrack-click-conversion-analytics' ); ?></a>
+		<?php else : ?>
+			<a href="#cvtrk-gsc-coverage" class="is-active" aria-current="location"><?php esc_html_e( 'Coverage', 'convertrack-click-conversion-analytics' ); ?></a>
+		<?php endif; ?>
+		<a href="#convertrack-gsc-reasons"><?php esc_html_e( 'Why not indexed', 'convertrack-click-conversion-analytics' ); ?></a>
+		<a href="#convertrack-gsc-queue"><?php esc_html_e( 'Page by page', 'convertrack-click-conversion-analytics' ); ?></a>
+		<?php if ( $credentials['connected'] ) : ?>
+			<a href="#convertrack-gsc-settings"><?php esc_html_e( 'Settings', 'convertrack-click-conversion-analytics' ); ?></a>
+		<?php endif; ?>
+		<a href="#convertrack-gsc-log"><?php esc_html_e( 'Activity log', 'convertrack-click-conversion-analytics' ); ?></a>
+	</nav>
 
 	<?php
 	$cvtrk_redirect_uri = \Convertrack\GSC\OAuth::redirect_uri();
@@ -272,7 +302,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 	$cvtrk_integration_markup = ob_get_clean();
 	if ( ! $credentials['connected'] ) :
 		?>
-		<section class="cvtrk-gsc-setup" aria-labelledby="convertrack-gsc-setup-title">
+		<section class="cvtrk-gsc-setup cvtrk-section" id="convertrack-gsc-setup" aria-labelledby="convertrack-gsc-setup-title">
 			<div class="cvtrk-section-head">
 				<div>
 					<h2 id="convertrack-gsc-setup-title"><?php esc_html_e( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ); ?></h2>
@@ -288,15 +318,15 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 		</section>
 	<?php endif; ?>
 
-	<div class="cvtrk-gsc-panel" data-cvtrk="gsc-summary">
+	<div class="cvtrk-gsc-panel cvtrk-section" id="cvtrk-gsc-coverage" data-cvtrk="gsc-summary">
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
 
-	<div class="cvtrk-card" id="convertrack-gsc-reasons">
+	<div class="cvtrk-card cvtrk-section" id="convertrack-gsc-reasons">
 		<div class="cvtrk-card-head">
 			<div>
 				<h2><?php esc_html_e( 'Why pages are not indexed', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Grouped by cause, with a suggested fix where one can be applied safely', 'convertrack-click-conversion-analytics' ); ?></span>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Grouped by cause. Where Convertrack can repair it safely, there is a Fix button.', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -304,10 +334,12 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 		</div>
 	</div>
 
-	<div class="cvtrk-card" id="convertrack-gsc-queue">
+	<div class="cvtrk-card cvtrk-section" id="convertrack-gsc-queue">
 		<div class="cvtrk-card-head">
-			<h2><?php esc_html_e( 'URL Index Queue', 'convertrack-click-conversion-analytics' ); ?></h2>
-			<span class="cvtrk-card-sub"><?php esc_html_e( 'Paginated background inspection results', 'convertrack-click-conversion-analytics' ); ?></span>
+			<div>
+				<h2><?php esc_html_e( 'Page by page', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Every page Convertrack has checked with Google, and what Google reported', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
 		</div>
 		<div class="cvtrk-card-body">
 			<div class="cvtrk-tabs cvtrk-gsc-post-tabs" data-cvtrk="gsc-post-tabs">
@@ -407,7 +439,7 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 	</div>
 
 	<?php if ( $credentials['connected'] ) : ?>
-		<details class="cvtrk-advanced-disclosure cvtrk-integration-disclosure" id="convertrack-gsc-settings">
+		<details class="cvtrk-advanced-disclosure cvtrk-integration-disclosure cvtrk-section" id="convertrack-gsc-settings">
 			<summary>
 				<strong><?php esc_html_e( 'Integration settings', 'convertrack-click-conversion-analytics' ); ?></strong>
 				<span><?php esc_html_e( 'Connection, property, credentials, quotas, and monitored content', 'convertrack-click-conversion-analytics' ); ?></span>
@@ -418,10 +450,10 @@ $detail = isset( $_GET['cvtrk_gsc_detail'] ) ? sanitize_text_field( rawurldecode
 		</details>
 	<?php endif; ?>
 
-	<details class="cvtrk-advanced-disclosure cvtrk-log-disclosure">
+	<details class="cvtrk-advanced-disclosure cvtrk-log-disclosure cvtrk-section" id="convertrack-gsc-log">
 		<summary>
 			<strong><?php esc_html_e( 'Activity log', 'convertrack-click-conversion-analytics' ); ?></strong>
-			<span><?php esc_html_e( 'Recent OAuth, sitemap, API, quota, and batch events', 'convertrack-click-conversion-analytics' ); ?></span>
+			<span><?php esc_html_e( 'What the monitor did recently: connections, sitemap scans, checks with Google and quota notes', 'convertrack-click-conversion-analytics' ); ?></span>
 		</summary>
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-body">

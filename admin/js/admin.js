@@ -15,6 +15,8 @@
 
 	var ROOT = String( C.root ).replace( /\/$/, '' );
 	var I18N = C.i18n || {};
+	// Plain-language definitions for help icons (localized from Admin::glossary()).
+	var TERMS = C.terms || {};
 	var timelineEvents = [];
 	var timelineKinds = null;
 
@@ -354,6 +356,12 @@
 			if ( h.sticky ) {
 				th.classList.add( 'cvtrk-col-sticky-end' );
 			}
+			if ( h.help ) {
+				var help = helpIcon( h.help );
+				if ( help ) {
+					th.appendChild( help );
+				}
+			}
 			tr.appendChild( th );
 		} );
 		thead.appendChild( tr );
@@ -413,7 +421,7 @@
 			labelEl.title = String( label );
 		}
 		td.appendChild( labelEl );
-		if ( sub ) {
+		if ( sub && sub !== label ) {
 			if ( subHref ) {
 				var wrap = el( 'span', 'cvtrk-sub' );
 				var a = el( 'a', null, sub );
@@ -509,10 +517,15 @@
 		return String( value || 'unknown' ).toLowerCase().replace( /[^a-z0-9_-]+/g, '_' );
 	}
 
-	function summaryMetaItem( label, value, tone ) {
+	function summaryMetaItem( label, value, tone, help ) {
 		var className = 'cvtrk-summary-meta-item' + ( tone ? ' is-' + tone : '' );
 		var item = el( 'span', className );
-		item.appendChild( el( 'span', 'cvtrk-summary-meta-label', label ) );
+		var labelEl = el( 'span', 'cvtrk-summary-meta-label', label );
+		var icon = help ? helpIcon( help ) : null;
+		if ( icon ) {
+			labelEl.appendChild( icon );
+		}
+		item.appendChild( labelEl );
 		item.appendChild( el( 'strong', 'cvtrk-summary-meta-value', value === null || value === undefined || value === '' ? '—' : String( value ) ) );
 		return item;
 	}
@@ -529,6 +542,242 @@
 			return url;
 		}
 		return '';
+	}
+
+	/* Plain-language helpers (2.12) -------------------------------------- */
+
+	// A small "?" button that explains a term on hover, focus or tap. Returns
+	// null when there is nothing to say, so callers can append unconditionally.
+	function helpIcon( key, text ) {
+		var copy = text || TERMS[ key ] || '';
+		if ( ! copy ) {
+			return null;
+		}
+		var b = el( 'button', 'cvtrk-help' );
+		b.type = 'button';
+		b.setAttribute( 'data-cvtrk-help', copy );
+		b.setAttribute( 'aria-label', I18N.helpWhat || 'What does this mean?' );
+		var svg = document.createElementNS( 'http://www.w3.org/2000/svg', 'svg' );
+		svg.setAttribute( 'viewBox', '0 0 16 16' );
+		svg.setAttribute( 'aria-hidden', 'true' );
+		svg.setAttribute( 'focusable', 'false' );
+		svg.innerHTML = '<circle cx="8" cy="8" r="6.6"/><path d="M6.1 6.4a1.95 1.95 0 1 1 2.8 1.75c-.6.3-.9.7-.9 1.3"/><path d="M8 11.6h.01"/>';
+		b.appendChild( svg );
+		return b;
+	}
+
+	// One tooltip for every [data-cvtrk-help] trigger, attached to <body> so
+	// scrolling table wrappers cannot clip it. Hover/focus show it, a tap pins
+	// it, Escape, scrolling or a click elsewhere hide it.
+	function initHelpTips() {
+		var tip = null;
+		var current = null;
+		function ensure() {
+			if ( ! tip ) {
+				tip = el( 'div', 'cvtrk-tip-pop' );
+				tip.id = 'cvtrk-tip-pop';
+				tip.setAttribute( 'role', 'tooltip' );
+				tip.hidden = true;
+				document.body.appendChild( tip );
+			}
+			return tip;
+		}
+		function triggerFrom( target ) {
+			return target && target.closest ? target.closest( '[data-cvtrk-help]' ) : null;
+		}
+		function hide() {
+			if ( tip ) {
+				tip.hidden = true;
+			}
+			if ( current ) {
+				current.removeAttribute( 'aria-describedby' );
+				current.classList.remove( 'is-open' );
+				current.classList.remove( 'is-pinned' );
+			}
+			current = null;
+		}
+		function show( trigger ) {
+			var text = trigger.getAttribute( 'data-cvtrk-help' );
+			if ( ! text ) {
+				return;
+			}
+			if ( current && current !== trigger ) {
+				hide();
+			}
+			var box = ensure();
+			box.textContent = text;
+			box.hidden = false;
+			box.classList.remove( 'is-below' );
+			current = trigger;
+			trigger.setAttribute( 'aria-describedby', box.id );
+			trigger.classList.add( 'is-open' );
+			var r = trigger.getBoundingClientRect();
+			var w = box.offsetWidth;
+			var h = box.offsetHeight;
+			var left = r.left + r.width / 2 - w / 2;
+			left = Math.max( 8, Math.min( left, window.innerWidth - w - 8 ) );
+			var top = r.top - h - 9;
+			if ( top < 8 ) {
+				top = r.bottom + 9;
+				box.classList.add( 'is-below' );
+			}
+			box.style.left = left + 'px';
+			box.style.top = top + 'px';
+			box.style.setProperty( '--cvtrk-tip-arrow', ( r.left + r.width / 2 - left ) + 'px' );
+		}
+		document.addEventListener( 'mouseover', function ( e ) {
+			var t = triggerFrom( e.target );
+			if ( t && t !== current ) {
+				show( t );
+			}
+		} );
+		document.addEventListener( 'mouseout', function ( e ) {
+			var t = triggerFrom( e.target );
+			if ( t && t === current && ! t.classList.contains( 'is-pinned' ) && document.activeElement !== t ) {
+				hide();
+			}
+		} );
+		document.addEventListener( 'focusin', function ( e ) {
+			var t = triggerFrom( e.target );
+			if ( t ) {
+				show( t );
+			}
+		} );
+		document.addEventListener( 'focusout', function ( e ) {
+			var t = triggerFrom( e.target );
+			if ( t && t === current && ! t.classList.contains( 'is-pinned' ) ) {
+				hide();
+			}
+		} );
+		document.addEventListener( 'click', function ( e ) {
+			var t = triggerFrom( e.target );
+			if ( t ) {
+				e.preventDefault();
+				if ( t === current && t.classList.contains( 'is-pinned' ) ) {
+					hide();
+				} else {
+					show( t );
+					t.classList.add( 'is-pinned' );
+				}
+			} else if ( current ) {
+				hide();
+			}
+		} );
+		document.addEventListener( 'keydown', function ( e ) {
+			if ( e.key === 'Escape' && current ) {
+				hide();
+			}
+		} );
+		window.addEventListener( 'scroll', function () {
+			if ( current ) {
+				hide();
+			}
+		}, true );
+		window.addEventListener( 'resize', hide );
+	}
+
+	// "How to read this screen" boxes remember whether the user closed them.
+	function initGuides() {
+		var guides = document.querySelectorAll( '[data-cvtrk-guide]' );
+		Array.prototype.forEach.call( guides, function ( guide ) {
+			var key = 'cvtrk_guide_' + guide.getAttribute( 'data-cvtrk-guide' );
+			var stored = null;
+			try {
+				stored = window.localStorage ? window.localStorage.getItem( key ) : null;
+			} catch ( e ) {
+				stored = null;
+			}
+			if ( stored === '0' ) {
+				guide.removeAttribute( 'open' );
+			}
+			guide.addEventListener( 'toggle', function () {
+				try {
+					if ( window.localStorage ) {
+						window.localStorage.setItem( key, guide.open ? '1' : '0' );
+					}
+				} catch ( e ) {
+					// Private mode or storage disabled: the box simply reopens next time.
+				}
+			} );
+		} );
+	}
+
+	// "Today, 09:15" / "Nov 2, 09:15" from the server's own
+	// "YYYY-MM-DD HH:MM:SS" strings. No timezone arithmetic: the value is
+	// shown in the site's time, like the rest of wp-admin.
+	function friendlyDateTime( value, withTime ) {
+		if ( ! value ) {
+			return '—';
+		}
+		var m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}))?/.exec( String( value ) );
+		if ( ! m ) {
+			return String( value );
+		}
+		var y = Number( m[ 1 ] );
+		var mo = Number( m[ 2 ] );
+		var d = Number( m[ 3 ] );
+		var now = new Date();
+		var yesterday = new Date( now.getFullYear(), now.getMonth(), now.getDate() - 1 );
+		var dayText;
+		if ( y === now.getFullYear() && mo === now.getMonth() + 1 && d === now.getDate() ) {
+			dayText = I18N.today || 'Today';
+		} else if ( y === yesterday.getFullYear() && mo === yesterday.getMonth() + 1 && d === yesterday.getDate() ) {
+			dayText = I18N.yesterday || 'Yesterday';
+		} else {
+			var opts = { month: 'short', day: 'numeric' };
+			if ( y !== now.getFullYear() ) {
+				opts.year = 'numeric';
+			}
+			try {
+				dayText = new Date( y, mo - 1, d ).toLocaleDateString( undefined, opts );
+			} catch ( e ) {
+				dayText = m[ 1 ] + '-' + m[ 2 ] + '-' + m[ 3 ];
+			}
+		}
+		if ( withTime !== false && m[ 4 ] ) {
+			return dayText + ', ' + m[ 4 ] + ':' + m[ 5 ];
+		}
+		return dayText;
+	}
+
+	// Why the 404 matcher picked a destination, in words.
+	var MATCH_REASONS = {
+		exact_path: 'Exact match',
+		exact_slug: 'Same page name',
+		renamed_slug: 'Renamed page',
+		renamed_slug_ambiguous: 'Renamed page (unsure)',
+		renamed_date: 'Moved from a dated address',
+		normalized_path: 'Same address, tidied up',
+		page_path: 'Matching page address',
+		ambiguous_slug: 'Similar name (unsure)',
+		token_subset: 'Shares the key words',
+		token_subset_ambiguous: 'Shares some words (unsure)',
+		unpublished_parent: 'Parent of an unpublished page',
+		similar_keywords: 'Similar words',
+		partial_slug: 'Partly matching name',
+		post_type_match: 'Same kind of content',
+		parent_page_match: 'Parent page',
+		archive_match: 'Category or archive page',
+		fallback: 'Fallback page (no real match)',
+		unpublished_source: 'The page was unpublished'
+	};
+	function matchReasonLabel( code ) {
+		code = String( code || '' );
+		if ( ! code ) {
+			return '';
+		}
+		var map = I18N.nfMatchReasons || {};
+		return map[ code ] || MATCH_REASONS[ code ] || code.replace( /_/g, ' ' );
+	}
+
+	// Confidence as a coloured chip: green is safe to approve, amber deserves
+	// a look, grey is a weak match.
+	function confidenceChip( value ) {
+		var n = Math.round( Number( value ) || 0 );
+		var tier = n >= 90 ? 'high' : ( n >= 60 ? 'mid' : 'low' );
+		var chip = el( 'span', 'cvtrk-badge cvtrk-conf is-' + tier, n + '%' );
+		chip.title = tier === 'high' ? ( I18N.confSafe || 'Safe to approve' ) : ( tier === 'mid' ? ( I18N.confCheck || 'Worth a look before approving' ) : ( I18N.confLow || 'Weak match' ) );
+		return chip;
 	}
 
 	/* Rendering ----------------------------------------------------------- */
@@ -1490,11 +1739,13 @@
 			items = items.slice( 0, limit );
 		}
 		var max = items[ 0 ].clicks || 1;
+		// The compact dashboard card (limit set) keeps plain headers; the full
+		// Pages & Buttons view explains each column.
 		var t = table( [
 			{ label: '' },
-			{ label: I18N.button || 'Button' },
-			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.conversions || 'Conversions', num: true }
+			{ label: limit ? ( I18N.button || 'Button' ) : ( I18N.buttonOrLink || 'Button or link' ), help: limit ? '' : 'cta' },
+			{ label: I18N.clicks || 'Clicks', num: true, help: limit ? '' : 'clicks' },
+			{ label: I18N.conversions || 'Conversions', num: true, help: limit ? '' : 'conversions' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it, i ) {
@@ -1574,9 +1825,9 @@
 		}, 1 );
 		var wrap = table( [
 			{ label: I18N.page || 'Page' },
-			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.pageviews || 'Pageviews', num: true },
-			{ label: I18N.conversions || 'Conversions', num: true },
+			{ label: I18N.clicks || 'Clicks', num: true, help: 'clicks' },
+			{ label: I18N.pageviews || 'Pageviews', num: true, help: 'pageviews' },
+			{ label: I18N.conversions || 'Conversions', num: true, help: 'conversions' },
 			{ label: I18N.actions || 'Actions' }
 		] );
 		var t = wrap.querySelector( 'table' );
@@ -2082,11 +2333,11 @@
 				row.style.color = '#fff';
 			}
 			row.appendChild( el( 'span', null, b.depth + '%' ) );
-			row.appendChild( el( 'span', null, pct + '% ' + ( I18N.reached || 'reached this depth' ) ) );
+			row.appendChild( el( 'span', null, formatTemplate( I18N.scrolledThisFar || '%1$s of visitors scrolled this far', pct + '%' ) ) );
 			map.appendChild( row );
 		} );
 		box.appendChild( map );
-		box.appendChild( el( 'p', 'cvtrk-note', num( samples ) + ' ' + ( I18N.visitors || 'Visitors' ).toLowerCase() + ' sampled' ) );
+		box.appendChild( el( 'p', 'cvtrk-note', formatTemplate( I18N.visitorsSampled || '%1$s visitors sampled', num( samples ) ) ) );
 	}
 
 	function renderHeatmapElements( items ) {
@@ -2102,15 +2353,18 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
 		var t = table( [
-			{ label: I18N.button || 'Element' },
+			{ label: I18N.buttonOrLink || 'Button or link' },
 			{ label: I18N.clicks || 'Clicks', num: true },
 			{ label: I18N.conversions || 'Conversions', num: true }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
 			var tr = el( 'tr' );
-			var sub = it.selector || it.href || '';
-			tr.appendChild( labelCell( it.label || ( I18N.unlabelledElement || 'Unlabelled element' ), sub ) );
+			var selector = it.selector || '';
+			// The server falls back to the CSS selector when an element has no
+			// text; show that as "Unlabelled element" with the selector beneath.
+			var label = it.label && it.label !== selector ? it.label : ( I18N.unlabelledElement || 'Unlabelled element' );
+			tr.appendChild( labelCell( label, selector || it.href || '' ) );
 			tr.appendChild( clicksCell( it.clicks, max ) );
 			tr.appendChild( convCell( it.conversions ) );
 			body.appendChild( tr );
@@ -2457,13 +2711,13 @@
 		function heatmapConfidenceText( samples ) {
 			samples = Number( samples ) || 0;
 			if ( samples >= 100 ) {
-				return 'High confidence: ' + num( samples ) + ' heatmap clicks in this view.';
+				return formatTemplate( I18N.confidenceHigh || 'High confidence · %1$s clicks in this view', num( samples ) );
 			}
 			if ( samples >= 25 ) {
-				return 'Moderate confidence: ' + num( samples ) + ' heatmap clicks in this view.';
+				return formatTemplate( I18N.confidenceModerate || 'Moderate confidence · %1$s clicks in this view', num( samples ) );
 			}
 			if ( samples > 0 ) {
-				return 'Low confidence: only ' + num( samples ) + ' heatmap clicks in this view.';
+				return formatTemplate( I18N.confidenceLow || 'Low confidence · only %1$s clicks in this view', num( samples ) );
 			}
 			return '';
 		}
@@ -2475,8 +2729,10 @@
 				confidence.textContent = text;
 				confidence.hidden = ! text;
 			}
+			// The badge says how trustworthy the sample is; the note under the
+			// map says how to read it.
 			if ( note && Number( samples ) > 0 ) {
-				note.textContent = text;
+				note.textContent = formatTemplate( I18N.clicksPlotted || '%1$s clicks plotted. Brighter spots mean more clicks in the same place.', num( samples ) );
 			}
 		}
 
@@ -2711,7 +2967,7 @@
 		set( 'funnel-sessions', num( data.total_sessions ) );
 		set( 'funnel-converting', num( data.converting_sessions ) );
 		set( 'funnel-conversions', num( data.total_conversions ) );
-		set( 'funnel-rate', ( Number( data.conversion_rate ) || 0 ) + '%' );
+		set( 'funnel-rate', ( Math.round( ( Number( data.conversion_rate ) || 0 ) * 10 ) / 10 ) + '%' );
 	}
 
 	function renderFunnelPaths( items ) {
@@ -2727,17 +2983,36 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
 		var t = table( [
-			{ label: I18N.page || 'Path' },
-			{ label: I18N.sessions || 'Sessions', num: true }
+			{ label: I18N.pathLabel || 'Pages visited, in order', help: 'path' },
+			{ label: I18N.sessions || 'Sessions', num: true, help: 'sessions' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
 			var tr = el( 'tr' );
-			tr.appendChild( labelCell( it.path || '', '' ) );
+			tr.appendChild( pathCell( it.path || '' ) );
 			tr.appendChild( clicksCell( it.sessions, max ) );
 			body.appendChild( tr );
 		} );
 		box.appendChild( t );
+	}
+
+	// "/ > /service/x" becomes a row of step chips with arrows, the last one
+	// highlighted as the page where the conversion happened.
+	function pathCell( path ) {
+		var td = el( 'td' );
+		var wrap = el( 'span', 'cvtrk-path' );
+		String( path ).split( ' > ' ).forEach( function ( step, i ) {
+			if ( i > 0 ) {
+				var arrow = el( 'span', 'cvtrk-path-arrow', '→' );
+				arrow.setAttribute( 'aria-hidden', 'true' );
+				wrap.appendChild( arrow );
+			}
+			var chip = el( 'span', 'cvtrk-path-step', step === '/' ? ( I18N.homePage || 'Home' ) : step );
+			chip.title = step;
+			wrap.appendChild( chip );
+		} );
+		td.appendChild( wrap );
+		return td;
 	}
 
 	function renderFunnelDropoffs( items ) {
@@ -2753,8 +3028,8 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
 		var t = table( [
-			{ label: I18N.page || 'Page' },
-			{ label: I18N.sessions || 'Sessions', num: true }
+			{ label: I18N.page || 'Page', help: 'dropoff' },
+			{ label: I18N.sessions || 'Sessions', num: true, help: 'sessions' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
@@ -2780,9 +3055,9 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.sessions || 0 ); } );
 		var t = table( [
-			{ label: I18N.source || 'Source' },
-			{ label: I18N.sessions || 'Sessions', num: true },
-			{ label: I18N.conversions || 'Conversions', num: true }
+			{ label: I18N.source || 'Source', help: 'source' },
+			{ label: I18N.sessions || 'Sessions', num: true, help: 'sessions' },
+			{ label: I18N.conversions || 'Conversions', num: true, help: 'conversions' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
@@ -2809,9 +3084,9 @@
 		var max = 1;
 		items.forEach( function ( it ) { max = Math.max( max, it.clicks || 0 ); } );
 		var t = table( [
-			{ label: I18N.button || 'Button' },
-			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.sessions || 'Sessions', num: true }
+			{ label: I18N.buttonOrLink || 'Button or link', help: 'cta' },
+			{ label: I18N.clicks || 'Clicks', num: true, help: 'clicks' },
+			{ label: I18N.sessions || 'Sessions', num: true, help: 'sessions' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
@@ -3373,7 +3648,7 @@
 		}
 
 		function dateText( value ) {
-			return value || '-';
+			return value ? friendlyDateTime( value ) : '-';
 		}
 
 		function loadSummary() {
@@ -3589,16 +3864,16 @@
 			box.appendChild( card );
 
 			var groups = [
-				{ title: I18N.indexed || 'Indexed', tone: 'green', items: [
+				{ title: I18N.indexed || 'Indexed', tone: 'green', desc: I18N.gscGroupIndexedDesc || 'Google shows these pages in its search results.', items: [
 					{ key: 'indexed', status: 'indexed', label: I18N.indexed || 'Indexed', icon: 'yes-alt' }
 				] },
-				{ title: I18N.pending || 'Pending', tone: 'amber', items: [
+				{ title: I18N.pending || 'Pending', tone: 'amber', desc: I18N.gscGroupPendingDesc || 'Google knows these pages but has not listed them yet. New pages usually sit here for a while.', items: [
 					{ key: 'pending_from_sitemap', status: 'pending_from_sitemap', label: I18N.pendingSitemap || 'Pending From Sitemap', icon: 'media-code' },
 					{ key: 'pending_due_to_quota', status: 'pending_due_to_quota', label: I18N.pendingQuota || 'Pending Due to Quota', icon: 'clock' },
 					{ key: 'discovered_not_indexed', status: 'discovered_not_indexed', label: I18N.discoveredNotIndexed || 'Discovered But Not Indexed', icon: 'search' },
 					{ key: 'crawled_not_indexed', status: 'crawled_not_indexed', label: I18N.crawledNotIndexed || 'Crawled But Not Indexed', icon: 'visibility' }
 				] },
-				{ title: I18N.issues || 'Issues', tone: 'red', items: [
+				{ title: I18N.issues || 'Issues', tone: 'red', desc: I18N.gscGroupIssuesDesc || 'Google decided not to list these pages. Each one has a reason, shown below.', items: [
 					{ key: 'not_indexed', status: 'not_indexed', label: I18N.notIndexed || 'Not Indexed', icon: 'dismiss' },
 					{ key: 'duplicate_canonical', status: 'duplicate_canonical', label: I18N.duplicateCanonical || 'Duplicate/Canonical Issue', icon: 'admin-page' },
 					{ key: 'blocked_by_robots', status: 'blocked_by_robots', label: I18N.blockedRobots || 'Blocked by Robots', icon: 'shield' },
@@ -3618,6 +3893,9 @@
 			groups.forEach( function ( group ) {
 				var section = el( 'div', 'cvtrk-gsc-group is-' + group.tone );
 				section.appendChild( el( 'h3', 'cvtrk-gsc-group-title', group.title ) );
+				if ( group.desc ) {
+					section.appendChild( el( 'p', 'cvtrk-gsc-group-desc', group.desc ) );
+				}
 				var grid = el( 'div', 'cvtrk-gsc-breakdown' );
 				group.items.forEach( function ( item ) {
 					var stat = el( 'button', 'cvtrk-gsc-stat is-clickable is-' + group.tone );
@@ -3852,13 +4130,13 @@
 			}
 
 			var headers = [
-				{ label: 'URL' },
-				{ label: 'Post Type', hide: 'md' },
-				{ label: I18N.gscStatus || 'Google Index Status' },
+				{ label: I18N.page || 'Page' },
+				{ label: I18N.postType || 'Type', hide: 'md' },
+				{ label: I18N.gscStatus || 'Google Index Status', help: 'indexStatus' },
 				{ label: I18N.gscColReason || 'Reason' },
 				{ label: I18N.gscColFix || 'Suggested fix' },
-				{ label: 'Last Checked', hide: 'sm' },
-				{ label: I18N.nextCheck || 'Next Check', hide: 'sm' },
+				{ label: I18N.lastChecked || 'Last checked', hide: 'sm' },
+				{ label: I18N.nextCheck || 'Next check', hide: 'sm' },
 				{ label: I18N.attempts || 'Attempts', num: true, hide: 'md' },
 				{ label: I18N.actions || 'Actions' }
 			];
@@ -4581,7 +4859,12 @@
 			if ( ! value ) {
 				return '-';
 			}
-			return String( value ).replace( 'T', ' ' );
+			return friendlyDateTime( value );
+		}
+
+		function modeLabel( mode ) {
+			var map = I18N.nfModeLabels || {};
+			return map[ mode ] || statusText( mode );
 		}
 
 		function setProgress( text, isError ) {
@@ -4627,13 +4910,18 @@
 			exportLink.href = C.notFoundExportUrl + '&_wpnonce=' + encodeURIComponent( C.notFoundExportNonce || '' ) + ( q ? '&' + q.replace( /^&/, '' ) : '' );
 		}
 
-		function kpi( value, label, icon, mod ) {
+		function kpi( value, label, icon, mod, help ) {
 			var item = el( 'div', 'cvtrk-kpi' + ( mod ? ' ' + mod : '' ) );
 			var iconWrap = el( 'span', 'cvtrk-kpi-icon' );
 			iconWrap.appendChild( svgIcon( icon || 'warning', 'cvtrk-icon' ) );
 			var body = el( 'span', 'cvtrk-kpi-body' );
 			body.appendChild( el( 'span', 'cvtrk-kpi-value', value ) );
-			body.appendChild( el( 'span', 'cvtrk-kpi-label', label ) );
+			var labelEl = el( 'span', 'cvtrk-kpi-label', label );
+			var helpEl = help ? helpIcon( help ) : null;
+			if ( helpEl ) {
+				labelEl.appendChild( helpEl );
+			}
+			body.appendChild( labelEl );
 			item.appendChild( iconWrap );
 			item.appendChild( body );
 			return item;
@@ -4648,8 +4936,8 @@
 
 			var grid = el( 'div', 'cvtrk-kpis cvtrk-404-kpis' );
 			grid.appendChild( kpi( num( data.total ), I18N.nfTotal || 'Total 404 URLs', 'warning' ) );
-			grid.appendChild( kpi( num( data.unresolved ), I18N.nfNew || 'New', 'clock' ) );
-			grid.appendChild( kpi( num( data.recommended ), I18N.nfPending || 'Pending suggestions', 'search', 'is-amber' ) );
+			grid.appendChild( kpi( num( data.unresolved ), I18N.nfNew || 'New', 'clock', '', 'status404' ) );
+			grid.appendChild( kpi( num( data.recommended ), I18N.nfPending || 'Pending suggestions', 'search', 'is-amber', 'suggestedRedirect' ) );
 			grid.appendChild( kpi( num( data.redirected ), I18N.nfResolved || 'Auto-resolved', 'update', 'is-accent' ) );
 			grid.appendChild( kpi( num( data.manual ), I18N.nfManual || 'Manual review', 'list' ) );
 			grid.appendChild( kpi( num( data.ignored ), I18N.nfIgnored || 'Ignored', 'hidden' ) );
@@ -4657,10 +4945,10 @@
 
 			var meta = el( 'div', 'cvtrk-summary-meta cvtrk-404-meta' );
 			var mode = data.settings && data.settings.mode ? data.settings.mode : '';
-			meta.appendChild( summaryMetaItem( I18N.nfMode || 'Mode', statusText( mode ) ) );
-			meta.appendChild( summaryMetaItem( I18N.nfRedirectHits || 'Redirect hits', num( data.redirect_hits ) ) );
-			meta.appendChild( summaryMetaItem( I18N.nfValidUrls || 'Valid URLs', num( data.valid_url_count ) ) );
-			meta.appendChild( summaryMetaItem( I18N.nfRecentHits || 'Recent hits', num( data.spike_hits ) + ' / ' + num( data.spike_threshold ) ) );
+			meta.appendChild( summaryMetaItem( I18N.nfMode || 'Mode', modeLabel( mode ), '', 'mode404' ) );
+			meta.appendChild( summaryMetaItem( I18N.nfRedirectHits || 'Visitors redirected', num( data.redirect_hits ), '', 'redirectHits' ) );
+			meta.appendChild( summaryMetaItem( I18N.nfValidUrls || 'Known good pages', num( data.valid_url_count ), '', 'validUrls' ) );
+			meta.appendChild( summaryMetaItem( I18N.nfRecentHits || 'Recent 404 hits', num( data.spike_hits ) + ' / ' + num( data.spike_threshold ), '', 'recentHits' ) );
 			if ( data.compatibility && data.compatibility.tools && data.compatibility.tools.length ) {
 				meta.appendChild( summaryMetaItem( I18N.status || 'Status', I18N.nfToolDetected || 'Redirect tool detected', 'warning' ) );
 			}
@@ -4785,7 +5073,7 @@
 			panel.appendChild( detailItem( I18N.nfDetailHits || 'Hit count', num( row.hit_count ) ) );
 			panel.appendChild( detailItem( I18N.nfDetailSuggested || 'Suggested redirect', row.suggested_url || '', row.suggested_url ) );
 			panel.appendChild( detailItem( I18N.nfDetailConfidence || 'Match confidence', row.suggested_url ? ( Number( row.confidence ) || 0 ) + '%' : '' ) );
-			panel.appendChild( detailItem( I18N.nfDetailReason || 'Match reason', row.match_reason || '' ) );
+			panel.appendChild( detailItem( I18N.nfDetailReason || 'Match reason', matchReasonLabel( row.match_reason ) ) );
 			panel.appendChild( detailItem( I18N.nfDetailPostType || 'Suggested post type', row.suggested_post_type || '' ) );
 			panel.appendChild( detailItem( I18N.nfDetailStatus || 'Status', statusText( row.status ) ) );
 			if ( row.error_message ) {
@@ -4817,13 +5105,15 @@
 			var headers = [
 				{ label: '' },
 				{ label: I18N.nfColUrl || '404 URL' },
-				{ label: I18N.nfColReferrer || 'Referrer', hide: 'md' },
+				// The referrer repeats in the Details row; below 1600px it gives way.
+				{ label: I18N.nfColReferrer || 'Referrer', hide: 'lg' },
 				{ label: I18N.nfColDetected || 'Detected', hide: 'sm' },
-				{ label: I18N.nfColHits || 'Hits', num: true },
-				{ label: I18N.nfColSuggestion || 'Suggested redirect' },
-				{ label: I18N.nfColConfidence || 'Confidence', num: true },
-				{ label: I18N.nfColStatus || 'Status' },
-				{ label: I18N.nfColActions || 'Actions' }
+				{ label: I18N.nfColHits || 'Hits', num: true, help: 'hits' },
+				{ label: I18N.nfColSuggestion || 'Suggested redirect', help: 'suggestedRedirect' },
+				{ label: I18N.nfColConfidence || 'Confidence', num: true, help: 'confidence' },
+				{ label: I18N.nfColStatus || 'Status', help: 'status404' },
+				// Pinned so the buttons stay reachable while the row scrolls.
+				{ label: I18N.nfColActions || 'Actions', sticky: true }
 			];
 			var wrap = table( headers );
 			var firstTh = wrap.querySelector( 'thead th' );
@@ -4838,11 +5128,36 @@
 				// The full URL repeats the path with the host; it stays in the Details row.
 				tr.appendChild( labelCell( row.url || '-', '', '' ) );
 				tr.appendChild( labelCell( row.referrer_url || '-', '', safeUrl( row.referrer_url ) ) );
-				tr.appendChild( labelCell( dateText( row.last_detected_at ), ( I18N.nfFirstSeen || 'First' ) + ': ' + dateText( row.first_detected_at ) ) );
+				var detected = el( 'td' );
+				detected.appendChild( el( 'span', 'cvtrk-label', dateText( row.last_detected_at ) ) );
+				detected.appendChild( el( 'span', 'cvtrk-cell-sub', ( I18N.firstSeen || 'First seen' ) + ' ' + dateText( row.first_detected_at ) ) );
+				tr.appendChild( detected );
 				tr.appendChild( numCell( row.hit_count ) );
-				tr.appendChild( labelCell( row.suggested_url || '-', row.match_reason || '', safeUrl( row.suggested_url ) ) );
+				// Destination as a link, with the matcher's reasoning in words.
+				var suggestion = el( 'td' );
+				if ( row.suggested_url ) {
+					var link = safeUrl( row.suggested_url );
+					var target = el( link ? 'a' : 'span', 'cvtrk-label', row.suggested_url );
+					target.title = String( row.suggested_url );
+					if ( link ) {
+						target.href = link;
+						target.target = '_blank';
+						target.rel = 'noopener noreferrer';
+					}
+					suggestion.appendChild( target );
+					if ( row.match_reason ) {
+						suggestion.appendChild( el( 'span', 'cvtrk-cell-sub', matchReasonLabel( row.match_reason ) ) );
+					}
+				} else {
+					suggestion.textContent = '—';
+				}
+				tr.appendChild( suggestion );
 				var confidenceCell = el( 'td', 'cvtrk-num' );
-				confidenceCell.textContent = row.suggested_url ? ( Number( row.confidence ) || 0 ) + '%' : '—';
+				if ( row.suggested_url ) {
+					confidenceCell.appendChild( confidenceChip( row.confidence ) );
+				} else {
+					confidenceCell.textContent = '—';
+				}
 				tr.appendChild( confidenceCell );
 				var statusCell = el( 'td' );
 				var statusBadge = el( 'span', 'cvtrk-badge cvtrk-status-' + statusClass( row.status ) );
@@ -5680,13 +5995,18 @@
 			exportLink.href = C.gscKeywordsExportUrl + '&_wpnonce=' + encodeURIComponent( C.gscKeywordsExportNonce || '' ) + ( q ? '&' + q.replace( /^&/, '' ) : '' );
 		}
 
-		function kpi( value, label, icon, modifier ) {
+		function kpi( value, label, icon, modifier, help ) {
 			var item = el( 'div', 'cvtrk-kpi' + ( modifier ? ' ' + modifier : '' ) );
 			var iconWrap = el( 'span', 'cvtrk-kpi-icon' );
 			iconWrap.appendChild( svgIcon( icon || 'search', 'cvtrk-icon' ) );
 			var body = el( 'span', 'cvtrk-kpi-body' );
 			body.appendChild( el( 'span', 'cvtrk-kpi-value', value ) );
-			body.appendChild( el( 'span', 'cvtrk-kpi-label', label ) );
+			var labelEl = el( 'span', 'cvtrk-kpi-label', label );
+			var helpEl = help ? helpIcon( help ) : null;
+			if ( helpEl ) {
+				labelEl.appendChild( helpEl );
+			}
+			body.appendChild( labelEl );
 			item.appendChild( iconWrap );
 			item.appendChild( body );
 			return item;
@@ -5728,10 +6048,10 @@
 
 			var grid = el( 'div', 'cvtrk-kpis cvtrk-kw-kpis' );
 			grid.appendChild( kpi( num( data.total_keywords ), I18N.kwTotalKeywords || 'Tracked keywords', 'search' ) );
-			grid.appendChild( kpi( num( data.high_opportunity ), I18N.kwHighOpportunity || 'High opportunity', 'click', 'is-accent' ) );
-			grid.appendChild( kpi( num( data.pages_missing ), I18N.kwPagesMissing || 'Pages with missing keywords', 'warning' ) );
-			grid.appendChild( kpi( num( data.page_two ), I18N.kwPageTwo || 'Page-2 rankings (11-20)', 'rate', 'is-amber' ) );
-			grid.appendChild( kpi( num( data.low_ctr ), I18N.kwLowCtr || 'High impressions, low CTR', 'visibility' ) );
+			grid.appendChild( kpi( num( data.high_opportunity ), I18N.kwHighOpportunity || 'High opportunity', 'click', 'is-accent', 'opportunity' ) );
+			grid.appendChild( kpi( num( data.pages_missing ), I18N.kwPagesMissing || 'Pages with missing keywords', 'warning', '', 'presence' ) );
+			grid.appendChild( kpi( num( data.page_two ), I18N.kwPageTwo || 'Page-2 rankings (11-20)', 'rate', 'is-amber', 'position' ) );
+			grid.appendChild( kpi( num( data.low_ctr ), I18N.kwLowCtr || 'High impressions, low CTR', 'visibility', '', 'ctr' ) );
 			box.appendChild( grid );
 
 			var meta = el( 'div', 'cvtrk-summary-meta cvtrk-kw-meta' );
@@ -5807,7 +6127,7 @@
 			var wrap = table( [
 				{ label: I18N.page || 'Page' },
 				{ label: I18N.kwRowsLabel || 'keywords', num: true },
-				{ label: I18N.kwOpportunity || 'Opportunity', num: true },
+				{ label: I18N.kwOpportunity || 'Opportunity', num: true, help: 'opportunity' },
 				{ label: '' }
 			] );
 			var tbody = wrap.querySelector( 'tbody' );
@@ -5901,6 +6221,12 @@
 							sortBtn.click();
 						}
 					} );
+				}
+				if ( h.help ) {
+					var help = helpIcon( h.help );
+					if ( help ) {
+						th.appendChild( help );
+					}
 				}
 				tr.appendChild( th );
 			} );
@@ -6020,13 +6346,13 @@
 				{ label: I18N.kwKeyword || 'Keyword', sort: 'query' },
 				{ label: I18N.page || 'Page' },
 				// Type chips need a wide screen; the Keyword type filter covers the rest.
-				{ label: I18N.kwTypes || 'Type', hide: 'lg' },
-				{ label: I18N.clicks || 'Clicks', num: true, sort: 'clicks' },
-				{ label: I18N.kwImpressions || 'Impressions', num: true, sort: 'impressions' },
-				{ label: I18N.kwCtrShort || 'CTR', num: true, sort: 'ctr' },
-				{ label: I18N.kwPosition || 'Position', num: true, sort: 'position' },
-				{ label: I18N.kwPresence || 'Presence' },
-				{ label: I18N.kwOpportunity || 'Opportunity', num: true, sort: 'opportunity_score' },
+				{ label: I18N.kwTypes || 'Type', hide: 'lg', help: 'keywordType' },
+				{ label: I18N.clicks || 'Clicks', num: true, sort: 'clicks', help: 'gscClicks' },
+				{ label: I18N.kwImpressions || 'Impressions', num: true, sort: 'impressions', help: 'impressions' },
+				{ label: I18N.kwCtrShort || 'CTR', num: true, sort: 'ctr', help: 'ctr' },
+				{ label: I18N.kwPosition || 'Position', num: true, sort: 'position', help: 'position' },
+				{ label: I18N.kwPresence || 'Presence', help: 'presence' },
+				{ label: I18N.kwOpportunity || 'Opportunity', num: true, sort: 'opportunity_score', help: 'opportunity' },
 				// The recommendation repeats in Details; below 1600px it gives way.
 				{ label: I18N.kwAction || 'Recommended action', hide: 'lg' },
 				// Pinned so the buttons stay reachable while the row scrolls.
@@ -6674,7 +7000,7 @@
 				dismiss.addEventListener( 'click', closeEnablePrompt );
 				actions.appendChild( dismiss );
 			} else {
-				primary = el( 'a', 'button button-primary', I18N.kwPromptConnectBtn || 'Open Google Index Monitor' );
+				primary = el( 'a', 'button button-primary', I18N.kwPromptConnectBtn || 'Open the Indexing screen' );
 				primary.href = ( C.adminUrls && C.adminUrls.gsc ) || '#';
 				actions.appendChild( primary );
 
@@ -6857,10 +7183,16 @@
 		return;
 	}
 
+	initHelpTips();
+	initGuides();
 	initSubviews();
 	initLive();
 	if ( document.getElementById( 'convertrack-overview' ) ) {
 		initOverview();
+	} else {
+		// Other screens with a section nav (Indexing, Auto-Apply); the overview
+		// wires its own inside initOverview().
+		initSectionNav();
 	}
 	if ( document.getElementById( 'convertrack-pages' ) ) {
 		initPages();

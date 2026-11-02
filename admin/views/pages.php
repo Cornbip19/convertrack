@@ -1,6 +1,7 @@
 <?php
 /**
- * Content and CTA drill-down. Hydrated client-side from the REST API.
+ * Pages & Buttons: every tracked page with a button drill-down. Hydrated
+ * client-side from the REST API.
  *
  * @package Convertrack
  */
@@ -15,8 +16,8 @@ defined( 'ABSPATH' ) || exit;
 
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
-			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Content & CTAs', 'convertrack-click-conversion-analytics' ); ?></h1>
-			<p class="cvtrk-page-desc"><?php esc_html_e( 'Compare every tracked page, then open its calls to action for a focused performance review.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ); ?></h1>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Every page visitors opened, with the clicks and conversions each one produced. Open a page to see which of its buttons and links get pressed.', 'convertrack-click-conversion-analytics' ); ?></p>
 			<span class="cvtrk-page-head-meta" data-cvtrk="pages-result-count"><?php esc_html_e( 'Loading tracked pages...', 'convertrack-click-conversion-analytics' ); ?></span>
 		</div>
 		<div class="cvtrk-page-head-actions">
@@ -38,11 +39,26 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 	</div>
 
+	<?php
+	Admin::render_guide(
+		'pages',
+		array(
+			'lead'   => __( 'Each row is one page on your site. The numbers tell you how often it was seen, how often something on it was clicked, and how often that led to a valuable action.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Pageviews', 'convertrack-click-conversion-analytics' ), __( 'How many times the page was opened in the chosen date range.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Clicks', 'convertrack-click-conversion-analytics' ), __( 'Clicks on the buttons and links on that page.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Conversions', 'convertrack-click-conversion-analytics' ), __( 'Valuable actions taken on the page: calls, bookings, messages or form sends.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'Sort by Conversions to find the pages that bring in customers, then press View details to see which buttons people press there.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
+
 	<div class="cvtrk-card" id="convertrack-content-table">
 		<div class="cvtrk-card-head cvtrk-card-head-controls">
 			<div>
-				<h2><?php esc_html_e( 'Tracked content', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Search, sort, and open a page to inspect its buttons and links.', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'All pages', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Search or sort, then open a page to see its buttons and links.', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-actions cvtrk-pages-controls" role="group" aria-label="<?php esc_attr_e( 'Content table controls', 'convertrack-click-conversion-analytics' ); ?>">
 				<label class="cvtrk-mini-field cvtrk-mini-field-search">
@@ -89,7 +105,7 @@ defined( 'ABSPATH' ) || exit;
 		<div class="cvtrk-card-head cvtrk-card-head-controls">
 			<div>
 				<h2 data-cvtrk="buttons-title"><?php esc_html_e( 'Page details', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Buttons and tracked links for the selected page', 'convertrack-click-conversion-analytics' ); ?></span>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'The buttons and links on the selected page, most clicked first', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<label class="cvtrk-mini-field">
 				<span><?php esc_html_e( 'Selected page', 'convertrack-click-conversion-analytics' ); ?></span>
@@ -99,7 +115,7 @@ defined( 'ABSPATH' ) || exit;
 			</label>
 		</div>
 		<div class="cvtrk-card-body">
-			<div data-cvtrk="top-buttons"><p class="cvtrk-skeleton"><?php esc_html_e( 'Select View details for a page to inspect its calls to action.', 'convertrack-click-conversion-analytics' ); ?></p></div>
+			<div data-cvtrk="top-buttons"><p class="cvtrk-skeleton"><?php esc_html_e( 'Choose a page above, or press View details in the table, to see which of its buttons and links get pressed.', 'convertrack-click-conversion-analytics' ); ?></p></div>
 		</div>
 	</div>
 </div>

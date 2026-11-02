@@ -16,7 +16,7 @@ defined( 'ABSPATH' ) || exit;
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
 			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Heatmaps', 'convertrack-click-conversion-analytics' ); ?></h1>
-			<p class="cvtrk-page-desc"><?php esc_html_e( 'See where visitors click and how far they scroll on each tracked page.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'A picture of where visitors click on a page and how far down they scroll.', 'convertrack-click-conversion-analytics' ); ?></p>
 			<span class="cvtrk-page-head-meta" data-cvtrk="heatmap-meta"><?php esc_html_e( 'Select a page to view its sample.', 'convertrack-click-conversion-analytics' ); ?></span>
 		</div>
 		<div class="cvtrk-page-head-actions">
@@ -30,6 +30,21 @@ defined( 'ABSPATH' ) || exit;
 			</label>
 		</div>
 	</div>
+
+	<?php
+	Admin::render_guide(
+		'heatmaps',
+		array(
+			'lead'   => __( 'Pick a page and a device. The map shows every recorded click on top of a preview of that page; the panels on the right show the same clicks as a list, plus how far people scroll.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Click map', 'convertrack-click-conversion-analytics' ), __( 'Each dot is a click. Brighter, denser spots mean many people clicked the same place.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Clicked elements', 'convertrack-click-conversion-analytics' ), __( 'Which buttons and links were pressed, most popular first. "Unlabelled element" means a clickable area with no text on it.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Scroll depth', 'convertrack-click-conversion-analytics' ), __( 'The share of visitors who scrolled at least this far down the page. 25% at the halfway mark means three in four left before seeing the lower half.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'If an important button sits below the point where most people stop scrolling, move it higher up the page.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
 
 	<div class="cvtrk-toolbar cvtrk-heatmap-toolbar">
 		<label class="cvtrk-field cvtrk-mini-field-search">
@@ -58,18 +73,18 @@ defined( 'ABSPATH' ) || exit;
 		</div>
 
 		<details class="cvtrk-action-menu cvtrk-heatmap-advanced">
-			<summary class="button"><?php esc_html_e( 'Advanced', 'convertrack-click-conversion-analytics' ); ?></summary>
+			<summary class="button"><?php esc_html_e( 'Display options', 'convertrack-click-conversion-analytics' ); ?></summary>
 			<div class="cvtrk-action-menu-panel">
 				<label class="cvtrk-mini-field">
-					<span><?php esc_html_e( 'Coordinate mode', 'convertrack-click-conversion-analytics' ); ?></span>
+					<span><?php esc_html_e( 'Place dots by', 'convertrack-click-conversion-analytics' ); ?></span>
 					<select data-cvtrk="heatmap-mode">
-						<option value="element" selected><?php esc_html_e( 'Element anchored', 'convertrack-click-conversion-analytics' ); ?></option>
-						<option value="page"><?php esc_html_e( 'Page position', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="element" selected><?php esc_html_e( 'The element that was clicked', 'convertrack-click-conversion-analytics' ); ?></option>
+						<option value="page"><?php esc_html_e( 'Position on the page', 'convertrack-click-conversion-analytics' ); ?></option>
 					</select>
 				</label>
 				<label class="cvtrk-checkbox-field">
 					<input type="checkbox" data-cvtrk="show-page" checked />
-					<span><?php esc_html_e( 'Show page preview', 'convertrack-click-conversion-analytics' ); ?></span>
+					<span><?php esc_html_e( 'Show the page behind the dots', 'convertrack-click-conversion-analytics' ); ?></span>
 				</label>
 			</div>
 		</details>
@@ -80,7 +95,7 @@ defined( 'ABSPATH' ) || exit;
 			<div class="cvtrk-card-head">
 				<div>
 					<h2><?php esc_html_e( 'Click map', 'convertrack-click-conversion-analytics' ); ?></h2>
-					<span class="cvtrk-card-sub"><?php esc_html_e( 'Click concentration over the current page preview', 'convertrack-click-conversion-analytics' ); ?></span>
+					<span class="cvtrk-card-sub"><?php esc_html_e( 'Each dot is a click. Brighter spots mean more clicks in the same place.', 'convertrack-click-conversion-analytics' ); ?></span>
 				</div>
 				<span class="cvtrk-confidence" data-cvtrk="heatmap-confidence" aria-live="polite"></span>
 			</div>
@@ -93,7 +108,7 @@ defined( 'ABSPATH' ) || exit;
 					</div>
 					<div class="cvtrk-empty-state cvtrk-heatmap-blocked" data-cvtrk="heatmap-frame-blocked" hidden>
 						<strong><?php esc_html_e( 'Page preview unavailable', 'convertrack-click-conversion-analytics' ); ?></strong>
-						<p><?php esc_html_e( 'This page blocks iframe previews. The click markers and detail panels are still available.', 'convertrack-click-conversion-analytics' ); ?></p>
+						<p><?php esc_html_e( 'This page blocks previews inside other pages. The click dots and the panels on the right still work.', 'convertrack-click-conversion-analytics' ); ?></p>
 					</div>
 				</div>
 				<p class="cvtrk-note" data-cvtrk="heatmap-note" aria-live="polite"></p>
@@ -102,17 +117,17 @@ defined( 'ABSPATH' ) || exit;
 
 		<aside class="cvtrk-heatmap-detail-panel" aria-label="<?php esc_attr_e( 'Heatmap details', 'convertrack-click-conversion-analytics' ); ?>">
 			<div class="cvtrk-card">
-				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Clicked elements', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'What visitors clicked on this page', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
+				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Clicked elements', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Buttons and links on this page, most clicked first', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
 				<div class="cvtrk-card-body"><div data-cvtrk="heatmap-elements"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div>
 			</div>
 
 			<div class="cvtrk-card">
-				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Scroll depth', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'How far down visitors browse', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
+				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Scroll depth', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'How far down the page visitors get', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
 				<div class="cvtrk-card-body"><div data-cvtrk="scroll-depth"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div>
 			</div>
 
 			<div class="cvtrk-card">
-				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Search keywords', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Terms tied to this page', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
+				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Search keywords', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Search terms that brought visitors to this page', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
 				<div class="cvtrk-card-body"><div data-cvtrk="heatmap-keywords"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div>
 			</div>
 		</aside>

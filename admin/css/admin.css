@@ -582,7 +582,8 @@
 	fill: currentColor;
 }
 
-.cvtrk-kpi .cvtrk-kpi-body {
+/* Only cards that carry a sparkline reserve room for it (2.12). */
+.cvtrk-kpi:has(.cvtrk-spark) .cvtrk-kpi-body {
 	padding-right: 120px;
 }
 
@@ -4233,4 +4234,545 @@ a.cvtrk-health-card:focus {
 .cvtrk-table-wrap::-webkit-scrollbar-thumb {
 	border-radius: 999px;
 	background: #c9d6dd;
+}
+
+/* ------------------------------------------------------------------ */
+/* 2.12: plain-language guides, help icons, readable values on every screen */
+
+/* Local navigation: name the group the tabs belong to. */
+.cvtrk-subnav-group {
+	display: inline-flex;
+	align-items: center;
+	flex: 0 0 auto;
+	margin: 0 2px 0 8px;
+	padding-right: 10px;
+	border-right: 1px solid var(--cvtrk-border);
+	color: var(--cvtrk-muted);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+/* "How to read this screen" */
+.cvtrk-guide {
+	margin: 0 0 16px;
+	border: 1px solid #cfe3e0;
+	border-radius: var(--cvtrk-radius);
+	background: linear-gradient(180deg, #f6fbfa 0%, #fff 100%);
+	box-shadow: var(--cvtrk-shadow-sm);
+}
+
+.cvtrk-guide > summary {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 11px 16px;
+	border-radius: var(--cvtrk-radius);
+	color: var(--cvtrk-navy);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.3;
+	list-style: none;
+	cursor: pointer;
+}
+
+.cvtrk-guide > summary::-webkit-details-marker {
+	display: none;
+}
+
+.cvtrk-guide > summary:focus-visible {
+	outline: none;
+	box-shadow: var(--cvtrk-focus);
+}
+
+.cvtrk-guide-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: var(--cvtrk-teal-soft);
+	color: var(--cvtrk-teal-dark);
+}
+
+.cvtrk-guide-mark .cvtrk-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.cvtrk-guide-title {
+	flex: 1 1 auto;
+}
+
+.cvtrk-guide-toggle {
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.cvtrk-guide-toggle .is-open,
+.cvtrk-guide[open] .cvtrk-guide-toggle .is-closed {
+	display: none;
+}
+
+.cvtrk-guide[open] .cvtrk-guide-toggle .is-open {
+	display: inline;
+}
+
+.cvtrk-guide-body {
+	padding: 0 16px 14px 52px;
+}
+
+.cvtrk-guide-lead {
+	margin: 0 0 10px;
+	max-width: 86ch;
+	color: var(--cvtrk-ink);
+	font-size: 13.5px;
+	line-height: 1.55;
+}
+
+.cvtrk-guide-points {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+	gap: 8px 16px;
+	margin: 0;
+}
+
+.cvtrk-guide-point {
+	margin: 0;
+	padding: 8px 12px;
+	border-left: 2px solid var(--cvtrk-teal);
+	border-radius: 0 var(--cvtrk-radius-sm) var(--cvtrk-radius-sm) 0;
+	background: rgba(255, 255, 255, 0.8);
+}
+
+.cvtrk-guide-point dt {
+	margin: 0 0 2px;
+	color: var(--cvtrk-navy);
+	font-size: 12.5px;
+	font-weight: 600;
+}
+
+.cvtrk-guide-point dd {
+	margin: 0;
+	color: var(--cvtrk-secondary);
+	font-size: 12.5px;
+	line-height: 1.5;
+}
+
+.cvtrk-guide-tip {
+	margin: 10px 0 0;
+	color: var(--cvtrk-secondary);
+	font-size: 12.5px;
+	line-height: 1.55;
+}
+
+.cvtrk-guide-tip strong {
+	color: var(--cvtrk-teal-dark);
+	font-weight: 600;
+}
+
+@media (max-width: 782px) {
+	.cvtrk-guide-body {
+		padding-left: 16px;
+	}
+}
+
+/* Help icon: a quiet "?" after a label. */
+.cvtrk-help {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin: 0 0 0 5px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--cvtrk-muted);
+	vertical-align: -3px;
+	line-height: 1;
+	cursor: help;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.cvtrk-help svg {
+	width: 15px;
+	height: 15px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.6;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.cvtrk-help:hover,
+.cvtrk-help.is-open {
+	color: var(--cvtrk-teal-dark);
+}
+
+.cvtrk-help:focus {
+	outline: none;
+}
+
+.cvtrk-help:focus-visible {
+	color: var(--cvtrk-teal-dark);
+	box-shadow: var(--cvtrk-focus);
+}
+
+.cvtrk-table th .cvtrk-help {
+	margin-left: 4px;
+	vertical-align: -4px;
+}
+
+.cvtrk-kpi-label .cvtrk-help,
+.cvtrk-summary-meta-label .cvtrk-help {
+	width: 14px;
+	height: 14px;
+	margin-left: 3px;
+}
+
+.cvtrk-kpi-label .cvtrk-help svg,
+.cvtrk-summary-meta-label .cvtrk-help svg {
+	width: 13px;
+	height: 13px;
+}
+
+.cvtrk-card-head h2 .cvtrk-help {
+	vertical-align: -2px;
+}
+
+/* The tooltip lives on <body>, outside the .convertrack token scope. */
+.cvtrk-tip-pop {
+	position: fixed;
+	z-index: 100000;
+	max-width: 290px;
+	padding: 9px 12px;
+	border-radius: 8px;
+	background: #0b2a4a;
+	color: #fff;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-size: 12.5px;
+	font-weight: 500;
+	line-height: 1.45;
+	box-shadow: 0 10px 24px rgba(11, 42, 74, 0.22);
+	pointer-events: none;
+}
+
+.cvtrk-tip-pop[hidden] {
+	display: none;
+}
+
+.cvtrk-tip-pop::after {
+	content: "";
+	position: absolute;
+	left: var(--cvtrk-tip-arrow, 50%);
+	bottom: -5px;
+	width: 10px;
+	height: 10px;
+	margin-left: -5px;
+	background: inherit;
+	transform: rotate(45deg);
+}
+
+.cvtrk-tip-pop.is-below::after {
+	top: -5px;
+	bottom: auto;
+}
+
+/* Journeys: a path as step chips. */
+.cvtrk-path {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 6px;
+	max-width: 100%;
+}
+
+.cvtrk-path-step {
+	display: inline-block;
+	max-width: min(100%, 420px);
+	padding: 2px 8px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: 999px;
+	background: var(--cvtrk-card-soft);
+	color: var(--cvtrk-ink);
+	font-family: Consolas, Monaco, monospace;
+	font-size: 11.5px;
+	line-height: 1.5;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.cvtrk-path-step:last-child {
+	border-color: transparent;
+	background: var(--cvtrk-teal-soft);
+	color: var(--cvtrk-teal-dark);
+	font-weight: 600;
+}
+
+.cvtrk-path-arrow {
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+}
+
+/* Secondary lines inside table cells (Broken URLs, Indexing, Auto-Apply). */
+.cvtrk-cell-sub {
+	display: block;
+	margin-top: 3px;
+	color: var(--cvtrk-muted);
+	font-size: 11.5px;
+	font-weight: 400;
+	line-height: 1.35;
+}
+
+.cvtrk-cell-note {
+	display: block;
+	margin-top: 3px;
+	color: var(--cvtrk-secondary);
+	font-size: 11.5px;
+	font-style: italic;
+	line-height: 1.35;
+}
+
+.cvtrk-cell-code {
+	display: block;
+	margin-top: 4px;
+	font-size: 11px;
+}
+
+.cvtrk-table td > a.cvtrk-label {
+	color: var(--cvtrk-navy);
+	text-decoration: none;
+}
+
+.cvtrk-table td > a.cvtrk-label:hover,
+.cvtrk-table td > a.cvtrk-label:focus {
+	text-decoration: underline;
+}
+
+/* Confidence chips. */
+.cvtrk-conf.is-high {
+	border-color: transparent;
+	background: var(--cvtrk-green-soft);
+	color: var(--cvtrk-green);
+}
+
+.cvtrk-conf.is-mid {
+	border-color: transparent;
+	background: var(--cvtrk-amber-soft);
+	color: var(--cvtrk-amber-dark);
+}
+
+/* Heatmap side panel: narrow cards must still show the numbers. */
+.cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-label,
+.cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-sub {
+	max-width: min(190px, 15vw);
+}
+
+.cvtrk-heatmap-detail-panel .cvtrk-table th,
+.cvtrk-heatmap-detail-panel .cvtrk-table td {
+	padding: 9px 8px;
+}
+
+.cvtrk-heatmap-detail-panel .cvtrk-meter {
+	width: 44px;
+}
+
+/* Indexing: one line under each coverage group title. */
+.cvtrk-gsc-group-desc {
+	margin: -4px 0 10px;
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	line-height: 1.45;
+}
+
+/* Keyword Auto-Apply */
+.cvtrk-aa-outcome {
+	margin: 12px 0 0;
+	color: var(--cvtrk-secondary);
+	font-size: 13px;
+}
+
+.cvtrk-aa-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px 24px;
+	margin-top: 14px;
+}
+
+.cvtrk-aa-action {
+	display: grid;
+	gap: 4px;
+	justify-items: start;
+}
+
+.cvtrk-aa-action small {
+	color: var(--cvtrk-muted);
+	font-size: 11.5px;
+}
+
+.cvtrk-aa-subhead {
+	margin: 18px 0 8px;
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.cvtrk-aa-disclosure {
+	margin-top: 12px;
+}
+
+.cvtrk-aa-table td {
+	vertical-align: top;
+}
+
+.cvtrk-aa-table td.cvtrk-aa-text {
+	min-width: 260px;
+	line-height: 1.5;
+}
+
+.cvtrk-aa-table mark {
+	padding: 0 2px;
+	border-radius: 2px;
+	background: #fff3a8;
+	color: var(--cvtrk-ink);
+}
+
+.cvtrk-aa-table .cvtrk-aa-when {
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.cvtrk-aa-col-page {
+	width: 20%;
+}
+
+.cvtrk-aa-col-review {
+	width: 22%;
+}
+
+.cvtrk-aa-keyword {
+	display: block;
+	margin-top: 4px;
+}
+
+.cvtrk-aa-decide {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.cvtrk-aa-decide form {
+	margin: 0;
+}
+
+.cvtrk-aa-edit {
+	margin-top: 8px;
+}
+
+.cvtrk-aa-edit > summary {
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.cvtrk-aa-edit textarea {
+	width: 100%;
+	margin: 6px 0;
+}
+
+.cvtrk-aa-before {
+	display: block;
+	color: var(--cvtrk-muted);
+}
+
+.cvtrk-aa-after {
+	display: block;
+	margin-top: 2px;
+}
+
+.cvtrk-aa-undo {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 10px;
+	margin: 0;
+}
+
+.cvtrk-aa-undo label {
+	color: var(--cvtrk-secondary);
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+.cvtrk-aa-fields {
+	display: grid;
+	gap: 8px;
+}
+
+.cvtrk-aa-fields label {
+	display: block;
+}
+
+.cvtrk-aa-fields .small-text {
+	width: 64px;
+}
+
+.cvtrk-card-head .cvtrk-aa-counts {
+	flex-wrap: wrap;
+}
+
+.convertrack .cvtrk-card .form-table {
+	margin-top: 0;
+}
+
+.convertrack .cvtrk-card .form-table th {
+	width: 200px;
+	padding-left: 0;
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+	font-weight: 600;
+}
+
+/* Broken URLs: wrap the row buttons in a pinned column, keep labels compact. */
+.cvtrk-table td.cvtrk-404-actions {
+	min-width: 176px;
+	max-width: 200px;
+	white-space: normal;
+}
+
+.cvtrk-table td.cvtrk-404-actions .button {
+	margin: 2px 4px 2px 0;
+}
+
+.cvtrk-404-view-panel .cvtrk-table .cvtrk-label,
+.cvtrk-404-view-panel .cvtrk-table .cvtrk-sub {
+	max-width: min(220px, 18vw);
+}
+
+.cvtrk-404-kpis .cvtrk-kpi-label {
+	font-size: 11.5px;
+}
+
+/* Sortable headers: keep the help icon on the same line as the sort button. */
+.cvtrk-table th.cvtrk-sortable {
+	white-space: nowrap;
+}
+
+.cvtrk-table th.cvtrk-sortable .cvtrk-sort-btn {
+	display: inline-block;
+	width: auto;
+	vertical-align: middle;
+}
+
+.cvtrk-table th.cvtrk-sortable .cvtrk-help {
+	vertical-align: middle;
 }

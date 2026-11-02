@@ -264,9 +264,13 @@ class Admin {
 	 * @param string $current Active local screen key.
 	 */
 	public static function render_subnav( $group, $current ) {
+		$group_labels = array(
+			'analytics' => __( 'Analytics', 'convertrack-click-conversion-analytics' ),
+			'search'    => __( 'Search & SEO', 'convertrack-click-conversion-analytics' ),
+		);
 		$groups = array(
 			'analytics' => array(
-				'pages'    => array( 'label' => __( 'Content & CTAs', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-pages' ),
+				'pages'    => array( 'label' => __( 'Pages & Buttons', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-pages' ),
 				'heatmaps' => array( 'label' => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-heatmaps' ),
 				'funnels'  => array( 'label' => __( 'Journeys', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-funnels' ),
 			),
@@ -282,6 +286,7 @@ class Admin {
 		}
 		?>
 		<nav class="cvtrk-subnav" aria-label="<?php esc_attr_e( 'Current section', 'convertrack-click-conversion-analytics' ); ?>">
+			<span class="cvtrk-subnav-group"><?php echo esc_html( $group_labels[ $group ] ); ?></span>
 			<?php foreach ( $groups[ $group ] as $key => $item ) : ?>
 				<a class="cvtrk-subnav-link <?php echo $key === $current ? 'is-active' : ''; ?>" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $item['page'] ) ); ?>" <?php echo $key === $current ? 'aria-current="page"' : ''; ?>><?php echo esc_html( $item['label'] ); ?></a>
 			<?php endforeach; ?>
@@ -327,6 +332,127 @@ class Admin {
 		}
 
 		return '<svg class="cvtrk-icon cvtrk-icon-' . esc_attr( $name ) . '" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' . $icons[ $name ] . '</svg>';
+	}
+
+	/**
+	 * Plain-language definitions shared by the PHP views (help icons, guides)
+	 * and the admin script (table header help). Keyed by a short term id.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function glossary() {
+		static $terms = null;
+		if ( null !== $terms ) {
+			return $terms;
+		}
+		$terms = array(
+			'pageviews'          => __( 'How many times a page was opened. Ten views by one person count as ten.', 'convertrack-click-conversion-analytics' ),
+			'clicks'             => __( 'Clicks on the buttons and links Convertrack tracks on your pages.', 'convertrack-click-conversion-analytics' ),
+			'conversions'        => __( 'Valuable actions: calls, bookings, messages, form sends, or reaching a thank-you page.', 'convertrack-click-conversion-analytics' ),
+			'conversionRate'     => __( 'The share of visits that included at least one valuable action.', 'convertrack-click-conversion-analytics' ),
+			'sessions'           => __( 'Visits. One person can make several visits over time; each one is a session.', 'convertrack-click-conversion-analytics' ),
+			'convertingSessions' => __( 'Visits in which at least one valuable action happened: a call, a booking, a message.', 'convertrack-click-conversion-analytics' ),
+			'visitors'           => __( 'Different people, as far as a browser can tell. One person on two devices counts twice.', 'convertrack-click-conversion-analytics' ),
+			'cta'                => __( 'A call to action: a button or link you want visitors to press, such as Book now or Call.', 'convertrack-click-conversion-analytics' ),
+			'heatmapClicks'      => __( 'Clicks recorded together with where on the page they happened.', 'convertrack-click-conversion-analytics' ),
+			'scrollDepth'        => __( 'The share of visitors who scrolled at least this far down the page.', 'convertrack-click-conversion-analytics' ),
+			'path'               => __( 'The pages a visitor opened, in order, before the valuable action happened.', 'convertrack-click-conversion-analytics' ),
+			'dropoff'            => __( 'The last page someone saw before leaving without doing anything valuable.', 'convertrack-click-conversion-analytics' ),
+			'source'             => __( 'Where the visit came from: a Google search, a link on another site, social media, or the address typed directly.', 'convertrack-click-conversion-analytics' ),
+			'impressions'        => __( 'How many times your site appeared in Google\'s search results for this search.', 'convertrack-click-conversion-analytics' ),
+			'gscClicks'          => __( 'People who clicked through to your site from Google\'s results for this search.', 'convertrack-click-conversion-analytics' ),
+			'ctr'                => __( 'Click-through rate: clicks divided by impressions. 5% means 1 in 20 people who saw you clicked.', 'convertrack-click-conversion-analytics' ),
+			'position'           => __( 'Your average spot on Google\'s results page. 1 is the top result; 11 or more is page two.', 'convertrack-click-conversion-analytics' ),
+			'presence'           => __( 'Whether the words people search for actually appear on the page. Missing means they do not appear at all.', 'convertrack-click-conversion-analytics' ),
+			'opportunity'        => __( 'A 0 to 100 score for how much a small change could gain. Many impressions, a weak position and missing words score highest.', 'convertrack-click-conversion-analytics' ),
+			'keywordType'        => __( 'What kind of search this is: a service, a place, a question, your brand name, and so on.', 'convertrack-click-conversion-analytics' ),
+			'branded'            => __( 'Branded searches include your business name. Non-branded searches come from people who do not know you yet.', 'convertrack-click-conversion-analytics' ),
+			'indexed'            => __( 'Google shows this page in its search results.', 'convertrack-click-conversion-analytics' ),
+			'pending'            => __( 'Google knows the page exists but has not listed it yet. Normal for new pages.', 'convertrack-click-conversion-analytics' ),
+			'issues'             => __( 'Google decided not to list the page. The reason is shown next to it.', 'convertrack-click-conversion-analytics' ),
+			'indexStatus'        => __( 'What Google reported the last time this page was checked.', 'convertrack-click-conversion-analytics' ),
+			'hits'               => __( 'How many times visitors reached this broken address.', 'convertrack-click-conversion-analytics' ),
+			'suggestedRedirect'  => __( 'The page Convertrack thinks the visitor was looking for.', 'convertrack-click-conversion-analytics' ),
+			'confidence'         => __( 'How sure the match is. 90% and above is safe to approve; below 60% deserves a look first.', 'convertrack-click-conversion-analytics' ),
+			'status404'          => __( 'New: not reviewed yet. Recommended: a redirect is suggested. Manual review: no safe suggestion. Approved or Auto redirected: visitors are now sent to the right page.', 'convertrack-click-conversion-analytics' ),
+			'redirectHits'       => __( 'Visitors who were sent to the right page by a redirect created here.', 'convertrack-click-conversion-analytics' ),
+			'validUrls'          => __( 'Pages on your site that Convertrack knows exist. Suggestions are picked from these.', 'convertrack-click-conversion-analytics' ),
+			'recentHits'         => __( 'Broken-link hits inside the alert window. An email goes out when the count passes the limit.', 'convertrack-click-conversion-analytics' ),
+			'mode404'            => __( 'Monitor only: just records. Recommend: suggests redirects for you to approve. Auto: creates redirects itself for high-confidence matches.', 'convertrack-click-conversion-analytics' ),
+			'dryRun'             => __( 'Shows what would change without changing anything.', 'convertrack-click-conversion-analytics' ),
+			'liveRun'            => __( 'Writes the changes to your pages. Every change can be undone.', 'convertrack-click-conversion-analytics' ),
+			'seoTitle'           => __( 'The headline Google shows for your page in its search results.', 'convertrack-click-conversion-analytics' ),
+			'focusKeyword'       => __( 'The search phrase Rank Math checks the page against.', 'convertrack-click-conversion-analytics' ),
+			'sampleRate'         => __( 'The share of visitors that are tracked. 100% tracks everyone.', 'convertrack-click-conversion-analytics' ),
+			'retention'          => __( 'How long detailed records are kept before they are deleted.', 'convertrack-click-conversion-analytics' ),
+			'trackedElements'    => __( 'Which buttons and links count as clicks. The defaults cover links, buttons and form submits.', 'convertrack-click-conversion-analytics' ),
+		);
+		return $terms;
+	}
+
+	/**
+	 * A small help icon that explains a term in plain language on hover,
+	 * focus or tap. Pass a glossary key, or a key plus custom text.
+	 *
+	 * @param string $key  Glossary key.
+	 * @param string $text Optional custom text (overrides the glossary).
+	 * @return string Markup, already escaped. Empty when nothing to say.
+	 */
+	public static function help( $key, $text = '' ) {
+		if ( '' === $text ) {
+			$terms = self::glossary();
+			$text  = isset( $terms[ $key ] ) ? $terms[ $key ] : '';
+		}
+		if ( '' === $text ) {
+			return '';
+		}
+		return '<button type="button" class="cvtrk-help" data-cvtrk-help="' . esc_attr( $text ) . '" aria-label="' . esc_attr__( 'What does this mean?', 'convertrack-click-conversion-analytics' ) . '">'
+			. '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.6"/><path d="M6.1 6.4a1.95 1.95 0 1 1 2.8 1.75c-.6.3-.9.7-.9 1.3"/><path d="M8 11.6h.01"/></svg>'
+			. '</button>';
+	}
+
+	/**
+	 * "How to read this screen": a short, collapsible, plain-language guide
+	 * shown at the top of a screen. The admin script remembers whether the
+	 * user collapsed it.
+	 *
+	 * @param string $key   Screen key (remembered per screen).
+	 * @param array  $guide { title?, lead?, points? (array of [term, text]), tip?, tipLabel? }.
+	 */
+	public static function render_guide( $key, array $guide ) {
+		$key    = sanitize_key( $key );
+		$title  = isset( $guide['title'] ) ? $guide['title'] : __( 'How to read this screen', 'convertrack-click-conversion-analytics' );
+		$lead   = isset( $guide['lead'] ) ? $guide['lead'] : '';
+		$points = isset( $guide['points'] ) && is_array( $guide['points'] ) ? $guide['points'] : array();
+		$tip    = isset( $guide['tip'] ) ? $guide['tip'] : '';
+		$label  = isset( $guide['tipLabel'] ) ? $guide['tipLabel'] : __( 'Start here:', 'convertrack-click-conversion-analytics' );
+		?>
+		<details class="cvtrk-guide" data-cvtrk-guide="<?php echo esc_attr( $key ); ?>" open>
+			<summary>
+				<span class="cvtrk-guide-mark" aria-hidden="true"><?php echo self::icon( 'info' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+				<span class="cvtrk-guide-title"><?php echo esc_html( $title ); ?></span>
+				<span class="cvtrk-guide-toggle" aria-hidden="true"><span class="is-open"><?php esc_html_e( 'Hide', 'convertrack-click-conversion-analytics' ); ?></span><span class="is-closed"><?php esc_html_e( 'Show', 'convertrack-click-conversion-analytics' ); ?></span></span>
+			</summary>
+			<div class="cvtrk-guide-body">
+				<?php if ( '' !== $lead ) : ?>
+					<p class="cvtrk-guide-lead"><?php echo esc_html( $lead ); ?></p>
+				<?php endif; ?>
+				<?php if ( $points ) : ?>
+					<dl class="cvtrk-guide-points">
+						<?php foreach ( $points as $point ) : ?>
+							<div class="cvtrk-guide-point">
+								<dt><?php echo esc_html( $point[0] ); ?></dt>
+								<dd><?php echo esc_html( $point[1] ); ?></dd>
+							</div>
+						<?php endforeach; ?>
+					</dl>
+				<?php endif; ?>
+				<?php if ( '' !== $tip ) : ?>
+					<p class="cvtrk-guide-tip"><strong><?php echo esc_html( $label ); ?></strong> <?php echo esc_html( $tip ); ?></p>
+				<?php endif; ?>
+			</div>
+		</details>
+		<?php
 	}
 
 	/**
@@ -594,6 +720,7 @@ class Admin {
 					'gscKeywords' => esc_url_raw( admin_url( 'admin.php?page=convertrack-gsc-keywords' ) ),
 					'notFound' => esc_url_raw( admin_url( 'admin.php?page=convertrack-404-monitor' ) ),
 				),
+				'terms'          => self::glossary(),
 				'health'         => array(
 					'wpVersion'  => get_bloginfo( 'version' ),
 					'phpVersion' => PHP_VERSION,
@@ -669,6 +796,60 @@ class Admin {
 					'peakDay'         => __( 'Peak day', 'convertrack-click-conversion-analytics' ),
 					'unlabelledElement' => __( 'Unlabelled element', 'convertrack-click-conversion-analytics' ),
 					'noConversionsHour' => __( 'none', 'convertrack-click-conversion-analytics' ),
+					'helpWhat'        => __( 'What does this mean?', 'convertrack-click-conversion-analytics' ),
+					'choosePage'      => __( 'Choose a page above, or press View details in the table, to see which of its buttons and links get pressed.', 'convertrack-click-conversion-analytics' ),
+					'today'           => __( 'Today', 'convertrack-click-conversion-analytics' ),
+					'yesterday'       => __( 'Yesterday', 'convertrack-click-conversion-analytics' ),
+					'firstSeen'       => __( 'First seen', 'convertrack-click-conversion-analytics' ),
+					'homePage'        => __( 'Home', 'convertrack-click-conversion-analytics' ),
+					'pathLabel'       => __( 'Pages visited, in order', 'convertrack-click-conversion-analytics' ),
+					'buttonOrLink'    => __( 'Button or link', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'scrolledThisFar' => __( '%1$s of visitors scrolled this far', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of visitors. */
+					'visitorsSampled' => __( '%1$s visitors sampled', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'clicksPlotted'   => __( '%1$s clicks plotted. Brighter spots mean more clicks in the same place.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'confidenceHigh'  => __( 'High confidence · %1$s clicks in this view', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'confidenceModerate' => __( 'Moderate confidence · %1$s clicks in this view', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'confidenceLow'   => __( 'Low confidence · only %1$s clicks in this view', 'convertrack-click-conversion-analytics' ),
+					'confSafe'        => __( 'Safe to approve', 'convertrack-click-conversion-analytics' ),
+					'confCheck'       => __( 'Worth a look before approving', 'convertrack-click-conversion-analytics' ),
+					'confLow'         => __( 'Weak match', 'convertrack-click-conversion-analytics' ),
+					'postType'        => __( 'Type', 'convertrack-click-conversion-analytics' ),
+					'lastChecked'     => __( 'Last checked', 'convertrack-click-conversion-analytics' ),
+					'gscGroupIndexedDesc' => __( 'Google shows these pages in its search results.', 'convertrack-click-conversion-analytics' ),
+					'gscGroupPendingDesc' => __( 'Google knows these pages but has not listed them yet. New pages usually sit here for a while.', 'convertrack-click-conversion-analytics' ),
+					'gscGroupIssuesDesc'  => __( 'Google decided not to list these pages. Each one has a reason, shown below.', 'convertrack-click-conversion-analytics' ),
+					'nfModeLabels'    => array(
+						'monitor'              => __( 'Monitor only', 'convertrack-click-conversion-analytics' ),
+						'recommend'            => __( 'Recommend only (you approve)', 'convertrack-click-conversion-analytics' ),
+						'manual'               => __( 'Manual approval', 'convertrack-click-conversion-analytics' ),
+						'auto_high_confidence' => __( 'Auto redirect (high confidence)', 'convertrack-click-conversion-analytics' ),
+					),
+					'nfMatchReasons'  => array(
+						'exact_path'             => __( 'Exact match', 'convertrack-click-conversion-analytics' ),
+						'exact_slug'             => __( 'Same page name', 'convertrack-click-conversion-analytics' ),
+						'renamed_slug'           => __( 'Renamed page', 'convertrack-click-conversion-analytics' ),
+						'renamed_slug_ambiguous' => __( 'Renamed page (unsure)', 'convertrack-click-conversion-analytics' ),
+						'renamed_date'           => __( 'Moved from a dated address', 'convertrack-click-conversion-analytics' ),
+						'normalized_path'        => __( 'Same address, tidied up', 'convertrack-click-conversion-analytics' ),
+						'page_path'              => __( 'Matching page address', 'convertrack-click-conversion-analytics' ),
+						'ambiguous_slug'         => __( 'Similar name (unsure)', 'convertrack-click-conversion-analytics' ),
+						'token_subset'           => __( 'Shares the key words', 'convertrack-click-conversion-analytics' ),
+						'token_subset_ambiguous' => __( 'Shares some words (unsure)', 'convertrack-click-conversion-analytics' ),
+						'unpublished_parent'     => __( 'Parent of an unpublished page', 'convertrack-click-conversion-analytics' ),
+						'similar_keywords'       => __( 'Similar words', 'convertrack-click-conversion-analytics' ),
+						'partial_slug'           => __( 'Partly matching name', 'convertrack-click-conversion-analytics' ),
+						'post_type_match'        => __( 'Same kind of content', 'convertrack-click-conversion-analytics' ),
+						'parent_page_match'      => __( 'Parent page', 'convertrack-click-conversion-analytics' ),
+						'archive_match'          => __( 'Category or archive page', 'convertrack-click-conversion-analytics' ),
+						'fallback'               => __( 'Fallback page (no real match)', 'convertrack-click-conversion-analytics' ),
+						'unpublished_source'     => __( 'The page was unpublished', 'convertrack-click-conversion-analytics' ),
+					),
 					'rightScale'      => __( 'right scale', 'convertrack-click-conversion-analytics' ),
 					'busiestHour'     => __( 'Busiest hour', 'convertrack-click-conversion-analytics' ),
 					'device'       => __( 'Device', 'convertrack-click-conversion-analytics' ),
@@ -799,11 +980,11 @@ class Admin {
 					'gscTabsOpened'      => __( 'Opened in Search Console:', 'convertrack-click-conversion-analytics' ),
 					'gscTabsHint'        => __( 'Click "Request Indexing" in each tab.', 'convertrack-click-conversion-analytics' ),
 					'gscTabsBlocked'     => __( 'Your browser blocked some tabs — allow pop-ups for this site and click again. Opened:', 'convertrack-click-conversion-analytics' ),
-					'kwTotalKeywords'    => __( 'Tracked keywords', 'convertrack-click-conversion-analytics' ),
+					'kwTotalKeywords'    => __( 'Searches tracked', 'convertrack-click-conversion-analytics' ),
 					'kwHighOpportunity'  => __( 'High opportunity', 'convertrack-click-conversion-analytics' ),
-					'kwPagesMissing'     => __( 'Pages with missing keywords', 'convertrack-click-conversion-analytics' ),
-					'kwPageTwo'          => __( 'Page-2 rankings (11-20)', 'convertrack-click-conversion-analytics' ),
-					'kwLowCtr'           => __( 'High impressions, low CTR', 'convertrack-click-conversion-analytics' ),
+					'kwPagesMissing'     => __( 'Pages missing their keywords', 'convertrack-click-conversion-analytics' ),
+					'kwPageTwo'          => __( 'Stuck on page two (position 11-20)', 'convertrack-click-conversion-analytics' ),
+					'kwLowCtr'           => __( 'Seen often, rarely clicked', 'convertrack-click-conversion-analytics' ),
 					'kwBranded'          => __( 'Branded', 'convertrack-click-conversion-analytics' ),
 					'kwNonBranded'       => __( 'Non-branded', 'convertrack-click-conversion-analytics' ),
 					'kwLastSync'         => __( 'Last keyword sync', 'convertrack-click-conversion-analytics' ),
@@ -815,7 +996,7 @@ class Admin {
 					'kwSyncQueued'       => __( 'Keyword sync started…', 'convertrack-click-conversion-analytics' ),
 					'kwAnalyzeQueued'    => __( 'Re-analysis queued for', 'convertrack-click-conversion-analytics' ),
 					'kwRowsLabel'        => __( 'keywords', 'convertrack-click-conversion-analytics' ),
-					'kwNotConnected'     => __( 'Connect Google Search Console on the Google Index Monitor tab to collect keyword data.', 'convertrack-click-conversion-analytics' ),
+					'kwNotConnected'     => __( 'Connect Google Search Console on the Indexing screen to collect keyword data.', 'convertrack-click-conversion-analytics' ),
 					'kwDisabled'         => __( 'Enable Keyword Insights in the settings below, save, then run your first sync.', 'convertrack-click-conversion-analytics' ),
 					'kwNeverSynced'      => __( 'No keyword data yet. Run your first sync to import queries from Search Console.', 'convertrack-click-conversion-analytics' ),
 					'kwSyncFirst'        => __( 'Sync now', 'convertrack-click-conversion-analytics' ),
@@ -884,7 +1065,7 @@ class Admin {
 					'kwPromptDismiss'       => __( 'Not now', 'convertrack-click-conversion-analytics' ),
 					'kwPromptConnectTitle'  => __( 'Connect Google Search Console', 'convertrack-click-conversion-analytics' ),
 					'kwPromptConnectBody'   => __( 'Keyword Insights needs your Search Console connection to pull keyword data. Connect Google first, then enable this feature.', 'convertrack-click-conversion-analytics' ),
-					'kwPromptConnectBtn'    => __( 'Open Google Index Monitor', 'convertrack-click-conversion-analytics' ),
+					'kwPromptConnectBtn'    => __( 'Open the Indexing screen', 'convertrack-click-conversion-analytics' ),
 					'kwPromptEnableAnyway'  => __( 'Enable anyway', 'convertrack-click-conversion-analytics' ),
 					'kwEnabling'            => __( 'Enabling…', 'convertrack-click-conversion-analytics' ),
 					'kwEnabledMsg'          => __( 'Keyword Insights enabled.', 'convertrack-click-conversion-analytics' ),
@@ -898,16 +1079,16 @@ class Admin {
 					'kwSelectRow'           => __( 'Select keyword', 'convertrack-click-conversion-analytics' ),
 					'kwSelectAll'           => __( 'Select all keywords on this page', 'convertrack-click-conversion-analytics' ),
 					'kwStatusLost'          => __( 'Lost contact with the sync status endpoint. The sync may still be running in the background — refresh to check.', 'convertrack-click-conversion-analytics' ),
-					'nfTotal'               => __( 'Total 404 URLs', 'convertrack-click-conversion-analytics' ),
-					'nfNew'                 => __( 'New', 'convertrack-click-conversion-analytics' ),
-					'nfPending'             => __( 'Pending suggestions', 'convertrack-click-conversion-analytics' ),
-					'nfResolved'            => __( 'Auto-resolved', 'convertrack-click-conversion-analytics' ),
-					'nfManual'              => __( 'Manual review', 'convertrack-click-conversion-analytics' ),
+					'nfTotal'               => __( 'Broken addresses', 'convertrack-click-conversion-analytics' ),
+					'nfNew'                 => __( 'New, not reviewed', 'convertrack-click-conversion-analytics' ),
+					'nfPending'             => __( 'Awaiting your approval', 'convertrack-click-conversion-analytics' ),
+					'nfResolved'            => __( 'Fixed by a redirect', 'convertrack-click-conversion-analytics' ),
+					'nfManual'              => __( 'Need your decision', 'convertrack-click-conversion-analytics' ),
 					'nfIgnored'             => __( 'Ignored', 'convertrack-click-conversion-analytics' ),
 					'nfMode'                => __( 'Mode', 'convertrack-click-conversion-analytics' ),
-					'nfRedirectHits'        => __( 'Redirect hits', 'convertrack-click-conversion-analytics' ),
-					'nfValidUrls'           => __( 'Valid URLs', 'convertrack-click-conversion-analytics' ),
-					'nfRecentHits'          => __( 'Recent hits', 'convertrack-click-conversion-analytics' ),
+					'nfRedirectHits'        => __( 'Visitors redirected', 'convertrack-click-conversion-analytics' ),
+					'nfValidUrls'           => __( 'Known good pages', 'convertrack-click-conversion-analytics' ),
+					'nfRecentHits'          => __( 'Recent 404 hits', 'convertrack-click-conversion-analytics' ),
 					'nfToolDetected'        => __( 'Redirect tool detected', 'convertrack-click-conversion-analytics' ),
 					'nfSelected'            => __( 'selected', 'convertrack-click-conversion-analytics' ),
 					'nfNoneSelected'        => __( 'No rows selected', 'convertrack-click-conversion-analytics' ),
