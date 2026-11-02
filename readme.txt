@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.9.0
+Stable tag: 2.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,11 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.10.0 =
+* New: the Activity timeline can group conversions by click kind (View > By click kind). Calls, emails, text messages, outbound goal links, configured buttons and goal pages each get a row with the number of converted clicks, sessions and share for the selected range, and expand to the latest clicks of that kind. Counts come from daily rollups plus today's live rows, so they cover the whole range, not only the events the timeline loads.
+* New: every conversion now records which rule it matched and what kind of action it was; daily rollups keep per-kind totals after raw events are purged. Settings > Conversion labels names a rule for the grouped view (for example `.book-now | Book online`).
+* Change: timeline rows for conversions show the kind next to the event type.
 
 = 2.9.0 =
 * New: Keyword Auto-Apply (Search & SEO > Auto-Apply). Turns "improve title / meta" opportunities into Rank Math SEO title and secondary focus keyword changes, with a dry-run mode, per-run cap, per-page cooldown, snapshots, one-click undo, and automatic revert when clicks or CTR fall after the evaluation window. Branded, competitor, question, search-operator, non-English and other-location keywords are never used. Content recommendations stay in Keyword Opportunities for review.

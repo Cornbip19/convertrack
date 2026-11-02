@@ -19,6 +19,7 @@ class Manifest {
 			'convertrack_events',
 			'convertrack_sessions',
 			'convertrack_daily',
+			'convertrack_daily_kinds',
 			'convertrack_sources',
 			'convertrack_geo',
 			'convertrack_search_terms',

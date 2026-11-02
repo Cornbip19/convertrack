@@ -185,6 +185,8 @@ class Collector {
 		$element_href     = '';
 		$heatmap_selector = '';
 		$is_conversion    = 0;
+		$conversion_kind  = '';
+		$conversion_goal  = '';
 
 		if ( 'click' === $type ) {
 			// Current and cached trackers may report custom role=button elements as
@@ -197,11 +199,17 @@ class Collector {
 			$element_classes  = self::sanitize_class_list( isset( $raw['cls'] ) ? $raw['cls'] : '' );
 			$element_selector = self::sanitize_structural_selector( isset( $raw['sel'] ) ? $raw['sel'] : '' );
 			$heatmap_selector = self::sanitize_structural_selector( isset( $raw['hsel'] ) ? $raw['hsel'] : '' );
-			$element_href     = self::sanitize_relative_url( isset( $raw['href'] ) ? $raw['href'] : '' );
+			$raw_href         = self::scalar( isset( $raw['href'] ) ? $raw['href'] : '' );
+			$element_href     = self::sanitize_relative_url( $raw_href );
 			if ( ! in_array( $tag, array( 'input', 'textarea', 'select', 'option' ), true ) ) {
 				$element_text = self::sanitize_static_label( isset( $raw['txt'] ) ? $raw['txt'] : '' );
 			}
-			$is_conversion = self::validate_click_conversion( $raw, $tag, $element_id, $element_classes, $element_selector, $element_href );
+			$goal          = self::validate_click_conversion( $raw, $tag, $element_id, $element_classes, $element_selector, $element_href );
+			$is_conversion = '' !== $goal ? 1 : 0;
+			if ( $is_conversion ) {
+				// The kind is decided once, here, so reports and rollups agree.
+				list( $conversion_kind, $conversion_goal ) = Conversion_Kinds::classify_click( $raw_href, $goal );
+			}
 		} elseif ( 'heatmap_click' === $type ) {
 			// Never retain arbitrary text, attributes, hrefs or CSS classes for
 			// heatmap-only clicks. Generated tag paths and coordinates are sufficient.
@@ -211,7 +219,11 @@ class Collector {
 			}
 		} elseif ( 'pageview' === $type ) {
 			$tag           = '';
-			$is_conversion = self::matches_conversion_url( $page_url ) ? 1 : 0;
+			$matched_goal  = self::matched_conversion_url( $page_url );
+			$is_conversion = '' !== $matched_goal ? 1 : 0;
+			if ( $is_conversion ) {
+				list( $conversion_kind, $conversion_goal ) = Conversion_Kinds::classify_pageview( $matched_goal );
+			}
 		} else {
 			$tag = '';
 			if ( empty( $raw['sd'] ) || absint( $raw['sd'] ) > 100 ) {
@@ -239,6 +251,8 @@ class Collector {
 			'element_selector' => $element_selector,
 			'element_href'     => $element_href,
 			'is_conversion'    => $is_conversion,
+			'conversion_kind'  => $conversion_kind,
+			'conversion_goal'  => $conversion_goal,
 			'device_type'      => $device,
 			'source'           => self::limit_bytes( $source, 100 ),
 			'referrer_host'    => self::sanitize_host( isset( $raw['rh'] ) ? $raw['rh'] : '' ),
@@ -499,27 +513,27 @@ class Collector {
 	 */
 	private static function validate_click_conversion( array $raw, $tag, $id, $classes, $selector, $href ) {
 		if ( empty( $raw['conv'] ) ) {
-			return 0;
+			return '';
 		}
 		$goal = isset( $raw['goal'] ) ? self::limit_bytes( self::scalar( $raw['goal'] ), 191 ) : '';
 		if ( '@url' === $goal ) {
-			return self::is_external_url( $href ) && self::matches_conversion_url( $href ) ? 1 : 0;
+			return self::is_external_url( $href ) && self::matches_conversion_url( $href ) ? '@url' : '';
 		}
 		foreach ( Settings::lines_to_array( Settings::get( 'conversion_selectors' ) ) as $configured ) {
 			$configured = trim( (string) $configured );
 			$has_evidence = self::selector_has_evidence( $configured, $tag, $id, $classes, $selector );
 			if ( $has_evidence ) {
-				return 1;
+				return $configured;
 			}
 			// A current tracker reports the exact configured selector. Simple tag,
 			// id and class rules must also agree with the structural fields; complex
 			// attribute/combinator rules cannot be reconstructed server-side.
 			$is_simple = (bool) preg_match( '/^(?:#[A-Za-z][A-Za-z0-9_-]*|\.[A-Za-z_-][A-Za-z0-9_-]*|[a-z][a-z0-9-]*)$/i', $configured );
 			if ( ! $is_simple && '' !== $goal && hash_equals( $configured, $goal ) ) {
-				return 1;
+				return $configured;
 			}
 		}
-		return 0;
+		return '';
 	}
 
 	/**
@@ -542,9 +556,19 @@ class Collector {
 	 * Whether a canonical URL matches any configured URL goal.
 	 */
 	private static function matches_conversion_url( $url ) {
+		return '' !== self::matched_conversion_url( $url );
+	}
+
+	/**
+	 * The configured conversion URL rule a page URL matches, or ''.
+	 *
+	 * @param string $url Page URL.
+	 * @return string
+	 */
+	private static function matched_conversion_url( $url ) {
 		$url = self::sanitize_relative_url( $url );
 		if ( '' === $url ) {
-			return false;
+			return '';
 		}
 
 		foreach ( Settings::lines_to_array( Settings::get( 'conversion_urls' ) ) as $raw_rule ) {
@@ -560,7 +584,7 @@ class Collector {
 			}
 			if ( 'regex' === $mode ) {
 				if ( self::safe_regex_match( $url, $value ) ) {
-					return true;
+					return (string) $raw_rule;
 				}
 				continue;
 			}
@@ -570,13 +594,13 @@ class Collector {
 				continue;
 			}
 			if ( 'exact' === $mode && hash_equals( $goal, $url ) ) {
-				return true;
+				return (string) $raw_rule;
 			}
 			if ( 'prefix' === $mode && 0 === strpos( $url, $goal ) ) {
-				return true;
+				return (string) $raw_rule;
 			}
 		}
-		return false;
+		return '';
 	}
 
 	/**

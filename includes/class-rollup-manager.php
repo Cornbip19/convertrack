@@ -292,6 +292,26 @@ class Rollup_Manager {
 			$source_max_id
 		);
 
+		// Conversions per kind and matched rule. Rows stored before kinds
+		// existed fold into an explicit "other" bucket rather than vanishing.
+		$queries[] = $wpdb->prepare(
+			"INSERT INTO $stage
+			(owner_token,bucket_type,bucket_hash,stat_date,dimension_one,dimension_two,element_text,conversions,conversion_events,unique_visitors)
+			SELECT %s,'kind',MD5(CONCAT(%s,'|kind|',kind_bucket,'|',conversion_goal)),%s,kind_bucket,conversion_goal,
+			SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1),
+			COUNT(DISTINCT session_id),COUNT(*),COUNT(DISTINCT visitor_id)
+			FROM (SELECT *,CASE WHEN conversion_kind='' THEN %s ELSE conversion_kind END kind_bucket
+			FROM $events WHERE is_conversion=1 AND created_at >= %s AND created_at < %s AND id <= %d) scoped
+			GROUP BY kind_bucket,conversion_goal",
+			$token,
+			$date,
+			$date,
+			Conversion_Kinds::KIND_OTHER,
+			$start,
+			$end,
+			$source_max_id
+		);
+
 		foreach ( $queries as $query ) {
 			$renewed = self::renew_lease( $date, $token );
 			if ( is_wp_error( $renewed ) ) {
@@ -416,6 +436,7 @@ class Rollup_Manager {
 		global $wpdb;
 		$stage    = Database::rollup_stage_table();
 		$daily    = Database::daily_table();
+		$kinds    = Database::daily_kinds_table();
 		$sources  = Database::sources_table();
 		$geo      = Database::geo_table();
 		$search   = Database::search_terms_table();
@@ -438,6 +459,7 @@ class Rollup_Manager {
 			$wpdb->prepare( "DELETE FROM $search WHERE stat_date=%s", $date ),
 			$wpdb->prepare( "DELETE FROM $visitors WHERE stat_date=%s", $date ),
 			$wpdb->prepare( "DELETE FROM $sessions WHERE stat_date=%s", $date ),
+			$wpdb->prepare( "DELETE FROM $kinds WHERE stat_date=%s", $date ),
 			$wpdb->prepare( "INSERT INTO $daily (bucket_hash,stat_date,page_key,post_id,element_selector,element_text,clicks,conversions,conversion_events,pageviews,unique_visitors)
 				SELECT bucket_hash,stat_date,page_key,post_id,dimension_one,element_text,clicks,conversions,conversion_events,pageviews,unique_visitors FROM $stage WHERE owner_token=%s AND bucket_type='daily'", $token ),
 			$wpdb->prepare( "INSERT INTO $sources (bucket_hash,stat_date,source,campaign,pageviews,clicks,conversions,conversion_events,unique_visitors)
@@ -450,6 +472,8 @@ class Rollup_Manager {
 				SELECT bucket_hash,stat_date,dimension_one,conversions,conversion_events,pageviews,clicks FROM $stage WHERE owner_token=%s AND bucket_type='visitor'", $token ),
 			$wpdb->prepare( "INSERT INTO $sessions (bucket_hash,stat_date,session_hash,visitor_hash,converted,conversion_events,pageviews,clicks)
 				SELECT bucket_hash,stat_date,dimension_one,dimension_two,conversions,conversion_events,pageviews,clicks FROM $stage WHERE owner_token=%s AND bucket_type='session'", $token ),
+			$wpdb->prepare( "INSERT INTO $kinds (bucket_hash,stat_date,conversion_kind,conversion_goal,element_text,conversions,conversion_events,unique_visitors)
+				SELECT bucket_hash,stat_date,dimension_one,dimension_two,element_text,conversions,conversion_events,unique_visitors FROM $stage WHERE owner_token=%s AND bucket_type='kind'", $token ),
 		);
 
 		foreach ( $queries as $query ) {

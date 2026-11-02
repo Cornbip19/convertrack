@@ -152,6 +152,16 @@ if ( $cvtrk_updater ) {
 							</p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row"><label for="cvtrk-conv-labels"><?php esc_html_e( 'Conversion labels', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<textarea id="cvtrk-conv-labels" class="large-text code" rows="4" name="convertrack_settings[conversion_kind_labels]" placeholder="tel: | Call&#10;.book-now | Book online&#10;@url | Partner site"><?php echo esc_textarea( isset( $s['conversion_kind_labels'] ) ? $s['conversion_kind_labels'] : '' ); ?></textarea>
+							<p class="description">
+								<?php esc_html_e( 'Names used when the Activity timeline groups conversions by click kind. One per line: the rule, a vertical bar, then the name. Rules are the selectors above, tel:, mailto:, sms:, @url for outbound goal links, or a goal page path.', 'convertrack-click-conversion-analytics' ); ?>
+								<br><?php esc_html_e( 'Calls, emails, text messages, outbound links and goal pages already have names; a button without one is shown by its text.', 'convertrack-click-conversion-analytics' ); ?>
+							</p>
+						</td>
+					</tr>
 				</table>
 			</div>
 		</section>

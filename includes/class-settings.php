@@ -34,6 +34,7 @@ class Settings {
 			'track_selectors'      => "a\nbutton\ninput[type=submit]\ninput[type=button]\ninput[type=image]\n[role=button]\n.btn\n.button\n.wp-block-button__link\n[data-cvtrk]",
 			'conversion_selectors' => ".cvtrk-convert\n[data-cvtrk-convert]",
 			'conversion_urls'      => '',
+			'conversion_kind_labels' => '',
 			'track_search_keywords' => 0,
 			'enable_geo'           => 0,
 			'active_window'        => 300,
@@ -91,6 +92,7 @@ class Settings {
 		$clean = self::sanitize( $input );
 		update_option( self::OPTION, $clean );
 		self::$cache = $clean;
+		Conversion_Kinds::flush_cache();
 		return $clean;
 	}
 
@@ -134,6 +136,7 @@ class Settings {
 		$clean['track_selectors']      = self::sanitize_selector_list( isset( $input['track_selectors'] ) ? $input['track_selectors'] : $d['track_selectors'] );
 		$clean['conversion_selectors'] = self::sanitize_selector_list( isset( $input['conversion_selectors'] ) ? $input['conversion_selectors'] : $d['conversion_selectors'] );
 		$clean['conversion_urls']      = self::sanitize_lines( isset( $input['conversion_urls'] ) ? $input['conversion_urls'] : $d['conversion_urls'] );
+		$clean['conversion_kind_labels'] = Conversion_Kinds::sanitize_labels( isset( $input['conversion_kind_labels'] ) ? $input['conversion_kind_labels'] : $d['conversion_kind_labels'] );
 		$clean['exclude_urls']         = self::sanitize_lines( isset( $input['exclude_urls'] ) ? $input['exclude_urls'] : $d['exclude_urls'] );
 		$clean['query_param_allowlist'] = self::sanitize_param_list( isset( $input['query_param_allowlist'] ) ? $input['query_param_allowlist'] : $d['query_param_allowlist'] );
 
@@ -329,5 +332,6 @@ class Settings {
 	 */
 	public static function flush_cache() {
 		self::$cache = null;
+		Conversion_Kinds::flush_cache();
 	}
 }
