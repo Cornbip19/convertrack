@@ -22,7 +22,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
 			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Broken URLs', 'convertrack-click-conversion-analytics' ); ?></h1>
-			<p class="cvtrk-page-desc"><?php esc_html_e( 'Broken URLs your visitors hit, with matched redirect suggestions and a safe approval workflow.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'Links that lead to a page that no longer exists on your site, and where those visitors should be sent instead.', 'convertrack-click-conversion-analytics' ); ?></p>
 		</div>
 		<div class="cvtrk-page-head-actions">
 			<span class="cvtrk-page-head-meta">
@@ -73,6 +73,22 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 
 	<div class="cvtrk-notice cvtrk-progress-notice" data-cvtrk="404-progress" hidden aria-live="polite"></div>
 
+	<?php
+	Admin::render_guide(
+		'broken-urls',
+		array(
+			'lead'   => __( 'When someone follows an old link or mistypes an address, your site answers with an error page (a "404"). Convertrack records each of those addresses and suggests the page the visitor was probably looking for.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Hits', 'convertrack-click-conversion-analytics' ), __( 'How many times visitors landed on the broken address. More hits means more lost visitors.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Suggested redirect', 'convertrack-click-conversion-analytics' ), __( 'The page Convertrack thinks the visitor wanted, with a short note on why it chose it.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Confidence', 'convertrack-click-conversion-analytics' ), __( 'How sure the match is. 90% and above is a safe bet; below 60% deserves a look before approving.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Approve', 'convertrack-click-conversion-analytics' ), __( 'Creates the redirect, so future visitors land on the right page instead of the error.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'Approve the high-confidence suggestions with the most hits first: they rescue the most visitors with the least effort. Use Ignore for addresses that only robots request.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
+
 	<div class="cvtrk-404-panel" data-cvtrk="404-summary">
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
@@ -87,8 +103,8 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<div class="cvtrk-card cvtrk-404-view-panel is-active" id="convertrack-404-events" data-cvtrk-404-panel="detected">
 		<div class="cvtrk-card-head">
 			<div>
-				<h2><?php esc_html_e( 'Detected 404s', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Recommendations, approval workflow, and bulk review', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Detected broken URLs', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'One row per broken address. Approve the suggestion, choose another page with Edit, or ignore it.', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -169,8 +185,8 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-redirects" data-cvtrk-404-panel="redirects">
 		<div class="cvtrk-card-head">
 			<div>
-				<h2><?php esc_html_e( 'Redirect Visibility', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Internal 301 redirects and safely readable third-party rows', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Redirects in place', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Redirects created here, plus read-only ones that other plugins manage', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -181,8 +197,8 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-conflicts" data-cvtrk-404-panel="conflicts">
 		<div class="cvtrk-card-head">
 			<div>
-				<h2><?php esc_html_e( 'Redirect Conflicts', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'URLs that still return 404 even though a redirect rule exists for them, with where the rule comes from', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Redirect conflicts', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Addresses that still show the error page even though a redirect rule exists for them, and which tool owns that rule', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -193,8 +209,8 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<div class="cvtrk-card cvtrk-404-view-panel" id="convertrack-404-activity" data-cvtrk-404-panel="activity">
 		<div class="cvtrk-card-head">
 			<div>
-				<h2><?php esc_html_e( '404 Monitor Activity Log', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Recent scans, recommendations, redirects, validation failures, and cleanup events', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Activity log', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'What the monitor did recently: scans, suggestions, redirects created, checks that failed, and clean-ups', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -205,7 +221,7 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 	<details class="cvtrk-advanced-disclosure cvtrk-module-settings" id="convertrack-404-settings">
 		<summary>
 			<strong><?php esc_html_e( 'Broken URL settings', 'convertrack-click-conversion-analytics' ); ?></strong>
-			<span><?php esc_html_e( 'Monitoring mode, matching, exclusions, retention, and alerts', 'convertrack-click-conversion-analytics' ); ?></span>
+			<span><?php esc_html_e( 'Whether redirects are created automatically or only after your approval, what to ignore, how long to keep records, and email alerts', 'convertrack-click-conversion-analytics' ); ?></span>
 		</summary>
 	<div class="cvtrk-card">
 		<div class="cvtrk-card-head">
@@ -233,10 +249,10 @@ $notice        = isset( $_GET['cvtrk_404_notice'] ) ? sanitize_key( wp_unslash( 
 						<th scope="row"><label for="cvtrk-404-mode"><?php esc_html_e( 'Mode', 'convertrack-click-conversion-analytics' ); ?></label></th>
 						<td>
 							<select id="cvtrk-404-mode" name="convertrack_404_settings[mode]">
-								<option value="monitor" <?php selected( $s['mode'], 'monitor' ); ?>><?php esc_html_e( 'Monitor only', 'convertrack-click-conversion-analytics' ); ?></option>
-								<option value="recommend" <?php selected( $s['mode'], 'recommend' ); ?>><?php esc_html_e( 'Recommend only', 'convertrack-click-conversion-analytics' ); ?></option>
+								<option value="monitor" <?php selected( $s['mode'], 'monitor' ); ?>><?php esc_html_e( 'Monitor only (just record the broken addresses)', 'convertrack-click-conversion-analytics' ); ?></option>
+								<option value="recommend" <?php selected( $s['mode'], 'recommend' ); ?>><?php esc_html_e( 'Recommend only (suggest a page, you approve)', 'convertrack-click-conversion-analytics' ); ?></option>
 								<option value="manual" <?php selected( $s['mode'], 'manual' ); ?>><?php esc_html_e( 'Manual approval required', 'convertrack-click-conversion-analytics' ); ?></option>
-								<option value="auto_high_confidence" <?php selected( $s['mode'], 'auto_high_confidence' ); ?>><?php esc_html_e( 'Auto redirect high-confidence matches', 'convertrack-click-conversion-analytics' ); ?></option>
+								<option value="auto_high_confidence" <?php selected( $s['mode'], 'auto_high_confidence' ); ?>><?php esc_html_e( 'Auto redirect high-confidence matches (no approval needed)', 'convertrack-click-conversion-analytics' ); ?></option>
 							</select>
 							<p class="description"><?php esc_html_e( 'Internal 301 redirects are created only in auto mode or when an administrator approves a row.', 'convertrack-click-conversion-analytics' ); ?></p>
 						</td>

@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.11.0
+Stable tag: 2.12.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,15 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.12.0 =
+* New: every screen opens with a short "How to read this screen" guide in plain language (what the numbers mean and where to start), which you can collapse; Convertrack remembers your choice.
+* New: help icons next to column headings and figures explain terms such as sessions, impressions, position, presence, opportunity and match confidence on hover, focus or tap.
+* New: Indexing and Keyword Auto-Apply get the same sticky section navigation as the dashboard; the local tabs now name their group (Analytics, Search & SEO).
+* Change: Keyword Auto-Apply is rebuilt as cards: a clear status (automatic runs, dry run or live, next and last run), suggestions with Approve / Reject, sentences already on your pages with readable status labels, and a change log that says what happened in words. The "force" checkbox is now "Undo even if the page was edited since".
+* Change: Broken URLs shows why a redirect was suggested in words (Exact match, Similar words, Renamed page, Fallback page...), confidence as a colour-coded chip, readable dates (Today, Yesterday), and plain labels for the summary figures.
+* Change: Journeys shows each path as a row of page steps ending in the converting page, rounds the conversion rate to one decimal, and uses plain card titles; Heatmaps names unlabelled elements instead of printing raw CSS selectors, and the side panel now shows its click counts at normal widths.
+* Change: "Content & CTAs" is now "Pages & Buttons"; Indexing's queue is "Page by page" with a line under each coverage group; keyword screens link to the Indexing screen by its real name.
 
 = 2.11.0 =
 * Change: the dashboard now uses one definition of "Conversions" everywhere: conversion events. The Conversions card, the Performance trend, the hourly chart, the engagement card, Journeys and the timeline all agree, and the conversion rate card says how many sessions converted out of how many.

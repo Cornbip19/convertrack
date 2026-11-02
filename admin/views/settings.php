@@ -68,6 +68,21 @@ if ( $cvtrk_updater ) {
 		<?php endif; ?>
 	<?php endif; ?>
 
+	<?php
+	Admin::render_guide(
+		'settings',
+		array(
+			'lead'   => __( 'Most sites only ever need the first two sections: what to track, and which actions count as a conversion. Everything else has sensible defaults.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Tracking', 'convertrack-click-conversion-analytics' ), __( 'What Convertrack records on your site. The defaults cover links, buttons and forms.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Goals', 'convertrack-click-conversion-analytics' ), __( 'The pages and buttons that mean a visitor did something valuable: a call, a booking, a thank-you page.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Privacy & Audience', 'convertrack-click-conversion-analytics' ), __( 'Who is counted, and which browser privacy signals are respected.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'Changes apply after you press Save settings at the bottom of the page.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
+
 	<div class="cvtrk-settings-layout">
 	<nav class="cvtrk-settings-nav" aria-label="<?php esc_attr_e( 'Settings sections', 'convertrack-click-conversion-analytics' ); ?>">
 		<a href="#cvtrk-settings-tracking"><?php esc_html_e( 'Tracking', 'convertrack-click-conversion-analytics' ); ?></a>

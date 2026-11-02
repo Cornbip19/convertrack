@@ -48,7 +48,7 @@ $type_labels = array(
 	<div class="cvtrk-page-head">
 		<div class="cvtrk-page-head-text">
 			<h1 class="cvtrk-page-title"><?php esc_html_e( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ); ?></h1>
-			<p class="cvtrk-page-desc"><?php esc_html_e( 'Search Console keyword opportunities mapped to your pages, with presence checks and clear content recommendations.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p class="cvtrk-page-desc"><?php esc_html_e( 'The searches that show your site on Google, matched to your pages, with what to improve on each one.', 'convertrack-click-conversion-analytics' ); ?></p>
 		</div>
 		<div class="cvtrk-page-head-actions">
 			<span class="cvtrk-page-head-meta">
@@ -78,8 +78,8 @@ $type_labels = array(
 
 	<?php if ( ! $connected ) : ?>
 		<div class="cvtrk-notice cvtrk-notice-warning">
-			<p><?php esc_html_e( 'Keyword Insights needs your Google Search Console connection. Connect Google on the Google Index Monitor tab first — the keyword data reuses the same connection and property.', 'convertrack-click-conversion-analytics' ); ?></p>
-			<p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=convertrack-gsc' ) ); ?>"><?php esc_html_e( 'Open Google Index Monitor', 'convertrack-click-conversion-analytics' ); ?></a></p>
+			<p><?php esc_html_e( 'This screen needs your Google Search Console connection. Connect Google on the Indexing screen first; keyword data uses the same connection.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p><a class="button" href="<?php echo esc_url( admin_url( 'admin.php?page=convertrack-gsc' ) ); ?>"><?php esc_html_e( 'Open the Indexing screen', 'convertrack-click-conversion-analytics' ); ?></a></p>
 		</div>
 	<?php elseif ( ! $s['enabled'] ) : ?>
 		<div class="cvtrk-notice cvtrk-notice-warning">
@@ -89,6 +89,22 @@ $type_labels = array(
 
 	<div class="cvtrk-notice cvtrk-progress-notice" data-cvtrk="kw-progress" hidden aria-live="polite"></div>
 
+	<?php
+	Admin::render_guide(
+		'keywords',
+		array(
+			'lead'   => __( 'Google tells us which searches showed your site and which page it showed. Convertrack then checks whether that page actually uses the words people searched for, and scores how much a small change could gain.', 'convertrack-click-conversion-analytics' ),
+			'points' => array(
+				array( __( 'Impressions', 'convertrack-click-conversion-analytics' ), __( 'How many times your site appeared in Google\'s results for that search.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Position', 'convertrack-click-conversion-analytics' ), __( 'Where you appear on the results page. 1 is the top; 11 or more means page two, which few people reach.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Presence', 'convertrack-click-conversion-analytics' ), __( 'Whether the searched words appear on your page. "Missing" means they do not appear at all.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Opportunity', 'convertrack-click-conversion-analytics' ), __( 'A 0 to 100 score for how much there is to win: many impressions, a weak position and missing words score highest.', 'convertrack-click-conversion-analytics' ) ),
+			),
+			'tip'    => __( 'Filter Opportunity to High and Presence to Missing. Those pages get searched for but never mention the words, so adding them is the quickest win.', 'convertrack-click-conversion-analytics' ),
+		)
+	);
+	?>
+
 	<div class="cvtrk-gsc-panel" data-cvtrk="kw-summary">
 		<p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p>
 	</div>
@@ -96,8 +112,8 @@ $type_labels = array(
 	<div class="cvtrk-grid">
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Branded vs Non-branded', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Query mix in the selected range', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Branded vs non-branded searches', 'convertrack-click-conversion-analytics' ); ?><?php echo Admin::help( 'branded' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'How many searches include your business name, and how many come from people who do not know you yet', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
 				<div data-cvtrk="kw-branded"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
@@ -105,8 +121,8 @@ $type_labels = array(
 		</div>
 		<div class="cvtrk-card">
 			<div class="cvtrk-card-head">
-				<h2><?php esc_html_e( 'Top Pages by Opportunity', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Where content work moves the needle most', 'convertrack-click-conversion-analytics' ); ?></span>
+				<h2><?php esc_html_e( 'Pages with the most to gain', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Where improving the content would make the biggest difference', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 			<div class="cvtrk-card-body">
 				<div data-cvtrk="kw-top-pages"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div>
@@ -118,7 +134,7 @@ $type_labels = array(
 		<div class="cvtrk-card-head">
 			<div>
 				<h2><?php esc_html_e( 'Keywords', 'convertrack-click-conversion-analytics' ); ?></h2>
-				<span class="cvtrk-card-sub"><?php esc_html_e( 'Search Console queries mapped to your content, with presence checks and recommendations', 'convertrack-click-conversion-analytics' ); ?></span>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Each search phrase, the page Google shows for it, and whether that page actually uses the phrase', 'convertrack-click-conversion-analytics' ); ?></span>
 			</div>
 		</div>
 		<div class="cvtrk-card-body">
@@ -228,7 +244,7 @@ $type_labels = array(
 			<a class="button-link" href="<?php echo esc_url( admin_url( 'admin.php?page=convertrack-settings#cvtrk-settings-modules' ) ); ?>"><?php esc_html_e( 'View all module settings', 'convertrack-click-conversion-analytics' ); ?></a>
 		</div>
 		<div class="cvtrk-card-body">
-			<p><?php esc_html_e( 'Module-specific controls remain here so you can tune recommendations while reviewing keyword data. Central Settings links to this panel alongside the other Convertrack modules.', 'convertrack-click-conversion-analytics' ); ?></p>
+			<p><?php esc_html_e( 'The settings for this screen live here so you can adjust them while looking at the data. Most sites can leave them as they are.', 'convertrack-click-conversion-analytics' ); ?></p>
 			<details class="cvtrk-advanced-disclosure">
 				<summary><?php esc_html_e( 'Advanced keyword settings', 'convertrack-click-conversion-analytics' ); ?></summary>
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
