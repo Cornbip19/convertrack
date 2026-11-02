@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.10.0
+Stable tag: 2.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,9 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.10.1 =
+* Fix: the database upgrade now runs on the first request after the plugin files change, in any context, so an unattended auto-update no longer pauses collection until someone opens wp-admin. A failing attempt is retried every two minutes; administrators still see the error notice.
 
 = 2.10.0 =
 * New: the Activity timeline can group conversions by click kind (View > By click kind). Calls, emails, text messages, outbound goal links, configured buttons and goal pages each get a row with the number of converted clicks, sessions and share for the selected range, and expand to the latest clicks of that kind. Counts come from daily rollups plus today's live rows, so they cover the whole range, not only the events the timeline loads.

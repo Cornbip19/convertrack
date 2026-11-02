@@ -17,6 +17,14 @@ class Convertrack_Conversion_Kinds_Test extends WP_UnitTestCase {
 		remove_filter( 'query', array( $this, '_drop_temporary_tables' ) );
 		$this->assertTrue( true === Database::install() );
 		$this->assertTrue( true === Ingestion_Guard::install() );
+		// The rollup commits its own transaction, which also commits the test
+		// transaction around it, so rows from an earlier run or test can
+		// survive. Start every test from empty analytics tables.
+		global $wpdb;
+		foreach ( array( Database::events_table(), Database::daily_table(), Database::daily_kinds_table(), Database::rollup_state_table(), Database::rollup_stage_table(), Database::sessions_table() ) as $table ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$wpdb->query( "DELETE FROM $table" );
+		}
 		$_SERVER['HTTP_USER_AGENT'] = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 		Settings::save(
 			array(
