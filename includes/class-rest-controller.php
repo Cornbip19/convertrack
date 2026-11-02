@@ -329,6 +329,7 @@ class Rest_Controller {
 				'series'               => Database::clicks_timeseries( $range ),
 				'activity_hours'       => Database::activity_by_hour( $raw_days ),
 				'engagement'           => Database::engagement_breakdown( $raw_days ),
+				'conversion_kinds'     => Database::conversion_kinds( $range, 8 ),
 			);
 			wp_cache_set( $cache_key, $data, 'convertrack', 15 );
 		}

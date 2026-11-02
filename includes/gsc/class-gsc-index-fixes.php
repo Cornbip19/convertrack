@@ -212,6 +212,17 @@ class Index_Fixes {
 			return self::unavailable( self::REMOVE_NOINDEX, __( 'This URL is not a WordPress post or page, so the noindex is set somewhere else.', 'convertrack-click-conversion-analytics' ) );
 		}
 
+		// Pages noindexed on purpose (e.g. pruning low-demand programmatic
+		// pages) must never be offered a one-click "remove noindex".
+		$intentional = (bool) apply_filters( 'convertrack_gsc_noindex_intentional', (bool) get_post_meta( $post_id, '_convertrack_noindex_intentional', true ), $post_id, $row );
+		if ( $intentional ) {
+			return self::unavailable(
+				self::REMOVE_NOINDEX,
+				__( 'This page is noindexed on purpose (marked as an intentional noindex), so Google excluding it is expected.', 'convertrack-click-conversion-analytics' ),
+				array( 'post_id' => $post_id, 'intentional' => true )
+			);
+		}
+
 		$provider = Keywords_SEO_Meta::provider();
 		$source    = self::noindex_source( $post_id, $provider );
 		if ( '' === $source['key'] ) {
@@ -354,13 +365,43 @@ class Index_Fixes {
 	 * @return array
 	 */
 	private static function suggest_request_indexing( array $row ) {
+		$post_id = isset( $row['post_id'] ) ? (int) $row['post_id'] : 0;
+		$url     = isset( $row['url'] ) ? (string) $row['url'] : '';
+
+		// An old address of a post that has since moved (e.g. a category change)
+		// is expected to drop out of the index; the new URL is what matters.
+		if ( $post_id > 0 && '' !== $url ) {
+			$post      = get_post( $post_id );
+			$permalink = $post && 'publish' === $post->post_status ? get_permalink( $post ) : '';
+			if ( $permalink && untrailingslashit( strtok( $permalink, '?' ) ) !== untrailingslashit( strtok( $url, '?' ) ) ) {
+				return self::unavailable(
+					self::REQUEST_INDEXING,
+					sprintf(
+						/* translators: %s: current permalink. */
+						__( 'This is an old address: the page now lives at %s. Google leaving the old URL out of the index is expected; make sure it redirects to the new address and that only the new address is in the sitemap.', 'convertrack-click-conversion-analytics' ),
+						$permalink
+					),
+					array( 'post_id' => $post_id, 'current_url' => $permalink )
+				);
+			}
+		}
+
+		$guidance = __( 'Google decides what to index; there is no technical fault to fix here. Link to this page from related pages, make its content clearly distinct from similar pages, and keep it in the sitemap.', 'convertrack-click-conversion-analytics' );
+
 		if ( ! Settings::get( 'use_indexing_api' ) ) {
+			return self::unavailable( self::REQUEST_INDEXING, $guidance );
+		}
+
+		// Google's Indexing API only accepts JobPosting / livestream pages.
+		// Offering it for anything else produced a fix that always failed.
+		if ( ! API::is_indexing_eligible( $url, $post_id, true ) ) {
 			return self::unavailable(
 				self::REQUEST_INDEXING,
-				__( 'Google decides what to index; there is no technical fault to fix here. Strengthen internal links to this page, or enable the Indexing API in settings to request a recrawl.', 'convertrack-click-conversion-analytics' )
+				__( 'A recrawl cannot be requested for this page: Google’s Indexing API only accepts job-posting and livestream pages.', 'convertrack-click-conversion-analytics' ) . ' ' . $guidance
 			);
 		}
-		return self::available( self::REQUEST_INDEXING, array( 'post_id' => isset( $row['post_id'] ) ? (int) $row['post_id'] : 0 ) );
+
+		return self::available( self::REQUEST_INDEXING, array( 'post_id' => $post_id ) );
 	}
 
 	/* ---------------------------------------------------------------------- */

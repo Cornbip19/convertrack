@@ -7,6 +7,8 @@
 
 namespace Convertrack\NotFound;
 
+use Convertrack\Scheduler;
+
 defined( 'ABSPATH' ) || exit;
 
 class Cron {
@@ -22,6 +24,10 @@ class Cron {
 
 	/**
 	 * Register hooks.
+	 *
+	 * The recurring actions are armed by Scheduler::heal() once Action
+	 * Scheduler is ready, not here: during plugins_loaded its API silently
+	 * drops every call.
 	 */
 	public function register() {
 		add_action( self::REFRESH, array( __CLASS__, 'run_refresh' ) );
@@ -31,24 +37,34 @@ class Cron {
 		add_action( self::SPIKE, array( __CLASS__, 'run_spike_check' ) );
 		add_action( self::HEALTH, array( __CLASS__, 'run_health_check' ) );
 		add_action( self::REFRESH_NOW, array( __CLASS__, 'run_refresh_step' ) );
-
-		self::schedule();
 	}
 
 	/**
-	 * Schedule recurring work.
+	 * Schedule recurring work as soon as the scheduler can take it.
 	 *
 	 * @param bool $force Clear existing events first.
 	 */
 	public static function schedule( $force = false ) {
-		if ( $force ) {
-			self::unschedule();
-		}
+		Scheduler::when_ready( array( __CLASS__, $force ? 'reschedule_recurring' : 'schedule_recurring' ) );
+	}
 
+	/**
+	 * Clear and re-arm the recurring actions (frequency changes).
+	 */
+	public static function reschedule_recurring() {
+		self::unschedule();
+		self::schedule_recurring();
+	}
+
+	/**
+	 * Arm the recurring actions. Call schedule() instead unless you know the
+	 * scheduler is ready.
+	 */
+	public static function schedule_recurring() {
 		$frequency = Settings::get( 'scan_frequency', 'hourly' );
 		$frequency = in_array( $frequency, array( 'hourly', 'twicedaily', 'daily' ), true ) ? $frequency : 'hourly';
 
-		if ( self::action_scheduler_available() ) {
+		if ( Scheduler::available() ) {
 			$intervals = array(
 				'hourly'     => HOUR_IN_SECONDS,
 				'twicedaily' => 12 * HOUR_IN_SECONDS,
@@ -93,7 +109,7 @@ class Cron {
 	 * Clear scheduled jobs.
 	 */
 	public static function unschedule() {
-		if ( self::action_scheduler_available() ) {
+		if ( Scheduler::available() ) {
 			as_unschedule_all_actions( self::REFRESH, array(), self::GROUP );
 			as_unschedule_all_actions( self::PROCESS, array(), self::GROUP );
 			as_unschedule_all_actions( self::PROCESS_NOW, array(), self::GROUP );
@@ -125,19 +141,27 @@ class Cron {
 	 * @param int $delay Seconds from now.
 	 */
 	public static function kick_processing( $delay = 0 ) {
-		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
-			if ( ! as_next_scheduled_action( self::PROCESS_NOW, array(), self::GROUP ) ) {
-				as_schedule_single_action( time() + max( 0, (int) $delay ), self::PROCESS_NOW, array(), self::GROUP );
-			}
-			return;
-		}
+		Scheduler::kick( self::PROCESS_NOW, $delay, self::GROUP );
+	}
 
-		if ( ! wp_next_scheduled( self::PROCESS_NOW ) ) {
-			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::PROCESS_NOW );
-			if ( function_exists( 'spawn_cron' ) ) {
-				spawn_cron();
-			}
+	/**
+	 * Restart a valid-URL refresh whose step chain was lost.
+	 *
+	 * @return bool Whether a step was queued.
+	 */
+	public static function resume() {
+		if ( ! Settings::get( 'enabled' ) ) {
+			return false;
 		}
+		$state = get_option( Sitemap_Source::STATE_OPTION, array() );
+		if ( ! is_array( $state ) || empty( $state['status'] ) || ! in_array( $state['status'], array( 'queued', 'running' ), true ) ) {
+			return false;
+		}
+		if ( Scheduler::is_scheduled( self::REFRESH_NOW, self::GROUP ) ) {
+			return false;
+		}
+		self::kick_refresh_step( 30 );
+		return true;
 	}
 
 	/**
@@ -198,7 +222,7 @@ class Cron {
 	 * Remove queued one-shot continuations without touching the recurring worker.
 	 */
 	public static function clear_process_continuations() {
-		if ( self::action_scheduler_available() ) {
+		if ( Scheduler::available() ) {
 			as_unschedule_all_actions( self::PROCESS_NOW, array(), self::GROUP );
 		}
 		wp_clear_scheduled_hook( self::PROCESS_NOW );
@@ -210,15 +234,7 @@ class Cron {
 	 * @param int $delay Delay in seconds.
 	 */
 	public static function kick_refresh_step( $delay = 30 ) {
-		if ( self::action_scheduler_available() && function_exists( 'as_schedule_single_action' ) ) {
-			if ( ! as_next_scheduled_action( self::REFRESH_NOW, array(), self::GROUP ) ) {
-				as_schedule_single_action( time() + max( 0, (int) $delay ), self::REFRESH_NOW, array(), self::GROUP );
-			}
-			return;
-		}
-		if ( ! wp_next_scheduled( self::REFRESH_NOW ) ) {
-			wp_schedule_single_event( time() + max( 30, (int) $delay ), self::REFRESH_NOW );
-		}
+		Scheduler::kick( self::REFRESH_NOW, $delay, self::GROUP );
 	}
 
 	/**
@@ -338,16 +354,5 @@ class Cron {
 			Logger::info( 'redirect-conflict', 'Redirect conflicts diagnosed.', array( 'diagnosed' => $diagnosed ) );
 		}
 		return $diagnosed;
-	}
-
-	/**
-	 * Whether Action Scheduler functions are available.
-	 *
-	 * @return bool
-	 */
-	private static function action_scheduler_available() {
-		return function_exists( 'as_next_scheduled_action' )
-			&& function_exists( 'as_schedule_recurring_action' )
-			&& function_exists( 'as_unschedule_all_actions' );
 	}
 }

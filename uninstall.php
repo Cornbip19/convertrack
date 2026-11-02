@@ -32,6 +32,10 @@ $convertrack_cleanup_blog = static function () use ( $wpdb ) {
 			$failures[] = $table . ': ' . $wpdb->last_error;
 		}
 	}
+	// Auto-Apply content queue (kept out of the manifest so "Delete
+	// operational data" never discards the page snapshots used for undo).
+	$wpdb->query( "DROP TABLE IF EXISTS `{$wpdb->prefix}convertrack_autoapply_content`" ); // phpcs:ignore WordPress.DB
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->postmeta} WHERE meta_key IN (%s, %s)", '_convertrack_autoapply', '_convertrack_noindex_intentional' ) ); // phpcs:ignore WordPress.DB
 
 	$jobs = \Convertrack\Manifest::cancel_jobs();
 	if ( ! empty( $jobs ) ) {

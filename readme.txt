@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.8.2
+Stable tag: 2.10.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,28 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.10.1 =
+* Fix: the database upgrade now runs on the first request after the plugin files change, in any context, so an unattended auto-update no longer pauses collection until someone opens wp-admin. A failing attempt is retried every two minutes; administrators still see the error notice.
+
+= 2.10.0 =
+* New: the Activity timeline can group conversions by click kind (View > By click kind). Calls, emails, text messages, outbound goal links, configured buttons and goal pages each get a row with the number of converted clicks, sessions and share for the selected range, and expand to the latest clicks of that kind. Counts come from daily rollups plus today's live rows, so they cover the whole range, not only the events the timeline loads.
+* New: every conversion now records which rule it matched and what kind of action it was; daily rollups keep per-kind totals after raw events are purged. Settings > Conversion labels names a rule for the grouped view (for example `.book-now | Book online`).
+* Change: timeline rows for conversions show the kind next to the event type.
+
+= 2.9.0 =
+* New: Keyword Auto-Apply (Search & SEO > Auto-Apply). Turns "improve title / meta" opportunities into Rank Math SEO title and secondary focus keyword changes, with a dry-run mode, per-run cap, per-page cooldown, snapshots, one-click undo, and automatic revert when clicks or CTR fall after the evaluation window. Branded, competitor, question, search-operator, non-English and other-location keywords are never used. Content recommendations stay in Keyword Opportunities for review.
+* New: WP-CLI commands `wp convertrack autoapply run|status|undo|config`.
+* New: Auto-Apply content suggestions. Missing keywords from Keyword Opportunities (add to content / headings / location) are verified against the live rendered page, queued one per page, drafted as a single sentence (via `wp convertrack autoapply content draft` or edited in wp-admin), checked for keyword presence, repetition, density and cross-page similarity, and appended to an existing paragraph only after approval. Each insertion is snapshotted, removable by exact string, measured after the evaluation window and reverted automatically if the page loses clicks, CTR or impressions. Title and content changes never stack on the same page within the cooldown.
+* Fix: keyword sync failed with "Column 'clicks' in field list is ambiguous" when publishing staged rows, leaving keyword data stuck at the last good sync.
+* Fix: background workers (keyword analysis, keyword sync) gave up their lock after one item when two heartbeats landed in the same second, so analysis stalled after a single row.
+* Fix: Indexing "Request indexing" was offered for every crawled/discovered-not-indexed page, but Google's Indexing API only accepts job-posting and livestream pages, so the fix (and bulk fix) always failed with "not eligible". It is now offered only for eligible pages; other pages get guidance instead, existing proposals are re-assessed once, and a fix that can no longer apply leaves the bulk queue instead of being retried forever.
+* New: pages carrying the `_convertrack_noindex_intentional` post meta (or matched by the `convertrack_gsc_noindex_intentional` filter) are reported as intentionally noindexed and never offered a "remove noindex" fix.
+* Fix: old addresses of posts that have moved (e.g. after a category change) are labelled as moved rather than treated as pages to get indexed.
+* Fix: background jobs were armed while the plugin booted, before Action Scheduler opens its data store, so the calls were silently dropped: the daily keyword tick never existed and the hourly index check was never recreated after a fatal. Jobs are now armed once Action Scheduler is ready, and re-armed within 15 minutes (and from the hourly rollup) whenever one goes missing.
+* Fix: resumable steps (sitemap scan, keyword sync, keyword analysis, 404 sitemap refresh, recommendation runs) could not queue their own next step because the duplicate guard also counted the step that was running, so every chain advanced one step per trigger. The guard now counts only pending steps, and stalled chains are restarted automatically.
+* Fix: a leftover sitemap scan step no longer starts a new scan generation on its own.
+* New: `wp convertrack jobs status` lists every recurring job with its next run and the state of each resumable chain; `wp convertrack jobs heal` re-arms and restarts them immediately.
 
 = 2.8.2 =
 * Use normal Fetch requests for regular analytics traffic, reserving sendBeacon and keepalive for navigation and page-hide delivery.

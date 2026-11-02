@@ -929,6 +929,20 @@ class Database {
 		$table = self::queue_table();
 		$limit = max( 1, min( 500, (int) $limit ) );
 
+		// 2.9.0: "request indexing" used to be proposed for pages Google's
+		// Indexing API rejects. Send those proposals back for re-assessment once.
+		if ( (int) get_option( 'convertrack_gsc_fix_rules_rev', 0 ) < 2 ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE $table SET fix_state = %s WHERE fix_code = %s AND fix_state = %s",
+					Index_Fixes::STATE_NONE,
+					Index_Fixes::REQUEST_INDEXING,
+					Index_Fixes::STATE_AVAILABLE
+				)
+			); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+			update_option( 'convertrack_gsc_fix_rules_rev', 2, false );
+		}
+
 		// Only untouched rows: anything already proposed, applied or validated is
 		// left alone. Most-recently-checked first, so the freshest data wins.
 		$rows = $wpdb->get_results(

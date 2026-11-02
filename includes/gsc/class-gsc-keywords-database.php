@@ -397,7 +397,7 @@ class Keywords_Database {
 			SELECT keyword_hash, query, page_url, page_hash, range_key, country, device, clicks, impressions, ctr, position, %s, %s, %s
 			FROM $staging WHERE sync_id = %s AND range_key = %s
 			ON DUPLICATE KEY UPDATE
-				analysis_state = IF(clicks <> VALUES(clicks) OR impressions <> VALUES(impressions) OR ctr <> VALUES(ctr) OR position <> VALUES(position), 'stale', analysis_state),
+				analysis_state = IF($keywords.clicks <> VALUES(clicks) OR $keywords.impressions <> VALUES(impressions) OR $keywords.ctr <> VALUES(ctr) OR $keywords.position <> VALUES(position), 'stale', $keywords.analysis_state),
 				query = VALUES(query), page_url = VALUES(page_url), page_hash = VALUES(page_hash), country = VALUES(country), device = VALUES(device),
 				clicks = VALUES(clicks), impressions = VALUES(impressions), ctr = VALUES(ctr), position = VALUES(position),
 				synced_at = VALUES(synced_at), updated_at = VALUES(updated_at)";

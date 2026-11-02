@@ -273,6 +273,7 @@ class Admin {
 			'search'    => array(
 				'gsc'      => array( 'label' => __( 'Indexing', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc' ),
 				'keywords' => array( 'label' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc-keywords' ),
+				'autoapply' => array( 'label' => __( 'Auto-Apply', 'convertrack-click-conversion-analytics' ), 'page' => 'convertrack-gsc-autoapply' ),
 			),
 		);
 
@@ -432,7 +433,7 @@ class Admin {
 	 */
 	public function highlight_parent_menu( $parent_file ) {
 		$page = self::current_admin_page_slug();
-		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels', 'convertrack-gsc-keywords' ), true ) ) {
+		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels', 'convertrack-gsc-keywords', 'convertrack-gsc-autoapply' ), true ) ) {
 			return self::MENU_SLUG;
 		}
 
@@ -455,7 +456,7 @@ class Admin {
 		if ( in_array( $page, array( 'convertrack-heatmaps', 'convertrack-funnels' ), true ) ) {
 			return 'convertrack-pages';
 		}
-		if ( 'convertrack-gsc-keywords' === $page ) {
+		if ( in_array( $page, array( 'convertrack-gsc-keywords', 'convertrack-gsc-autoapply' ), true ) ) {
 			return 'convertrack-gsc';
 		}
 
@@ -480,6 +481,7 @@ class Admin {
 			'convertrack-heatmaps'     => __( 'Heatmaps', 'convertrack-click-conversion-analytics' ),
 			'convertrack-funnels'      => __( 'Journeys', 'convertrack-click-conversion-analytics' ),
 			'convertrack-gsc-keywords' => __( 'Keyword Opportunities', 'convertrack-click-conversion-analytics' ),
+			'convertrack-gsc-autoapply' => __( 'Keyword Auto-Apply', 'convertrack-click-conversion-analytics' ),
 		);
 
 		if ( ! isset( $titles[ $page ] ) ) {
@@ -638,6 +640,17 @@ class Admin {
 					'scroll'       => __( 'Scroll', 'convertrack-click-conversion-analytics' ),
 					'scrolls'      => __( 'Scrolls', 'convertrack-click-conversion-analytics' ),
 					'event'        => __( 'Event', 'convertrack-click-conversion-analytics' ),
+					'view'            => __( 'View', 'convertrack-click-conversion-analytics' ),
+					'journey'         => __( 'Journey', 'convertrack-click-conversion-analytics' ),
+					'byClickKind'     => __( 'By click kind', 'convertrack-click-conversion-analytics' ),
+					'convertedClicks' => __( 'Converted clicks', 'convertrack-click-conversion-analytics' ),
+					'ofConversions'   => __( 'Share', 'convertrack-click-conversion-analytics' ),
+					'rule'            => __( 'Rule', 'convertrack-click-conversion-analytics' ),
+					'showClicks'      => __( 'Show clicks', 'convertrack-click-conversion-analytics' ),
+					'hideClicks'      => __( 'Hide clicks', 'convertrack-click-conversion-analytics' ),
+					/* translators: 1: number of clicks shown, 2: total clicks of this kind. */
+					'latestOf'        => __( 'Latest %1$s of %2$s', 'convertrack-click-conversion-analytics' ),
+					'noConversions'   => __( 'No conversions in this range yet.', 'convertrack-click-conversion-analytics' ),
 					'device'       => __( 'Device', 'convertrack-click-conversion-analytics' ),
 					'loading'      => __( 'Loading…', 'convertrack-click-conversion-analytics' ),
 					'copied'       => __( 'Copied', 'convertrack-click-conversion-analytics' ),

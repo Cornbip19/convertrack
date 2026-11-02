@@ -11,6 +11,14 @@ defined( 'ABSPATH' ) || exit;
 
 final class Plugin {
 
+	/** Plugin version whose schema upgrades last completed on this site. */
+	const VERSION_OPTION = 'convertrack_version';
+
+	/** Transient that spaces out retries of a failing upgrade. */
+	const UPGRADE_ATTEMPT_KEY = 'convertrack_upgrade_attempt';
+
+	const UPGRADE_RETRY_SECONDS = 2 * MINUTE_IN_SECONDS;
+
 	/**
 	 * @var Plugin|null
 	 */
@@ -76,6 +84,12 @@ final class Plugin {
 	 */
 	public $gsc_keywords_admin;
 
+	/** @var \Convertrack\GSC\Keywords_Autoapply */
+	public $gsc_keywords_autoapply;
+
+	/** @var \Convertrack\GSC\Keywords_Autoapply_Content */
+	public $gsc_keywords_autoapply_content;
+
 	/**
 	 * @var \Convertrack\NotFound\Rest_Controller
 	 */
@@ -120,9 +134,12 @@ final class Plugin {
 	 * Instantiate components and register hooks.
 	 */
 	private function boot() {
-		// Schema changes can be expensive. Run them only in an administrator or
-		// explicit CLI context, never while serving public traffic.
+		// Administrator requests upgrade every module schema and surface failures
+		// as notices. The first request of any kind after the plugin files change
+		// does the same once, so an unattended auto-update never leaves ingestion
+		// refusing events until someone happens to open wp-admin.
 		add_action( 'admin_init', array( $this, 'maybe_upgrade_schema' ), 1 );
+		add_action( 'init', array( $this, 'maybe_upgrade_after_update' ), 0 );
 		add_action( 'admin_notices', array( $this, 'schema_admin_notice' ) );
 		Privacy_Scrubber::register();
 		Site_Health::register();
@@ -141,6 +158,8 @@ final class Plugin {
 		$this->gsc_keywords_analyzer = new \Convertrack\GSC\Keywords_Analyzer();
 		$this->gsc_keywords_rest     = new \Convertrack\GSC\Keywords_Rest_Controller();
 		$this->gsc_keywords_admin    = new \Convertrack\GSC\Keywords_Admin();
+		$this->gsc_keywords_autoapply = new \Convertrack\GSC\Keywords_Autoapply();
+		$this->gsc_keywords_autoapply_content = new \Convertrack\GSC\Keywords_Autoapply_Content();
 		$this->notfound_rest      = new \Convertrack\NotFound\Rest_Controller();
 		$this->notfound_cron      = new \Convertrack\NotFound\Cron();
 		$this->notfound_admin     = new \Convertrack\NotFound\Admin();
@@ -161,11 +180,17 @@ final class Plugin {
 		$this->gsc_keywords_analyzer->register();
 		$this->gsc_keywords_rest->register();
 		$this->gsc_keywords_admin->register();
+		$this->gsc_keywords_autoapply->register();
+		$this->gsc_keywords_autoapply_content->register();
 		$this->notfound_rest->register();
 		$this->notfound_cron->register();
 		$this->notfound_admin->register();
 		$this->notfound_redirector->register();
 		$this->notfound_detector->register();
+
+		// Arms every recurring job once Action Scheduler is ready and repairs
+		// lost jobs or stalled step chains from then on.
+		Scheduler::register();
 
 		// Self-updater only exists in the self-hosted build (see main file).
 		if ( class_exists( __NAMESPACE__ . '\\Updater' ) ) {
@@ -181,6 +206,56 @@ final class Plugin {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+		if ( empty( $this->upgrade_schemas() ) ) {
+			update_option( self::VERSION_OPTION, CONVERTRACK_VERSION, true );
+		}
+	}
+
+	/**
+	 * Upgrade the schemas on the first request after the plugin files changed.
+	 *
+	 * The version watermark is an autoloaded option, so the check costs
+	 * nothing on the requests that matter. Each module's upgrade is a no-op
+	 * when it is already current, the core migration serialises itself with a
+	 * database lock, and a failing attempt is retried every
+	 * UPGRADE_RETRY_SECONDS rather than on every request.
+	 *
+	 * @return string 'current', 'throttled', 'failed' or 'upgraded'.
+	 */
+	public function maybe_upgrade_after_update() {
+		if ( CONVERTRACK_VERSION === get_option( self::VERSION_OPTION ) ) {
+			return 'current';
+		}
+		if ( get_transient( self::UPGRADE_ATTEMPT_KEY ) ) {
+			return 'throttled';
+		}
+		set_transient( self::UPGRADE_ATTEMPT_KEY, time(), self::UPGRADE_RETRY_SECONDS );
+
+		$failed = $this->upgrade_schemas();
+		if ( ! empty( $failed ) ) {
+			return 'failed';
+		}
+
+		update_option( self::VERSION_OPTION, CONVERTRACK_VERSION, true );
+		delete_transient( self::UPGRADE_ATTEMPT_KEY );
+
+		/**
+		 * Fires once every module schema is current after a plugin update.
+		 *
+		 * @param string $version Plugin version now installed.
+		 */
+		do_action( 'convertrack_upgraded', CONVERTRACK_VERSION );
+		return 'upgraded';
+	}
+
+	/**
+	 * Run every module upgrade and record per-module failures for the admin
+	 * notice. A migration that is already running elsewhere is not a failure
+	 * to report, only a reason to try again later.
+	 *
+	 * @return array module => error message for the modules that failed.
+	 */
+	private function upgrade_schemas() {
 		$results = array(
 			'secret'   => Settings::migrate_secret(),
 			'core'     => Database::maybe_upgrade(),
@@ -189,13 +264,18 @@ final class Plugin {
 			'keywords' => \Convertrack\GSC\Keywords_Database::maybe_upgrade(),
 			'notfound' => \Convertrack\NotFound\Database::maybe_upgrade(),
 		);
+		$failed  = array();
 		foreach ( $results as $module => $result ) {
-			if ( is_wp_error( $result ) ) {
-				update_option( 'convertrack_' . $module . '_schema_error', $result->get_error_message(), false );
-			} else {
+			if ( ! is_wp_error( $result ) ) {
 				delete_option( 'convertrack_' . $module . '_schema_error' );
+				continue;
+			}
+			$failed[ $module ] = $result->get_error_message();
+			if ( 'convertrack_migration_locked' !== $result->get_error_code() ) {
+				update_option( 'convertrack_' . $module . '_schema_error', $result->get_error_message(), false );
 			}
 		}
+		return $failed;
 	}
 
 	/**

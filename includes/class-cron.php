@@ -28,10 +28,9 @@ class Cron {
 		add_action( self::CLEANUP, array( __CLASS__, 'run_session_cleanup' ) );
 		add_action( self::ROLLUP_CONTINUE, array( __CLASS__, 'run_rollup_continuation' ) );
 
-		// Self-heal scheduling if an event was lost.
-		if ( ! wp_next_scheduled( self::HOURLY ) || ! wp_next_scheduled( self::CLEANUP ) ) {
-			self::schedule();
-		}
+		// Lost events are re-armed by Scheduler::heal() after init. Doing it
+		// here, on plugins_loaded, translated the schedule label before init,
+		// which WordPress 6.7+ reports as incorrect usage.
 	}
 
 	/**
@@ -75,6 +74,11 @@ class Cron {
 	 * Hourly job: roll up recent days and purge expired raw events.
 	 */
 	public static function run_hourly() {
+		// WP-Cron brought us here, so this is the one path that still runs when
+		// every Action Scheduler job is gone (a fatal inside a recurring action
+		// drops it for good): re-arm them and restart stalled step chains.
+		Scheduler::heal( true );
+
 		// Recover missed days oldest-first before refreshing recent buckets.
 		$catch_up = Rollup_Manager::catch_up( 10, 20 );
 		if ( is_wp_error( $catch_up ) ) {

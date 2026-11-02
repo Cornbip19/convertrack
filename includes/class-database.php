@@ -17,7 +17,7 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
-	const DB_VERSION = '2.0.0';
+	const DB_VERSION = '2.1.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 	const SCHEMA_STATUS_OPTION = 'convertrack_schema_status';
@@ -51,6 +51,16 @@ class Database {
 	public static function daily_table() {
 		global $wpdb;
 		return $wpdb->prefix . 'convertrack_daily';
+	}
+
+	/**
+	 * Daily conversion rollups per kind (call, email, button rule, goal page).
+	 *
+	 * @return string
+	 */
+	public static function daily_kinds_table() {
+		global $wpdb;
+		return $wpdb->prefix . 'convertrack_daily_kinds';
 	}
 
 	/**
@@ -130,6 +140,7 @@ class Database {
 		$events          = self::events_table();
 		$sessions        = self::sessions_table();
 		$daily           = self::daily_table();
+		$daily_kinds     = self::daily_kinds_table();
 		$sources         = self::sources_table();
 		$geo             = self::geo_table();
 		$search_terms    = self::search_terms_table();
@@ -159,6 +170,8 @@ class Database {
 			element_selector varchar(255) NOT NULL DEFAULT '',
 			element_href varchar(255) NOT NULL DEFAULT '',
 			is_conversion tinyint(1) NOT NULL DEFAULT 0,
+			conversion_kind varchar(60) NOT NULL DEFAULT '',
+			conversion_goal varchar(191) NOT NULL DEFAULT '',
 			device_type varchar(10) NOT NULL DEFAULT '',
 			country char(2) NOT NULL DEFAULT '',
 			source varchar(100) NOT NULL DEFAULT '',
@@ -190,6 +203,7 @@ class Database {
 			KEY post_created (post_id, created_at),
 			KEY type_created (event_type, created_at),
 			KEY heatmap_device (post_id, event_type, device_type, created_at),
+			KEY conversion_kind (is_conversion, conversion_kind, created_at),
 			KEY search_keyword (search_keyword),
 			KEY visitor_id (visitor_id),
 			KEY session_id (session_id)
@@ -230,6 +244,22 @@ class Database {
 			KEY post_date (post_id, stat_date),
 			KEY page_date (page_key, stat_date)
 		) $charset_collate;";
+
+		$sql[] = "CREATE TABLE $daily_kinds (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			bucket_hash char(32) NOT NULL DEFAULT '',
+			stat_date date NOT NULL,
+			conversion_kind varchar(60) NOT NULL DEFAULT '',
+			conversion_goal varchar(191) NOT NULL DEFAULT '',
+			element_text varchar(255) NOT NULL DEFAULT '',
+			conversions int(10) unsigned NOT NULL DEFAULT 0,
+			conversion_events int(10) unsigned NOT NULL DEFAULT 0,
+			unique_visitors int(10) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			UNIQUE KEY bucket_hash (bucket_hash),
+			KEY stat_date (stat_date),
+			KEY kind_date (conversion_kind, stat_date)
+		) ENGINE=InnoDB $charset_collate;";
 
 		$sql[] = "CREATE TABLE $sources (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -419,7 +449,7 @@ class Database {
 
 		$manifest = array(
 			self::events_table() => array(
-				'columns' => array( 'id', 'event_id', 'visitor_id', 'session_id', 'event_type', 'post_id', 'page_key', 'object_type', 'object_id', 'page_url', 'is_conversion', 'occurred_at_utc', 'created_at' ),
+				'columns' => array( 'id', 'event_id', 'visitor_id', 'session_id', 'event_type', 'post_id', 'page_key', 'object_type', 'object_id', 'page_url', 'is_conversion', 'conversion_kind', 'conversion_goal', 'occurred_at_utc', 'created_at' ),
 				'indexes' => array( 'PRIMARY', 'event_id', 'created_at', 'page_key_created' ),
 			),
 			self::sessions_table() => array(
@@ -429,6 +459,10 @@ class Database {
 			self::daily_table() => array(
 				'columns' => array( 'bucket_hash', 'stat_date', 'post_id', 'page_key', 'conversions', 'conversion_events', 'unique_visitors' ),
 				'indexes' => array( 'PRIMARY', 'bucket_hash', 'stat_date', 'page_date' ),
+			),
+			self::daily_kinds_table() => array(
+				'columns' => array( 'bucket_hash', 'stat_date', 'conversion_kind', 'conversion_goal', 'conversions', 'conversion_events', 'unique_visitors' ),
+				'indexes' => array( 'PRIMARY', 'bucket_hash', 'stat_date', 'kind_date' ),
 			),
 			self::sources_table() => array(
 				'columns' => array( 'bucket_hash', 'stat_date', 'source', 'campaign', 'conversions', 'conversion_events' ),
@@ -624,6 +658,7 @@ class Database {
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::events_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sessions_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::daily_table() ); // phpcs:ignore WordPress.DB
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::daily_kinds_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::sources_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::geo_table() ); // phpcs:ignore WordPress.DB
 		$wpdb->query( 'DROP TABLE IF EXISTS ' . self::search_terms_table() ); // phpcs:ignore WordPress.DB
@@ -721,13 +756,15 @@ class Database {
 
 				$clicks = wp_rand( 0, 3 );
 				for ( $c = 0; $c < $clicks; $c++ ) {
-					$pick   = $buttons[ array_rand( $buttons ) ];
-					$rows[] = array(
+					$pick      = $buttons[ array_rand( $buttons ) ];
+					$converted = ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0;
+					$rows[]    = array(
 						'visitor_id' => $vid, 'session_id' => $sid, 'event_type' => 'click',
 						'post_id' => $page['id'], 'page_url' => $page['url'], 'page_title' => $page['title'],
 						'element_tag' => $pick['tag'], 'element_id' => '', 'element_classes' => $pick['cls'],
 						'element_text' => $pick['txt'], 'element_selector' => $pick['sel'], 'element_href' => $pick['href'],
-						'is_conversion' => ( $pick['conv'] && wp_rand( 0, 1 ) ) ? 1 : 0, 'device_type' => 'desktop', 'country' => $country,
+						'is_conversion' => $converted, 'conversion_kind' => $converted ? Conversion_Kinds::KIND_RULE : '', 'conversion_goal' => $converted ? $pick['sel'] : '',
+						'device_type' => 'desktop', 'country' => $country,
 						'source' => $src['source'], 'referrer_host' => $src['rh'], 'utm_source' => $src['us'], 'utm_medium' => $src['um'], 'utm_campaign' => $src['uc'], 'utm_term' => $src['ut'], 'search_keyword' => $src['kw'], 'search_source' => $src['ks'], 'heatmap_selector' => $pick['sel'],
 						'pos_x' => wp_rand( 120, 880 ), 'pos_y' => wp_rand( 60, 820 ),
 						'rel_x' => wp_rand( 80, 920 ), 'rel_y' => wp_rand( 80, 920 ),
@@ -815,6 +852,8 @@ class Database {
 			'element_selector',
 			'element_href',
 			'is_conversion',
+			'conversion_kind',
+			'conversion_goal',
 			'device_type',
 			'country',
 			'source',
@@ -842,7 +881,7 @@ class Database {
 		);
 
 		$formats = array(
-			'%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d',
+			'%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s',
 			'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
 			'%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s',
 		);
@@ -2035,7 +2074,7 @@ class Database {
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
-				        element_text, element_selector, element_href, is_conversion,
+				        element_text, element_selector, element_href, is_conversion, conversion_kind, conversion_goal,
 				        device_type, country, source, created_at
 				 FROM $events
 				 WHERE created_at >= %s
@@ -2048,30 +2087,193 @@ class Database {
 		);
 
 		$out = array();
-		foreach ( $rows as $row ) {
-			$visitor_id = (string) $row['visitor_id'];
-			$session_id = (string) $row['session_id'];
-			$out[]      = array(
-				'id'               => (int) $row['id'],
-				'time'             => (string) $row['created_at'],
-				'visitor'          => '' !== $visitor_id ? substr( $visitor_id, 0, 8 ) : '',
-				'session'          => '' !== $session_id ? substr( $session_id, 0, 8 ) : '',
-				'type'             => (string) $row['event_type'],
-				'post_id'          => (int) $row['post_id'],
-				'page_url'         => (string) $row['page_url'],
-				'page_title'       => (string) $row['page_title'],
-				'element_text'     => (string) $row['element_text'],
-				'element_selector' => (string) $row['element_selector'],
-				'element_href'     => (string) $row['element_href'],
-				'is_conversion'    => (int) $row['is_conversion'],
-				'device'           => (string) $row['device_type'],
-				'country'          => (string) $row['country'],
-				'source'           => '' === (string) $row['source'] ? 'Direct' : (string) $row['source'],
-			);
+		foreach ( (array) $rows as $row ) {
+			$out[] = self::format_event_row( $row );
 		}
 
 		return $out;
 	}
+
+	/**
+	 * Conversions grouped by kind (call, email, text, outbound, button rule,
+	 * goal page) for the range: rolled-up history plus today's raw rows, each
+	 * kind carrying the latest conversions still in raw retention.
+	 *
+	 * @param int $days         Days back, including today.
+	 * @param int $latest_limit Latest events to attach per kind (max 50).
+	 * @return array { total_events, total_sessions, kinds }
+	 */
+	public static function conversion_kinds( $days, $latest_limit = 8 ) {
+		global $wpdb;
+
+		$days         = max( 1, (int) $days );
+		$latest_limit = max( 0, min( 50, (int) $latest_limit ) );
+		$today        = self::today();
+		$start_date   = self::date_days_ago( $days - 1 );
+		$kinds_table  = self::daily_kinds_table();
+		$events       = self::events_table();
+		$buckets      = array();
+
+		if ( $start_date < $today ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$history = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT conversion_kind, conversion_goal,
+					        SUBSTRING_INDEX(MAX(CONCAT(stat_date,'|||',element_text)),'|||',-1) AS element_text,
+					        SUM(conversions) AS conversions, SUM(conversion_events) AS conversion_events
+					 FROM $kinds_table
+					 WHERE stat_date >= %s AND stat_date < %s
+					 GROUP BY conversion_kind, conversion_goal",
+					$start_date,
+					$today
+				),
+				ARRAY_A
+			);
+			foreach ( (array) $history as $row ) {
+				self::merge_kind_bucket( $buckets, $row );
+			}
+		}
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$live = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT CASE WHEN conversion_kind = '' THEN %s ELSE conversion_kind END AS conversion_kind, conversion_goal,
+				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1) AS element_text,
+				        COUNT(DISTINCT session_id) AS conversions, COUNT(*) AS conversion_events
+				 FROM $events
+				 WHERE is_conversion = 1 AND created_at >= %s
+				 GROUP BY conversion_kind, conversion_goal",
+				Conversion_Kinds::KIND_OTHER,
+				$today . ' 00:00:00'
+			),
+			ARRAY_A
+		);
+		foreach ( (array) $live as $row ) {
+			self::merge_kind_bucket( $buckets, $row );
+		}
+
+		$total_events   = 0;
+		$total_sessions = 0;
+		foreach ( $buckets as $bucket ) {
+			$total_events   += $bucket['conversion_events'];
+			$total_sessions += $bucket['conversions'];
+		}
+
+		if ( $latest_limit > 0 && ! empty( $buckets ) ) {
+			// Latest conversions in the range, assigned to their bucket. One
+			// bounded query instead of one per kind.
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$recent = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
+					        element_text, element_selector, element_href, is_conversion, conversion_kind, conversion_goal,
+					        device_type, country, source, created_at
+					 FROM $events
+					 WHERE is_conversion = 1 AND created_at >= %s
+					 ORDER BY created_at DESC, id DESC
+					 LIMIT %d",
+					$start_date . ' 00:00:00',
+					max( 50, min( 500, $latest_limit * 40 ) )
+				),
+				ARRAY_A
+			);
+			foreach ( (array) $recent as $row ) {
+				$kind = '' === (string) $row['conversion_kind'] ? Conversion_Kinds::KIND_OTHER : Conversion_Kinds::normalize_kind( $row['conversion_kind'] );
+				$key  = $kind . '|' . (string) $row['conversion_goal'];
+				if ( ! isset( $buckets[ $key ] ) || count( $buckets[ $key ]['latest'] ) >= $latest_limit ) {
+					continue;
+				}
+				$buckets[ $key ]['latest'][] = self::format_event_row( $row );
+			}
+		}
+
+		$kinds = array_values( $buckets );
+		usort(
+			$kinds,
+			static function ( $a, $b ) {
+				if ( $a['conversion_events'] === $b['conversion_events'] ) {
+					return strcmp( $a['label'], $b['label'] );
+				}
+				return $b['conversion_events'] - $a['conversion_events'];
+			}
+		);
+		foreach ( $kinds as &$kind ) {
+			$kind['share']            = $total_events > 0 ? round( 100 * $kind['conversion_events'] / $total_events, 1 ) : 0;
+			$kind['latest_truncated'] = count( $kind['latest'] ) < $kind['conversion_events'];
+		}
+		unset( $kind );
+
+		return array(
+			'total_events'   => $total_events,
+			'total_sessions' => $total_sessions,
+			'kinds'          => $kinds,
+		);
+	}
+
+	/**
+	 * Fold one grouped row (history or live) into the kind buckets.
+	 *
+	 * @param array $buckets Buckets keyed by kind|goal.
+	 * @param array $row     Row with conversion_kind, conversion_goal, element_text, conversions, conversion_events.
+	 */
+	private static function merge_kind_bucket( array &$buckets, array $row ) {
+		$kind = Conversion_Kinds::normalize_kind( isset( $row['conversion_kind'] ) ? $row['conversion_kind'] : '' );
+		$goal = isset( $row['conversion_goal'] ) ? (string) $row['conversion_goal'] : '';
+		$text = isset( $row['element_text'] ) ? (string) $row['element_text'] : '';
+		$key  = $kind . '|' . $goal;
+		if ( ! isset( $buckets[ $key ] ) ) {
+			$buckets[ $key ] = array(
+				'kind'              => $kind,
+				'goal'              => $goal,
+				'label'             => '',
+				'icon'              => Conversion_Kinds::icon( $kind ),
+				'element_text'      => '',
+				'conversions'       => 0,
+				'conversion_events' => 0,
+				'latest'            => array(),
+			);
+		}
+		if ( '' !== $text ) {
+			$buckets[ $key ]['element_text'] = $text;
+		}
+		$buckets[ $key ]['conversions']       += (int) $row['conversions'];
+		$buckets[ $key ]['conversion_events'] += (int) $row['conversion_events'];
+		$buckets[ $key ]['label']              = Conversion_Kinds::label( $kind, $goal, $buckets[ $key ]['element_text'] );
+	}
+
+	/**
+	 * Shape a raw event row for the activity timeline.
+	 *
+	 * @param array $row Event row.
+	 * @return array
+	 */
+	private static function format_event_row( array $row ) {
+		$visitor_id = (string) $row['visitor_id'];
+		$session_id = (string) $row['session_id'];
+		$kind       = (int) $row['is_conversion'] > 0 ? Conversion_Kinds::normalize_kind( isset( $row['conversion_kind'] ) ? $row['conversion_kind'] : '' ) : '';
+		$goal       = isset( $row['conversion_goal'] ) ? (string) $row['conversion_goal'] : '';
+		return array(
+			'id'               => (int) $row['id'],
+			'time'             => (string) $row['created_at'],
+			'visitor'          => '' !== $visitor_id ? substr( $visitor_id, 0, 8 ) : '',
+			'session'          => '' !== $session_id ? substr( $session_id, 0, 8 ) : '',
+			'type'             => (string) $row['event_type'],
+			'post_id'          => (int) $row['post_id'],
+			'page_url'         => (string) $row['page_url'],
+			'page_title'       => (string) $row['page_title'],
+			'element_text'     => (string) $row['element_text'],
+			'element_selector' => (string) $row['element_selector'],
+			'element_href'     => (string) $row['element_href'],
+			'is_conversion'    => (int) $row['is_conversion'],
+			'conversion_kind'  => $kind,
+			'conversion_goal'  => $goal,
+			'kind_label'       => '' !== $kind ? Conversion_Kinds::label( $kind, $goal, (string) $row['element_text'] ) : '',
+			'device'           => (string) $row['device_type'],
+			'country'          => (string) $row['country'],
+			'source'           => '' === (string) $row['source'] ? 'Direct' : (string) $row['source'],
+		);
+	}
+
 
 	/**
 	 * Heatmap data for one page: click density grid + scroll-depth distribution.
@@ -3103,7 +3305,7 @@ class Database {
 		global $wpdb;
 		$days      = max( 32, (int) $days );
 		$threshold = self::date_days_ago( $days );
-		$tables    = array( self::daily_table(), self::sources_table(), self::geo_table(), self::search_terms_table(), self::visitor_days_table(), self::session_days_table() );
+		$tables    = array( self::daily_table(), self::daily_kinds_table(), self::sources_table(), self::geo_table(), self::search_terms_table(), self::visitor_days_table(), self::session_days_table() );
 		$total     = 0;
 		foreach ( $tables as $table ) {
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -3139,6 +3341,7 @@ class Database {
 			'events'       => self::events_table(),
 			'sessions'     => self::sessions_table(),
 			'daily'        => self::daily_table(),
+			'daily_kinds'  => self::daily_kinds_table(),
 			'sources'      => self::sources_table(),
 			'geo'          => self::geo_table(),
 			'search_terms' => self::search_terms_table(),

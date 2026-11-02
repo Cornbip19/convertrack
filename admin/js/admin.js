@@ -16,6 +16,7 @@
 	var ROOT = String( C.root ).replace( /\/$/, '' );
 	var I18N = C.i18n || {};
 	var timelineEvents = [];
+	var timelineKinds = null;
 
 	function api( path, options ) {
 		options = options || {};
@@ -130,7 +131,11 @@
 			hidden: '<path d="M4 12s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z"/><path d="M7 7l10 10"/>',
 			warning: '<path d="M12 4l9 16H3z"/><path d="M12 9v5"/><path d="M12 17h.01"/>',
 			update: '<path d="M18 8a7 7 0 0 0-12-2l-2 2"/><path d="M4 4v4h4"/><path d="M6 16a7 7 0 0 0 12 2l2-2"/><path d="M20 20v-4h-4"/>',
-			calendar: '<path d="M6 5h12v15H6z"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M6 9h12"/>'
+			calendar: '<path d="M6 5h12v15H6z"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M6 9h12"/>',
+			phone: '<path d="M6 4h3l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 4 6a2 2 0 0 1 2-2z"/>',
+			mail: '<path d="M4 6h16v12H4z"/><path d="M4 7l8 6 8-6"/>',
+			message: '<path d="M5 5h14v10H9l-4 4z"/>',
+			external: '<path d="M14 5h5v5"/><path d="M19 5l-8 8"/><path d="M17 13v6H5V7h6"/>'
 		};
 		var aliases = {
 			'yes-alt': 'indexed',
@@ -1324,7 +1329,8 @@
 
 	function eventTypeLabel( item ) {
 		if ( item && Number( item.is_conversion ) > 0 ) {
-			return I18N.conversion || 'Conversion';
+			var base = I18N.conversion || 'Conversion';
+			return item.kind_label ? base + ' \u00b7 ' + item.kind_label : base;
 		}
 		if ( item && item.type === 'pageview' ) {
 			return I18N.pageVisit || 'Page visit';
@@ -1399,9 +1405,150 @@
 		return chip;
 	}
 
-	function renderTimeline( items ) {
+	function timelineRow( item ) {
+		var row = el( 'div', 'cvtrk-timeline-item ' + ( Number( item.is_conversion ) > 0 ? 'is-conversion' : 'is-' + item.type ) );
+		var icon = el( 'span', 'cvtrk-timeline-icon' );
+		icon.appendChild( svgIcon( eventIconName( item ), 'cvtrk-icon' ) );
+		var body = el( 'div', 'cvtrk-timeline-body' );
+		var top = el( 'div', 'cvtrk-timeline-top' );
+		top.appendChild( el( 'span', 'cvtrk-timeline-type', eventTypeLabel( item ) ) );
+		top.appendChild( el( 'time', 'cvtrk-timeline-time', item.time || '' ) );
+		body.appendChild( top );
+		var titleText = eventMainLabel( item ) || ( I18N.unknown || 'Unknown' );
+		var titleEl = el( 'div', 'cvtrk-timeline-title', titleText );
+		titleEl.title = String( titleText );
+		body.appendChild( titleEl );
+		var sub = eventSubLabel( item );
+		if ( sub ) {
+			var subEl = el( 'div', 'cvtrk-timeline-sub', sub );
+			subEl.title = String( sub );
+			body.appendChild( subEl );
+		}
+		var meta = el( 'div', 'cvtrk-timeline-metas' );
+		meta.appendChild( timelineMeta( I18N.visitor || 'Visitor', item.visitor ) );
+		meta.appendChild( timelineMeta( I18N.source || 'Source', item.source || 'Direct' ) );
+		if ( item.device ) {
+			meta.appendChild( timelineMeta( I18N.device || 'Device', item.device ) );
+		}
+		body.appendChild( meta );
+		row.appendChild( icon );
+		row.appendChild( body );
+		return row;
+	}
+
+	function timelineSortRows( rows, sort ) {
+		rows.sort( function ( a, b ) {
+			var cmp = String( a.time || '' ).localeCompare( String( b.time || '' ) );
+			if ( cmp === 0 ) {
+				cmp = ( Number( a.id ) || 0 ) - ( Number( b.id ) || 0 );
+			}
+			return sort === 'asc' ? cmp : -cmp;
+		} );
+		return rows;
+	}
+
+	function formatTemplate( template, first, second ) {
+		return String( template ).split( '%1$s' ).join( String( first ) ).split( '%2$s' ).join( String( second ) );
+	}
+
+	// Grouped view: one row per conversion kind for the whole range (rollups
+	// plus today), expandable to the latest clicks of that kind.
+	function renderTimelineKinds( box, query, sort ) {
+		var data = timelineKinds || {};
+		var kinds = ( data.kinds || [] ).filter( function ( kind ) {
+			if ( ! query ) {
+				return true;
+			}
+			var haystack = [ kind.label, kind.goal, kind.kind ]
+				.concat( ( kind.latest || [] ).map( eventSearchText ) )
+				.join( ' ' )
+				.toLowerCase();
+			return haystack.indexOf( query ) !== -1;
+		} );
+		if ( ! kinds.length ) {
+			empty( box, I18N.noConversions || 'No conversions in this range yet.' );
+			return;
+		}
+
+		var max = 1;
+		kinds.forEach( function ( kind ) {
+			max = Math.max( max, Number( kind.conversion_events ) || 0 );
+		} );
+
+		var list = el( 'div', 'cvtrk-timeline cvtrk-timeline-groups' );
+		kinds.forEach( function ( kind, index ) {
+			var group = el( 'section', 'cvtrk-timeline-group is-kind-' + ( kind.kind || 'other' ) );
+			var panelId = 'cvtrk-kind-panel-' + index;
+			var head = el( 'button', 'cvtrk-timeline-group-head' );
+			head.type = 'button';
+			head.setAttribute( 'aria-expanded', index === 0 ? 'true' : 'false' );
+			head.setAttribute( 'aria-controls', panelId );
+			head.title = index === 0 ? ( I18N.hideClicks || 'Hide clicks' ) : ( I18N.showClicks || 'Show clicks' );
+
+			var icon = el( 'span', 'cvtrk-timeline-icon' );
+			icon.appendChild( svgIcon( kind.icon || 'conversion', 'cvtrk-icon' ) );
+			var body = el( 'div', 'cvtrk-timeline-group-body' );
+			var title = el( 'div', 'cvtrk-timeline-title', kind.label || ( I18N.unknown || 'Unknown' ) );
+			title.title = String( kind.label || '' );
+			body.appendChild( title );
+			if ( kind.goal && kind.goal !== kind.label ) {
+				var sub = el( 'div', 'cvtrk-timeline-sub', ( I18N.rule || 'Rule' ) + ': ' + kind.goal );
+				sub.title = String( kind.goal );
+				body.appendChild( sub );
+			}
+			var metas = el( 'div', 'cvtrk-timeline-metas' );
+			metas.appendChild( timelineMeta( I18N.convertedClicks || 'Converted clicks', num( kind.conversion_events ) ) );
+			metas.appendChild( timelineMeta( I18N.sessions || 'Sessions', num( kind.conversions ) ) );
+			metas.appendChild( timelineMeta( I18N.ofConversions || 'Share', ( Number( kind.share ) || 0 ) + '%' ) );
+			body.appendChild( metas );
+			var meter = el( 'div', 'cvtrk-meter' );
+			var fill = el( 'span', 'cvtrk-meter-fill' );
+			fill.style.width = ( ( ( Number( kind.conversion_events ) || 0 ) / max ) * 100 ) + '%';
+			meter.appendChild( fill );
+			body.appendChild( meter );
+			var count = el( 'span', 'cvtrk-timeline-group-count', num( kind.conversion_events ) );
+			head.appendChild( icon );
+			head.appendChild( body );
+			head.appendChild( count );
+
+			var panel = el( 'div', 'cvtrk-timeline-group-list' );
+			panel.id = panelId;
+			panel.hidden = index !== 0;
+			var latest = timelineSortRows( ( kind.latest || [] ).slice( 0 ), sort );
+			if ( ! latest.length ) {
+				panel.appendChild( el( 'p', 'cvtrk-timeline-group-note', I18N.noData || 'No data yet for this range.' ) );
+			} else {
+				var inner = el( 'div', 'cvtrk-timeline' );
+				latest.forEach( function ( item ) {
+					inner.appendChild( timelineRow( item ) );
+				} );
+				panel.appendChild( inner );
+				if ( kind.latest_truncated ) {
+					panel.appendChild( el( 'p', 'cvtrk-timeline-group-note', formatTemplate( I18N.latestOf || 'Latest %1$s of %2$s', num( latest.length ), num( kind.conversion_events ) ) ) );
+				}
+			}
+
+			head.addEventListener( 'click', function () {
+				var open = head.getAttribute( 'aria-expanded' ) === 'true';
+				head.setAttribute( 'aria-expanded', open ? 'false' : 'true' );
+				head.title = open ? ( I18N.showClicks || 'Show clicks' ) : ( I18N.hideClicks || 'Hide clicks' );
+				panel.hidden = open;
+			} );
+
+			group.appendChild( head );
+			group.appendChild( panel );
+			list.appendChild( group );
+		} );
+
+		box.appendChild( list );
+	}
+
+	function renderTimeline( items, kinds ) {
 		if ( items ) {
 			timelineEvents = items.slice( 0 );
+		}
+		if ( kinds !== undefined ) {
+			timelineKinds = kinds;
 		}
 
 		var box = attr( 'event-timeline' );
@@ -1410,12 +1557,26 @@
 		}
 		clear( box );
 
+		var viewSel = attr( 'timeline-view' );
 		var typeSel = attr( 'timeline-type' );
 		var filterInput = attr( 'timeline-filter' );
 		var sortSel = attr( 'timeline-sort' );
+		var view = viewSel && viewSel.value === 'kinds' ? 'kinds' : 'journey';
 		var type = typeSel ? typeSel.value : 'all';
 		var query = filterInput ? String( filterInput.value || '' ).trim().toLowerCase() : '';
 		var sort = sortSel ? sortSel.value : 'desc';
+
+		// The event-type filter only applies to the journey; the grouped view is
+		// conversions by definition.
+		var typeField = typeSel && typeSel.closest ? typeSel.closest( '.cvtrk-mini-field' ) : null;
+		if ( typeField ) {
+			typeField.hidden = view === 'kinds';
+		}
+
+		if ( view === 'kinds' ) {
+			renderTimelineKinds( box, query, sort );
+			return;
+		}
 
 		var rows = timelineEvents.filter( function ( item ) {
 			if ( type === 'conversion' && Number( item.is_conversion ) <= 0 ) {
@@ -1430,13 +1591,7 @@
 			return true;
 		} );
 
-		rows.sort( function ( a, b ) {
-			var cmp = String( a.time || '' ).localeCompare( String( b.time || '' ) );
-			if ( cmp === 0 ) {
-				cmp = ( Number( a.id ) || 0 ) - ( Number( b.id ) || 0 );
-			}
-			return sort === 'asc' ? cmp : -cmp;
-		} );
+		timelineSortRows( rows, sort );
 
 		if ( ! rows.length ) {
 			empty( box, I18N.noData );
@@ -1445,34 +1600,7 @@
 
 		var list = el( 'div', 'cvtrk-timeline' );
 		rows.slice( 0, 80 ).forEach( function ( item ) {
-			var row = el( 'div', 'cvtrk-timeline-item ' + ( Number( item.is_conversion ) > 0 ? 'is-conversion' : 'is-' + item.type ) );
-			var icon = el( 'span', 'cvtrk-timeline-icon' );
-			icon.appendChild( svgIcon( eventIconName( item ), 'cvtrk-icon' ) );
-			var body = el( 'div', 'cvtrk-timeline-body' );
-			var top = el( 'div', 'cvtrk-timeline-top' );
-			top.appendChild( el( 'span', 'cvtrk-timeline-type', eventTypeLabel( item ) ) );
-			top.appendChild( el( 'time', 'cvtrk-timeline-time', item.time || '' ) );
-			body.appendChild( top );
-			var titleText = eventMainLabel( item ) || ( I18N.unknown || 'Unknown' );
-			var titleEl = el( 'div', 'cvtrk-timeline-title', titleText );
-			titleEl.title = String( titleText );
-			body.appendChild( titleEl );
-			var sub = eventSubLabel( item );
-			if ( sub ) {
-				var subEl = el( 'div', 'cvtrk-timeline-sub', sub );
-				subEl.title = String( sub );
-				body.appendChild( subEl );
-			}
-			var meta = el( 'div', 'cvtrk-timeline-metas' );
-			meta.appendChild( timelineMeta( I18N.visitor || 'Visitor', item.visitor ) );
-			meta.appendChild( timelineMeta( I18N.source || 'Source', item.source || 'Direct' ) );
-			if ( item.device ) {
-				meta.appendChild( timelineMeta( I18N.device || 'Device', item.device ) );
-			}
-			body.appendChild( meta );
-			row.appendChild( icon );
-			row.appendChild( body );
-			list.appendChild( row );
+			list.appendChild( timelineRow( item ) );
 		} );
 
 		box.appendChild( list );
@@ -2328,6 +2456,7 @@
 
 	function initOverview() {
 		var rangeSel = attr( 'range' );
+		var timelineView = attr( 'timeline-view' );
 		var timelineType = attr( 'timeline-type' );
 		var timelineFilter = attr( 'timeline-filter' );
 		var timelineSort = attr( 'timeline-sort' );
@@ -2367,7 +2496,7 @@
 					renderRegionSafely( 'top-sources', function () { renderSources( data.top_sources ); }, load );
 					renderRegionSafely( 'top-search-terms', function () { renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled ); }, load );
 					renderRegionSafely( 'top-countries', function () { renderCountries( data.top_countries, data.geo_enabled ); }, load );
-					renderRegionSafely( 'event-timeline', function () { renderTimeline( data.recent_events || [] ); }, load );
+					renderRegionSafely( 'event-timeline', function () { renderTimeline( data.recent_events || [], data.conversion_kinds || null ); }, load );
 					renderRegionSafely( 'overview-health', function () { renderOverviewHealth( data, null, null ); }, load );
 					Promise.all( [
 						api( '/404/summary' ).catch( function ( err ) {
@@ -2400,6 +2529,9 @@
 				setUrlParams( { range: rangeSel.value }, false );
 				load();
 			} );
+		}
+		if ( timelineView ) {
+			timelineView.addEventListener( 'change', function () { renderTimeline(); } );
 		}
 		if ( timelineType ) {
 			timelineType.addEventListener( 'change', function () { renderTimeline(); } );
@@ -6220,6 +6352,9 @@
 				panels.forEach( function ( panel ) {
 					var active = panelName( panel ) === name;
 					panel.hidden = ! active;
+					// Panels styled with `:not(.is-active) { display: none }`
+					// (the Broken URLs views) need the class as well as `hidden`.
+					panel.classList.toggle( 'is-active', active );
 					panel.setAttribute( 'role', 'tabpanel' );
 					panel.setAttribute( 'tabindex', active ? '0' : '-1' );
 				} );
