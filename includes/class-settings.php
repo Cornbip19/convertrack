@@ -33,6 +33,8 @@ class Settings {
 			'enabled'              => 1,
 			'track_selectors'      => "a\nbutton\ninput[type=submit]\ninput[type=button]\ninput[type=image]\n[role=button]\n.btn\n.button\n.wp-block-button__link\n[data-cvtrk]",
 			'conversion_selectors' => ".cvtrk-convert\n[data-cvtrk-convert]",
+			// Clicks inside these are never recorded (cookie banners, chat launchers).
+			'ignore_selectors'     => '',
 			'conversion_urls'      => '',
 			'conversion_kind_labels' => '',
 			'track_search_keywords' => 0,
@@ -135,6 +137,7 @@ class Settings {
 
 		$clean['track_selectors']      = self::sanitize_selector_list( isset( $input['track_selectors'] ) ? $input['track_selectors'] : $d['track_selectors'] );
 		$clean['conversion_selectors'] = self::sanitize_selector_list( isset( $input['conversion_selectors'] ) ? $input['conversion_selectors'] : $d['conversion_selectors'] );
+		$clean['ignore_selectors']     = self::sanitize_selector_list( isset( $input['ignore_selectors'] ) ? $input['ignore_selectors'] : $d['ignore_selectors'] );
 		$clean['conversion_urls']      = self::sanitize_lines( isset( $input['conversion_urls'] ) ? $input['conversion_urls'] : $d['conversion_urls'] );
 		$clean['conversion_kind_labels'] = Conversion_Kinds::sanitize_labels( isset( $input['conversion_kind_labels'] ) ? $input['conversion_kind_labels'] : $d['conversion_kind_labels'] );
 		$clean['exclude_urls']         = self::sanitize_lines( isset( $input['exclude_urls'] ) ? $input['exclude_urls'] : $d['exclude_urls'] );

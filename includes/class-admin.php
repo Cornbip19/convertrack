@@ -816,6 +816,41 @@ class Admin {
 					'confidenceModerate' => __( 'Moderate confidence · %1$s clicks in this view', 'convertrack-click-conversion-analytics' ),
 					/* translators: %1$s: number of clicks. */
 					'confidenceLow'   => __( 'Low confidence · only %1$s clicks in this view', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks, %2$s: number of visitors. */
+					'clicksPlottedVisitors' => __( '%1$s clicks from %2$s visitors plotted. Brighter spots mean more clicks in the same place.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'noPositionClicks' => __( '%1$s more clicks were made with a keyboard or assistive tool and have no position.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks, %2$s: number of visitors. */
+					'clicksFromVisitors' => __( '%1$s clicks from %2$s visitors', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of pageviews. */
+					'pageviewsCount'  => __( '%1$s pageviews', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'deviceClicks'    => __( '%1$s clicks in this range', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: kind of element, for example "image". */
+					'unlabelledKind'  => __( 'Unlabelled %1$s', 'convertrack-click-conversion-analytics' ),
+					'elementKinds'    => array(
+						'image'       => __( 'image', 'convertrack-click-conversion-analytics' ),
+						'icon'        => __( 'icon', 'convertrack-click-conversion-analytics' ),
+						'text'        => __( 'text', 'convertrack-click-conversion-analytics' ),
+						'heading'     => __( 'heading', 'convertrack-click-conversion-analytics' ),
+						'link'        => __( 'link', 'convertrack-click-conversion-analytics' ),
+						'button'      => __( 'button', 'convertrack-click-conversion-analytics' ),
+						'field'       => __( 'form field', 'convertrack-click-conversion-analytics' ),
+						'label'       => __( 'label', 'convertrack-click-conversion-analytics' ),
+						'toggle'      => __( 'expandable section', 'convertrack-click-conversion-analytics' ),
+						'cell'        => __( 'table cell', 'convertrack-click-conversion-analytics' ),
+						'table'       => __( 'table', 'convertrack-click-conversion-analytics' ),
+						'video'       => __( 'video', 'convertrack-click-conversion-analytics' ),
+						'embed'       => __( 'embedded content', 'convertrack-click-conversion-analytics' ),
+						'section'     => __( 'section', 'convertrack-click-conversion-analytics' ),
+						'area'        => __( 'area', 'convertrack-click-conversion-analytics' ),
+						'header'      => __( 'header', 'convertrack-click-conversion-analytics' ),
+						'footer'      => __( 'footer', 'convertrack-click-conversion-analytics' ),
+						'menu'        => __( 'menu', 'convertrack-click-conversion-analytics' ),
+						'background'  => __( 'page background', 'convertrack-click-conversion-analytics' ),
+						'form'        => __( 'form', 'convertrack-click-conversion-analytics' ),
+						'chat'        => __( 'chat widget', 'convertrack-click-conversion-analytics' ),
+					),
 					'confSafe'        => __( 'Safe to approve', 'convertrack-click-conversion-analytics' ),
 					'confCheck'       => __( 'Worth a look before approving', 'convertrack-click-conversion-analytics' ),
 					'confLow'         => __( 'Weak match', 'convertrack-click-conversion-analytics' ),

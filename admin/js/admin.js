@@ -2355,21 +2355,53 @@
 		var t = table( [
 			{ label: I18N.buttonOrLink || 'Button or link' },
 			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.conversions || 'Conversions', num: true }
+			{ label: I18N.visitors || 'Visitors', num: true, help: 'visitors' },
+			{ label: I18N.conversions || 'Conversions', num: true, hide: 'sm' }
 		] );
 		var body = t.querySelector( 'tbody' );
 		items.forEach( function ( it ) {
 			var tr = el( 'tr' );
 			var selector = it.selector || '';
 			// The server falls back to the CSS selector when an element has no
-			// text; show that as "Unlabelled element" with the selector beneath.
-			var label = it.label && it.label !== selector ? it.label : ( I18N.unlabelledElement || 'Unlabelled element' );
+			// text; name the kind of thing instead, with the selector beneath.
+			var label = it.label && it.label !== selector ? it.label : unlabelledLabel( selector );
 			tr.appendChild( labelCell( label, selector || it.href || '' ) );
 			tr.appendChild( clicksCell( it.clicks, max ) );
+			tr.appendChild( numCell( it.visitors ) );
 			tr.appendChild( convCell( it.conversions ) );
 			body.appendChild( tr );
 		} );
 		box.appendChild( t );
+	}
+
+	var ELEMENT_KINDS = {
+		img: 'image', picture: 'image', figure: 'image',
+		svg: 'icon', path: 'icon', use: 'icon', rect: 'icon', circle: 'icon', g: 'icon', polygon: 'icon', line: 'icon', text: 'icon',
+		p: 'text', span: 'text', b: 'text', strong: 'text', em: 'text', i: 'text', small: 'text', li: 'text', ul: 'text', ol: 'text', blockquote: 'text', q: 'text',
+		h1: 'heading', h2: 'heading', h3: 'heading', h4: 'heading', h5: 'heading', h6: 'heading',
+		a: 'link', button: 'button', input: 'field', select: 'field', textarea: 'field', label: 'label',
+		summary: 'toggle', details: 'toggle',
+		td: 'cell', th: 'cell', tr: 'cell', tbody: 'table', table: 'table',
+		video: 'video', iframe: 'embed', canvas: 'embed', object: 'embed',
+		section: 'section', article: 'section', div: 'area', main: 'area', aside: 'area', header: 'header', footer: 'footer', nav: 'menu', body: 'background', html: 'background', form: 'form'
+	};
+
+	// "Unlabelled element" tells a simple user little; name the kind of thing
+	// that was clicked from the last step of its structural path.
+	function unlabelledLabel( selector ) {
+		var steps = String( selector || '' ).split( '>' );
+		var last = steps.length ? steps[ steps.length - 1 ] : '';
+		var tag = String( last || '' ).replace( /[#:.\[].*$/, '' ).trim().toLowerCase();
+		var kinds = I18N.elementKinds || {};
+		var kind = '';
+		if ( tag && tag.indexOf( 'chat' ) !== -1 ) {
+			kind = kinds.chat || 'chat widget';
+		} else if ( tag && ELEMENT_KINDS[ tag ] ) {
+			kind = kinds[ ELEMENT_KINDS[ tag ] ] || ELEMENT_KINDS[ tag ];
+		} else if ( tag ) {
+			kind = tag;
+		}
+		return kind ? formatTemplate( I18N.unlabelledKind || 'Unlabelled %1$s', kind ) : ( I18N.unlabelledElement || 'Unlabelled element' );
 	}
 
 	function frameDoc( frame ) {
@@ -2552,7 +2584,9 @@
 				marker.style.top = y + 'px';
 				marker.style.width = size + 'px';
 				marker.style.height = size + 'px';
-				marker.title = num( p.w ) + ' ' + ( I18N.clicksHere || 'clicks' ) + ( p.selector ? ' - ' + p.selector : '' );
+				marker.title = num( p.w ) + ' ' + ( I18N.clicksHere || 'clicks' ) +
+					( p.v ? ' · ' + num( p.v ) + ' ' + ( I18N.visitors || 'visitors' ).toLowerCase() : '' ) +
+					( p.selector ? ' - ' + p.selector : '' );
 				markers.appendChild( marker );
 			}
 		} );
@@ -2652,6 +2686,9 @@
 		var snapshots = {};
 		var resizeTimer = null;
 		var pageSearchTimer = null;
+		// Until the user picks a device, the server opens each page on the
+		// device with the most clicks so the first view is never empty.
+		var deviceChosen = false;
 		if ( rangeSel ) {
 			var initialRange = getUrlParam( 'range', rangeSel.value );
 			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
@@ -2676,6 +2713,42 @@
 				var active = btn.getAttribute( 'data-cvtrk-device' ) === device;
 				btn.classList.toggle( 'is-active', active );
 				btn.setAttribute( 'aria-pressed', active ? 'true' : 'false' );
+			} );
+		}
+
+		function requestedDevice() {
+			return deviceChosen ? selectedDevice() : 'auto';
+		}
+
+		function applyServerDevice( device ) {
+			device = String( device || '' );
+			if ( deviceSel && ( device === 'desktop' || device === 'tablet' || device === 'mobile' ) && deviceSel.value !== device ) {
+				deviceSel.value = device;
+			}
+			syncDeviceToggle();
+		}
+
+		function renderDeviceCounts( devices ) {
+			if ( ! deviceToggle ) {
+				return;
+			}
+			deviceToggle.querySelectorAll( '[data-cvtrk-device]' ).forEach( function ( btn ) {
+				var key = btn.getAttribute( 'data-cvtrk-device' );
+				var badge = btn.querySelector( '.cvtrk-segment-count' );
+				if ( ! devices || devices[ key ] === undefined ) {
+					if ( badge ) {
+						badge.parentNode.removeChild( badge );
+					}
+					btn.removeAttribute( 'title' );
+					return;
+				}
+				var count = Number( devices[ key ] ) || 0;
+				if ( ! badge ) {
+					badge = el( 'span', 'cvtrk-segment-count' );
+					btn.appendChild( badge );
+				}
+				badge.textContent = num( count );
+				btn.title = formatTemplate( I18N.deviceClicks || '%1$s clicks in this range', num( count ) );
 			} );
 		}
 
@@ -2722,7 +2795,17 @@
 			return '';
 		}
 
-		function setHeatmapConfidenceNote( samples ) {
+		function plottedClicks( d ) {
+			if ( ! d ) {
+				return 0;
+			}
+			if ( d.plotted !== undefined ) {
+				return Number( d.plotted ) || 0;
+			}
+			return Number( d.heatmap_clicks !== undefined ? d.heatmap_clicks : d.clicks ) || 0;
+		}
+
+		function setHeatmapConfidenceNote( samples, visitors, unplotted ) {
 			var note = attr( 'heatmap-note' );
 			var text = heatmapConfidenceText( samples );
 			if ( confidence ) {
@@ -2732,14 +2815,20 @@
 			// The badge says how trustworthy the sample is; the note under the
 			// map says how to read it.
 			if ( note && Number( samples ) > 0 ) {
-				note.textContent = formatTemplate( I18N.clicksPlotted || '%1$s clicks plotted. Brighter spots mean more clicks in the same place.', num( samples ) );
+				var msg = visitors !== undefined ?
+					formatTemplate( I18N.clicksPlottedVisitors || '%1$s clicks from %2$s visitors plotted. Brighter spots mean more clicks in the same place.', num( samples ), num( visitors ) ) :
+					formatTemplate( I18N.clicksPlotted || '%1$s clicks plotted. Brighter spots mean more clicks in the same place.', num( samples ) );
+				if ( Number( unplotted ) > 0 ) {
+					msg += ' ' + formatTemplate( I18N.noPositionClicks || '%1$s more clicks were made with a keyboard or assistive tool and have no position.', num( unplotted ) );
+				}
+				note.textContent = msg;
 			}
 		}
 
 		function renderCurrent() {
 			if ( data ) {
 				renderClickMap( data, showChk ? showChk.checked : true, mode() );
-				setHeatmapConfidenceNote( data.heatmap_clicks !== undefined ? data.heatmap_clicks : data.clicks );
+				setHeatmapConfidenceNote( plottedClicks( data ), data.visitors, data.unplotted );
 			}
 		}
 
@@ -2792,7 +2881,7 @@
 			var post = selected.post;
 			var pageKey = selected.pageKey;
 			var range = rangeSel ? rangeSel.value : 7;
-			var device = selectedDevice();
+			var device = requestedDevice();
 			syncDeviceToggle();
 			if ( ( ! post || post === '0' ) && ! pageKey ) {
 				clearHeatmapSurface( 'Select a page to view heatmap data.' );
@@ -2801,8 +2890,10 @@
 			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&page_key=' + encodeURIComponent( pageKey ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
 				.then( function ( d ) {
 					data = d;
+					applyServerDevice( d.device );
+					renderDeviceCounts( d.devices );
 					if ( showChk && showChk.checked ) {
-						return loadSnapshot( post, device ).then( function ( snapshot ) {
+						return loadSnapshot( post, selectedDevice() ).then( function ( snapshot ) {
 							data.snapshot = snapshot;
 							return data;
 						}, function () {
@@ -2818,22 +2909,20 @@
 					renderClickMap( d, showChk ? showChk.checked : true, mode() );
 					var meta = attr( 'heatmap-meta' );
 					var heatmapClicks = Number( d.heatmap_clicks !== undefined ? d.heatmap_clicks : d.clicks ) || 0;
-					var trackedClicks = Number( d.tracked_clicks ) || 0;
+					var plotted = plottedClicks( d );
+					var clickVisitors = Number( d.visitors ) || 0;
+					var summary = formatTemplate( I18N.pageviewsCount || '%1$s pageviews', num( d.pageviews ) ) + ' · ' +
+						formatTemplate( I18N.clicksFromVisitors || '%1$s clicks from %2$s visitors', num( heatmapClicks ), num( clickVisitors ) );
 					if ( meta ) {
 						var viewport = heatmapViewport( d.device );
-						meta.textContent = viewport.label + ' ' + viewport.w + 'x' + viewport.h + ' - ' +
-							num( d.pageviews ) + ' ' + ( I18N.pageviews || 'Pageviews' ).toLowerCase() +
-							' - ' + num( heatmapClicks ) + ' heatmap clicks' +
-							( trackedClicks && trackedClicks !== heatmapClicks ? ' - ' + num( trackedClicks ) + ' tracked clicks' : '' );
+						meta.textContent = viewport.label + ' · ' + summary;
 					}
 					var canvas = attr( 'heatmap-canvas' );
 					if ( canvas ) {
 						var selected = postSel && postSel.options[ postSel.selectedIndex ];
-						canvas.setAttribute( 'aria-label', ( selected ? selected.textContent + '. ' : '' ) +
-							num( d.pageviews ) + ' ' + ( I18N.pageviews || 'pageviews' ).toLowerCase() + ', ' +
-							num( heatmapClicks ) + ' heatmap clicks. ' + heatmapConfidenceText( heatmapClicks ) );
+						canvas.setAttribute( 'aria-label', ( selected ? selected.textContent + '. ' : '' ) + summary + '. ' + heatmapConfidenceText( plotted ) );
 					}
-					setHeatmapConfidenceNote( heatmapClicks );
+					setHeatmapConfidenceNote( plotted, clickVisitors, d.unplotted );
 				} )
 				.catch( function ( err ) {
 					clearHeatmapSurface( errorMessage( err, 'Could not load heatmap data.' ) );
@@ -2904,6 +2993,7 @@
 		}
 		if ( deviceSel ) {
 			deviceSel.addEventListener( 'change', function () {
+				deviceChosen = true;
 				syncDeviceToggle();
 				load();
 			} );
@@ -2914,6 +3004,7 @@
 				if ( ! btn ) {
 					return;
 				}
+				deviceChosen = true;
 				deviceSel.value = btn.getAttribute( 'data-cvtrk-device' ) || 'desktop';
 				syncDeviceToggle();
 				load();
@@ -7178,7 +7269,8 @@
 			api: api,
 			clear: clear,
 			errorMessage: errorMessage,
-			errorState: errorState
+			errorState: errorState,
+			unlabelledLabel: unlabelledLabel
 		};
 		return;
 	}

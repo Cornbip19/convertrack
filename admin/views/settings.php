@@ -125,6 +125,13 @@ if ( $cvtrk_updater ) {
 						</td>
 					</tr>
 					<tr>
+						<th scope="row"><label for="cvtrk-ignore-selectors"><?php esc_html_e( 'Ignored elements', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<textarea id="cvtrk-ignore-selectors" class="large-text code" rows="3" name="convertrack_settings[ignore_selectors]" placeholder="#cookie-notice&#10;.chat-launcher"><?php echo esc_textarea( isset( $s['ignore_selectors'] ) ? $s['ignore_selectors'] : '' ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'One CSS selector per line. Clicks inside these are not recorded at all, so a cookie banner or a chat launcher does not crowd out your own buttons in Heatmaps, Pages & Buttons and Journeys.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
+					<tr>
 						<th scope="row"><?php esc_html_e( 'Track search keywords', 'convertrack-click-conversion-analytics' ); ?></th>
 						<td>
 							<label>

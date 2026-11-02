@@ -16,6 +16,40 @@ class Frontend {
 	 */
 	public function register() {
 		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue' ) );
+		add_filter( 'script_loader_tag', array( $this, 'loader_tag' ), 10, 2 );
+	}
+
+	/**
+	 * Mark the tracker tag so JavaScript optimizers (WP Rocket delay,
+	 * Cloudflare Rocket Loader) do not postpone it until the first
+	 * interaction: a delayed tracker misses the very clicks it exists for.
+	 *
+	 * @param string $tag    Script tag HTML.
+	 * @param string $handle Script handle.
+	 * @return string
+	 */
+	public function loader_tag( $tag, $handle ) {
+		if ( 'convertrack' !== $handle || false !== strpos( (string) $tag, 'nowprocket' ) ) {
+			return $tag;
+		}
+		// The filtered markup also carries the inline before/after scripts; only
+		// the tag that loads the file needs the attributes.
+		return (string) preg_replace( '/<script(?=[^>]*src=)/i', '<script data-cfasync="false" nowprocket', (string) $tag, 1 );
+	}
+
+	/**
+	 * Inline bootstrap that buffers clicks made before the tracker executes.
+	 *
+	 * @return string
+	 */
+	public static function early_capture_script() {
+		static $script = null;
+		if ( null === $script ) {
+			$path   = CONVERTRACK_DIR . 'public/js/convertrack-early.js';
+			$source = is_readable( $path ) ? file_get_contents( $path ) : ''; // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown
+			$script = is_string( $source ) ? trim( $source ) : '';
+		}
+		return $script;
 	}
 
 	/**
@@ -35,6 +69,10 @@ class Frontend {
 		);
 
 		wp_localize_script( 'convertrack', 'ConvertrackConfig', $this->config() );
+		$early = self::early_capture_script();
+		if ( '' !== $early ) {
+			wp_add_inline_script( 'convertrack', $early, 'before' );
+		}
 		wp_enqueue_script( 'convertrack' );
 	}
 
@@ -60,6 +98,7 @@ class Frontend {
 			'pageIdentityToken' => Ingestion_Guard::issue_page_identity_token( $identity ),
 			'allowedQueryParams' => Collector::allowed_query_params(),
 			'selectors'    => Settings::lines_to_array( Settings::get( 'track_selectors' ) ),
+			'ignoreSelectors' => Settings::lines_to_array( Settings::get( 'ignore_selectors' ) ),
 			'conversionSelectors' => Settings::lines_to_array( Settings::get( 'conversion_selectors' ) ),
 			'conversionUrls'      => Settings::lines_to_array( Settings::get( 'conversion_urls' ) ),
 			'trackSearchKeywords' => (bool) Settings::get( 'track_search_keywords' ),
