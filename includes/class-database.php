@@ -1221,7 +1221,9 @@ class Database {
 		return array(
 			'clicks'          => $clicks,
 			'conversions'     => $convs,
-			'conversion_events'=> (int) ( isset( $session_row['conversion_events'] ) ? $session_row['conversion_events'] : 0 ),
+			// Same source as the current window (daily buckets), so the delta
+			// on the Conversions card compares like with like.
+			'conversion_events'=> (int) ( isset( $row['conversion_events'] ) ? $row['conversion_events'] : 0 ),
 			'pageviews'       => $pageviews,
 			'unique_visitors' => $uniques,
 			'sessions'        => $total_sessions,
@@ -2260,7 +2262,7 @@ class Database {
 			'type'             => (string) $row['event_type'],
 			'post_id'          => (int) $row['post_id'],
 			'page_url'         => (string) $row['page_url'],
-			'page_title'       => (string) $row['page_title'],
+			'page_title'       => self::display_title( $row['page_title'] ),
 			'element_text'     => (string) $row['element_text'],
 			'element_selector' => (string) $row['element_selector'],
 			'element_href'     => (string) $row['element_href'],
@@ -2738,23 +2740,24 @@ class Database {
 	public static function clicks_timeseries( $days ) {
 		global $wpdb;
 
-		$days  = max( 1, (int) $days );
-		$start = self::date_days_ago( $days - 1 );
-		$daily = self::daily_table();
+		$days     = max( 1, (int) $days );
+		$start    = self::date_days_ago( $days - 1 );
+		$daily    = self::daily_table();
 		$sessions = self::session_days_table();
+		$visitors = self::visitor_days_table();
 
+		// Every event belongs to exactly one daily bucket, so conversion_events
+		// sums cleanly across buckets; converting sessions do not (one session
+		// touches many buckets) and come from the session dimension instead.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT stat_date, SUM(clicks) clicks, SUM(pageviews) pageviews
+				"SELECT stat_date, SUM(clicks) clicks, SUM(pageviews) pageviews, SUM(conversion_events) conversion_events
 				 FROM $daily WHERE stat_date >= %s GROUP BY stat_date",
 				$start
 			),
 			ARRAY_A
 		);
-		// Primary conversions are converting sessions. Selector/page buckets are
-		// intentionally not summed because one conversion event can be represented
-		// in more than one dimensional view.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$conversion_rows = $wpdb->get_results(
 			$wpdb->prepare(
@@ -2768,10 +2771,19 @@ class Database {
 		foreach ( (array) $conversion_rows as $conversion_row ) {
 			$conversions_by_date[ (string) $conversion_row['stat_date'] ] = (int) $conversion_row['conversions'];
 		}
+		// One row per visitor per day: an exact daily unique count.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$visitor_rows = $wpdb->get_results(
+			$wpdb->prepare( "SELECT stat_date, COUNT(*) visitors FROM $visitors WHERE stat_date >= %s GROUP BY stat_date", $start ),
+			ARRAY_A
+		);
+		$visitors_by_date = array();
+		foreach ( (array) $visitor_rows as $visitor_row ) {
+			$visitors_by_date[ (string) $visitor_row['stat_date'] ] = (int) $visitor_row['visitors'];
+		}
 
 		$map = array();
 		foreach ( $rows as $row ) {
-			$row['conversions'] = isset( $conversions_by_date[ $row['stat_date'] ] ) ? $conversions_by_date[ $row['stat_date'] ] : 0;
 			$map[ $row['stat_date'] ] = $row;
 		}
 
@@ -2781,17 +2793,14 @@ class Database {
 			$date = self::date_days_ago( $i );
 			if ( $date === self::today() ) {
 				$series[ $date ] = self::today_counts();
-			} elseif ( isset( $map[ $date ] ) ) {
-				$series[ $date ] = array(
-					'clicks'      => (int) $map[ $date ]['clicks'],
-					'pageviews'   => (int) $map[ $date ]['pageviews'],
-					'conversions' => (int) $map[ $date ]['conversions'],
-				);
 			} else {
+				$row = isset( $map[ $date ] ) ? $map[ $date ] : array();
 				$series[ $date ] = array(
-					'clicks'      => 0,
-					'pageviews'   => 0,
-					'conversions' => 0,
+					'clicks'            => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
+					'pageviews'         => isset( $row['pageviews'] ) ? (int) $row['pageviews'] : 0,
+					'conversions'       => isset( $conversions_by_date[ $date ] ) ? $conversions_by_date[ $date ] : 0,
+					'conversion_events' => isset( $row['conversion_events'] ) ? (int) $row['conversion_events'] : 0,
+					'visitors'          => isset( $visitors_by_date[ $date ] ) ? $visitors_by_date[ $date ] : 0,
 				);
 			}
 		}
@@ -2856,10 +2865,28 @@ class Database {
 	public static function today_counts() {
 		$agg = self::today_aggregate();
 		return array(
-			'clicks'      => (int) $agg['clicks'],
-			'pageviews'   => (int) $agg['pageviews'],
-			'conversions' => (int) $agg['conversions'],
+			'clicks'            => (int) $agg['clicks'],
+			'pageviews'         => (int) $agg['pageviews'],
+			'conversions'       => (int) $agg['conversions'],
+			'conversion_events' => (int) $agg['conversion_events'],
+			'visitors'          => (int) $agg['uniques'],
 		);
+	}
+
+	/**
+	 * Titles are stored the way WordPress renders them, entities included
+	 * (&#8217; for an apostrophe). Reports set text, not HTML, so decode once
+	 * for display.
+	 *
+	 * @param string $title Stored title.
+	 * @return string
+	 */
+	public static function display_title( $title ) {
+		$title = (string) $title;
+		if ( '' === $title || false === strpos( $title, '&' ) ) {
+			return $title;
+		}
+		return html_entity_decode( $title, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 	}
 
 	/**

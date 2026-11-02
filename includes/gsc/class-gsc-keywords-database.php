@@ -1151,7 +1151,7 @@ class Keywords_Database {
 		$row['recommendations']   = self::decode_json_list( isset( $row['recommendations'] ) ? $row['recommendations'] : '' );
 		$row['analysis']          = json_decode( isset( $row['analysis_json'] ) ? (string) $row['analysis_json'] : '', true );
 		$row['analysis']          = is_array( $row['analysis'] ) ? $row['analysis'] : array();
-		$row['post_title']        = $post_id > 0 ? get_the_title( $post_id ) : '';
+		$row['post_title']        = $post_id > 0 ? \Convertrack\Database::display_title( get_the_title( $post_id ) ) : '';
 		$row['edit_link']         = $post_id > 0 ? get_edit_post_link( $post_id, 'raw' ) : '';
 		unset( $row['analysis_json'] );
 
@@ -1176,7 +1176,7 @@ class Keywords_Database {
 		$row['avg_position']      = (float) $row['avg_position'];
 		$row['opportunity_count'] = (int) $row['opportunity_count'];
 		$row['opportunity_score'] = (float) $row['opportunity_score'];
-		$row['post_title']        = $post_id > 0 ? get_the_title( $post_id ) : '';
+		$row['post_title']        = $post_id > 0 ? \Convertrack\Database::display_title( get_the_title( $post_id ) ) : '';
 		$row['edit_link']         = $post_id > 0 ? get_edit_post_link( $post_id, 'raw' ) : '';
 
 		return $row;

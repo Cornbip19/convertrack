@@ -651,6 +651,26 @@ class Admin {
 					/* translators: 1: number of clicks shown, 2: total clicks of this kind. */
 					'latestOf'        => __( 'Latest %1$s of %2$s', 'convertrack-click-conversion-analytics' ),
 					'noConversions'   => __( 'No conversions in this range yet.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of converting sessions. */
+					'convertingSessionsCount' => __( '%1$s converting sessions', 'convertrack-click-conversion-analytics' ),
+					/* translators: 1: converting sessions, 2: all sessions. */
+					'ofSessions'      => __( '%1$s of %2$s sessions', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of sessions. */
+					'sessionsCount'   => __( '%1$s sessions', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: average per day. */
+					'avgPerDay'       => __( 'avg %1$s per day', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'ofPageviews'     => __( '%1$s of pageviews', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'ofClicks'        => __( '%1$s of clicks', 'convertrack-click-conversion-analytics' ),
+					'scrollCheckpoints' => __( 'Scroll checkpoints', 'convertrack-click-conversion-analytics' ),
+					'scrollHint'      => __( 'Scroll-depth events recorded alongside page visits', 'convertrack-click-conversion-analytics' ),
+					'convertingSessions' => __( 'Converting sessions', 'convertrack-click-conversion-analytics' ),
+					'peakDay'         => __( 'Peak day', 'convertrack-click-conversion-analytics' ),
+					'unlabelledElement' => __( 'Unlabelled element', 'convertrack-click-conversion-analytics' ),
+					'noConversionsHour' => __( 'none', 'convertrack-click-conversion-analytics' ),
+					'rightScale'      => __( 'right scale', 'convertrack-click-conversion-analytics' ),
+					'busiestHour'     => __( 'Busiest hour', 'convertrack-click-conversion-analytics' ),
 					'device'       => __( 'Device', 'convertrack-click-conversion-analytics' ),
 					'loading'      => __( 'Loading…', 'convertrack-click-conversion-analytics' ),
 					'copied'       => __( 'Copied', 'convertrack-click-conversion-analytics' ),
