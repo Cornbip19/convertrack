@@ -4574,16 +4574,16 @@ a.cvtrk-health-card:focus {
 /* Heatmap side panel: narrow cards must still show the numbers. */
 .cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-label,
 .cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-sub {
-	max-width: min(190px, 15vw);
+	max-width: min(150px, 11vw);
 }
 
 .cvtrk-heatmap-detail-panel .cvtrk-table th,
 .cvtrk-heatmap-detail-panel .cvtrk-table td {
-	padding: 9px 8px;
+	padding: 9px 6px;
 }
 
 .cvtrk-heatmap-detail-panel .cvtrk-meter {
-	width: 44px;
+	width: 32px;
 }
 
 /* Indexing: one line under each coverage group title. */
