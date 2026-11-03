@@ -184,8 +184,9 @@ class Rest_Controller {
 				'callback'            => array( $this, 'stats_heatmap_snapshot' ),
 				'permission_callback' => array( $this, 'can_view_stats' ),
 				'args'                => array(
-					'post'   => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
-					'device' => array( 'default' => 'desktop', 'sanitize_callback' => 'sanitize_key' ),
+					'post'    => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
+					'device'  => array( 'default' => 'desktop', 'sanitize_callback' => 'sanitize_key' ),
+					'refresh' => array( 'default' => 0, 'sanitize_callback' => 'absint' ),
 				),
 			)
 		);
@@ -431,6 +432,27 @@ class Rest_Controller {
 			return new \WP_Error( 'convertrack_bad_post', 'Invalid page URL.', array( 'status' => 400 ) );
 		}
 
+		// The anonymous page fetch is the slowest part of opening a heatmap and
+		// the page rarely changes within minutes, so keep it briefly per device.
+		$cache_key = 'convertrack_snapshot_' . md5( $post_id . '|' . $device . '|' . CONVERTRACK_VERSION );
+		if ( ! (int) $request->get_param( 'refresh' ) ) {
+			$cached = get_transient( $cache_key );
+			if ( is_array( $cached ) && isset( $cached['html'], $cached['url'] ) ) {
+				return $this->no_cache(
+					new \WP_REST_Response(
+						array(
+							'post_id' => $post_id,
+							'url'     => (string) $cached['url'],
+							'device'  => $device,
+							'html'    => (string) $cached['html'],
+							'cached'  => true,
+						),
+						200
+					)
+				);
+			}
+		}
+
 		$url      = add_query_arg( 'convertrack_no_track', '1', $permalink );
 		$response = wp_remote_get(
 			$url,
@@ -456,6 +478,7 @@ class Rest_Controller {
 
 		$html = (string) wp_remote_retrieve_body( $response );
 		$html = $this->prepare_snapshot_html( $html, $permalink );
+		set_transient( $cache_key, array( 'html' => $html, 'url' => $permalink ), 10 * MINUTE_IN_SECONDS );
 
 		return $this->no_cache(
 			new \WP_REST_Response(
@@ -464,6 +487,7 @@ class Rest_Controller {
 					'url'     => $permalink,
 					'device'  => $device,
 					'html'    => $html,
+					'cached'  => false,
 				),
 				200
 			)

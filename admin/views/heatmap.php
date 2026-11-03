@@ -37,7 +37,8 @@ defined( 'ABSPATH' ) || exit;
 		array(
 			'lead'   => __( 'Pick a page. The map opens on the device with the most clicks and shows every click a real person made on top of a preview of that page; the panels on the right show the same clicks as a list, plus how far people scroll.', 'convertrack-click-conversion-analytics' ),
 			'points' => array(
-				array( __( 'Click map', 'convertrack-click-conversion-analytics' ), __( 'Each dot is a click by a person. Clicks fired by scripts (chat pop-ups, cookie tools) are left out. Brighter, denser spots mean many people clicked the same place.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'What stands out', 'convertrack-click-conversion-analytics' ), __( 'Short findings worked out from the clicks and scrolling on this page: the most used element, how much happens before scrolling, where half of visitors stop, things that get clicked but do nothing, and elements clicked repeatedly.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Click map', 'convertrack-click-conversion-analytics' ), __( 'Every glow is a click by a person; the hotter the colour, the more clicks in that spot. Hover a spot for its numbers. The dashed lines show where the first screen ends and where half of visitors stop scrolling. Clicks fired by scripts are left out.', 'convertrack-click-conversion-analytics' ) ),
 				array( __( 'Clicked elements', 'convertrack-click-conversion-analytics' ), __( 'What was pressed, most popular first. Visitors counts each person once, so 40 clicks from 8 visitors means a few people clicked repeatedly. "Unlabelled image" or "Unlabelled text" means something without a caption was clicked.', 'convertrack-click-conversion-analytics' ) ),
 				array( __( 'Scroll depth', 'convertrack-click-conversion-analytics' ), __( 'The share of visitors who scrolled at least this far down the page. 25% at the halfway mark means three in four left before seeing the lower half.', 'convertrack-click-conversion-analytics' ) ),
 			),
@@ -90,12 +91,24 @@ defined( 'ABSPATH' ) || exit;
 		</details>
 	</div>
 
+	<div class="cvtrk-card cvtrk-heatmap-insights" data-cvtrk="heatmap-insights" hidden>
+		<div class="cvtrk-card-head">
+			<div>
+				<h2><?php esc_html_e( 'What stands out', 'convertrack-click-conversion-analytics' ); ?></h2>
+				<span class="cvtrk-card-sub"><?php esc_html_e( 'Plain-language findings from the clicks and scrolling on this page', 'convertrack-click-conversion-analytics' ); ?></span>
+			</div>
+		</div>
+		<div class="cvtrk-card-body">
+			<ul class="cvtrk-insight-list" data-cvtrk="heatmap-insight-list"></ul>
+		</div>
+	</div>
+
 	<div class="cvtrk-heatmap-workspace">
 		<div class="cvtrk-card cvtrk-heatmap-card">
 			<div class="cvtrk-card-head">
 				<div>
 					<h2><?php esc_html_e( 'Click map', 'convertrack-click-conversion-analytics' ); ?></h2>
-					<span class="cvtrk-card-sub"><?php esc_html_e( 'Each dot is a click. Brighter spots mean more clicks in the same place.', 'convertrack-click-conversion-analytics' ); ?></span>
+					<span class="cvtrk-card-sub"><?php esc_html_e( 'Every glow is a click. The hotter the colour, the more clicks in that spot.', 'convertrack-click-conversion-analytics' ); ?></span>
 				</div>
 				<span class="cvtrk-confidence" data-cvtrk="heatmap-confidence" aria-live="polite"></span>
 			</div>
@@ -104,12 +117,22 @@ defined( 'ABSPATH' ) || exit;
 					<div class="cvtrk-heatmap-page" data-cvtrk="heatmap-page">
 						<iframe class="cvtrk-heatmap-frame" data-cvtrk="heatmap-frame" title="<?php esc_attr_e( 'Page preview', 'convertrack-click-conversion-analytics' ); ?>" referrerpolicy="no-referrer" sandbox="allow-same-origin" tabindex="-1" aria-hidden="true"></iframe>
 						<canvas class="cvtrk-heatmap-canvas" data-cvtrk="heatmap-canvas" role="img" aria-label="<?php esc_attr_e( 'Heatmap showing click density on the selected page.', 'convertrack-click-conversion-analytics' ); ?>"></canvas>
-						<div class="cvtrk-heatmap-markers" data-cvtrk="heatmap-markers" aria-hidden="true"></div>
+						<div class="cvtrk-heatmap-markers" data-cvtrk="heatmap-markers" aria-hidden="true">
+							<div class="cvtrk-heatmap-line is-fold" data-cvtrk="heatmap-fold-line" hidden><span><?php esc_html_e( 'First screen ends here', 'convertrack-click-conversion-analytics' ); ?></span></div>
+							<div class="cvtrk-heatmap-line is-half" data-cvtrk="heatmap-half-line" hidden><span><?php esc_html_e( 'Half of visitors stop here', 'convertrack-click-conversion-analytics' ); ?></span></div>
+							<div class="cvtrk-heatmap-tip" data-cvtrk="heatmap-tip" hidden></div>
+						</div>
 					</div>
 					<div class="cvtrk-empty-state cvtrk-heatmap-blocked" data-cvtrk="heatmap-frame-blocked" hidden>
 						<strong><?php esc_html_e( 'Page preview unavailable', 'convertrack-click-conversion-analytics' ); ?></strong>
-						<p><?php esc_html_e( 'This page blocks previews inside other pages. The click dots and the panels on the right still work.', 'convertrack-click-conversion-analytics' ); ?></p>
+						<p><?php esc_html_e( 'This page blocks previews inside other pages. The click map and the panels on the right still work.', 'convertrack-click-conversion-analytics' ); ?></p>
 					</div>
+				</div>
+				<div class="cvtrk-heat-legend" data-cvtrk="heatmap-legend" hidden>
+					<span class="cvtrk-heat-legend-label" data-cvtrk="legend-few"></span>
+					<span class="cvtrk-heat-legend-bar" aria-hidden="true"></span>
+					<span class="cvtrk-heat-legend-label" data-cvtrk="legend-many"></span>
+					<span class="cvtrk-heat-legend-hint"><?php esc_html_e( 'Each glow is a click. The hotter the colour, the more clicks landed in that spot. Hover a spot for its numbers.', 'convertrack-click-conversion-analytics' ); ?></span>
 				</div>
 				<p class="cvtrk-note" data-cvtrk="heatmap-note" aria-live="polite"></p>
 			</div>

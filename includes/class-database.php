@@ -2287,6 +2287,12 @@ class Database {
 	 * always (keyboard activation carries no position), heatmap-only clicks only
 	 * when they carry a position. Script-generated clicks arrive without one.
 	 *
+	 * Besides the raw figures the result carries plain-language "insights":
+	 * the most used element, the share of clicks on the first screen, where
+	 * half of the visitors stop scrolling, content people click that is not
+	 * clickable, elements clicked repeatedly in quick succession, and the
+	 * device mix.
+	 *
 	 * @param int    $post_id Post ID.
 	 * @param int    $days    Days back.
 	 * @param string $device  Device filter: all|desktop|tablet|mobile|auto (busiest).
@@ -2437,8 +2443,10 @@ class Database {
 			$total_scroll             += (int) $r['c'];
 		}
 
-		// Cumulative: % of samples that reached at least each 10% band.
-		$scroll = array();
+		// Cumulative: % of samples that reached at least each 10% band, and the
+		// deepest band still reached by at least half of the visitors.
+		$scroll      = array();
+		$scroll_half = 0;
 		for ( $band = 10; $band <= 100; $band += 10 ) {
 			$reached = 0;
 			foreach ( $by_depth as $depth => $count ) {
@@ -2446,28 +2454,39 @@ class Database {
 					$reached += $count;
 				}
 			}
+			$pct      = $total_scroll > 0 ? round( $reached / $total_scroll * 100, 1 ) : 0;
 			$scroll[] = array(
 				'depth' => $band,
-				'pct'   => $total_scroll > 0 ? round( $reached / $total_scroll * 100, 1 ) : 0,
+				'pct'   => $pct,
 			);
+			if ( $total_scroll > 0 && $pct >= 50 ) {
+				$scroll_half = $band;
+			}
 		}
 
+		// Totals in one pass: person-made clicks, how many carry a position, how
+		// many landed on the first screen (page Y within the viewport height at
+		// the time), tracked clicks and distinct visitors.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$totals = $wpdb->get_row(
 			$wpdb->prepare(
 				"SELECT COUNT(*) clicks,
 				        COALESCE(SUM(CASE WHEN pos_x > 0 OR pos_y > 0 THEN 1 ELSE 0 END),0) plotted,
 				        COALESCE(SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END),0) tracked,
+				        COALESCE(SUM(CASE WHEN pos_y > 0 AND document_h > 0 AND viewport_h > 0 THEN 1 ELSE 0 END),0) fold_known,
+				        COALESCE(SUM(CASE WHEN pos_y > 0 AND document_h > 0 AND viewport_h > 0 AND pos_y * document_h <= viewport_h * 1000 THEN 1 ELSE 0 END),0) above_fold,
 				        COUNT(DISTINCT visitor_id) visitors
 				 FROM $events WHERE $person_click AND $metric_where",
 				$metric_params
 			),
 			ARRAY_A
 		);
-		$click_total   = isset( $totals['clicks'] ) ? (int) $totals['clicks'] : 0;
-		$plotted_total = isset( $totals['plotted'] ) ? (int) $totals['plotted'] : 0;
-		$tracked_total = isset( $totals['tracked'] ) ? (int) $totals['tracked'] : 0;
+		$click_total    = isset( $totals['clicks'] ) ? (int) $totals['clicks'] : 0;
+		$plotted_total  = isset( $totals['plotted'] ) ? (int) $totals['plotted'] : 0;
+		$tracked_total  = isset( $totals['tracked'] ) ? (int) $totals['tracked'] : 0;
 		$click_visitors = isset( $totals['visitors'] ) ? (int) $totals['visitors'] : 0;
+		$fold_known     = isset( $totals['fold_known'] ) ? (int) $totals['fold_known'] : 0;
+		$above_fold     = isset( $totals['above_fold'] ) ? (int) $totals['above_fold'] : 0;
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$views = $wpdb->get_row(
@@ -2488,6 +2507,7 @@ class Database {
 				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_href)),'|||',-1) element_href,
 				        COUNT(*) clicks,
 				        COUNT(DISTINCT visitor_id) visitors,
+				        MAX(CASE WHEN event_type='click' THEN 1 ELSE 0 END) is_control,
 				        SUM(CASE WHEN event_type='click' THEN is_conversion ELSE 0 END) conversions
 				 FROM $events
 				 WHERE $person_click AND $metric_where
@@ -2499,26 +2519,148 @@ class Database {
 		);
 
 		$element_rows = array();
+		$labels       = array();
 		foreach ( (array) $elements as $row ) {
-			$label = trim( (string) $row['element_text'] );
+			$selector = (string) $row['element_selector'];
+			$label    = trim( (string) $row['element_text'] );
 			if ( '' === $label ) {
-				$label = (string) $row['element_selector'];
+				$label = $selector;
+			} else {
+				$labels[ $selector ] = $label;
 			}
+			$visitors       = (int) $row['visitors'];
 			$element_rows[] = array(
 				'label'       => $label,
-				'selector'    => (string) $row['element_selector'],
+				'selector'    => $selector,
 				'href'        => (string) $row['element_href'],
 				'clicks'      => (int) $row['clicks'],
-				'visitors'    => (int) $row['visitors'],
+				'visitors'    => $visitors,
+				'share'       => $pageview_visitors > 0 ? round( min( 100, $visitors / $pageview_visitors * 100 ), 1 ) : null,
+				'kind'        => ! empty( $row['is_control'] ) ? 'control' : 'content',
 				'conversions' => (int) $row['conversions'],
 			);
 		}
+
+		// Content that is not clickable but gets clicked anyway (images, headings,
+		// text, icons): a sign that it looks like a button.
+		$dead_params   = $metric_params;
+		$dead_params[] = 40;
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$dead_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT COALESCE(NULLIF(heatmap_selector,''), element_selector) sel, element_tag tag, COUNT(*) clicks, COUNT(DISTINCT visitor_id) visitors
+				 FROM $events
+				 WHERE event_type='heatmap_click' AND (pos_x > 0 OR pos_y > 0) AND $metric_where
+				 GROUP BY sel, element_tag ORDER BY visitors DESC, clicks DESC LIMIT %d",
+				$dead_params
+			),
+			ARRAY_A
+		);
+		$dead_tags   = array( 'img', 'picture', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'span', 'b', 'strong', 'em', 'i', 'small', 'li', 'td', 'th', 'blockquote', 'svg', 'path', 'use', 'g', 'rect', 'circle', 'polygon', 'text' );
+		$dead_clicks = array();
+		foreach ( (array) $dead_rows as $row ) {
+			$tag = strtolower( (string) $row['tag'] );
+			if ( '' === (string) $row['sel'] || ! in_array( $tag, $dead_tags, true ) || (int) $row['visitors'] < 2 || (int) $row['clicks'] < 3 ) {
+				continue;
+			}
+			$dead_clicks[] = array(
+				'selector' => (string) $row['sel'],
+				'tag'      => $tag,
+				'label'    => isset( $labels[ (string) $row['sel'] ] ) ? $labels[ (string) $row['sel'] ] : '',
+				'clicks'   => (int) $row['clicks'],
+				'visitors' => (int) $row['visitors'],
+			);
+			if ( count( $dead_clicks ) >= 3 ) {
+				break;
+			}
+		}
+
+		// The same element clicked four or more times within ten seconds in one
+		// session: it probably did not respond. Chat launchers consume their own
+		// clicks and are left out.
+		$rage_params   = $metric_params;
+		$rage_params[] = 8;
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rage_rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT sel, COUNT(*) sessions, SUM(c) clicks FROM (
+				    SELECT session_id, COALESCE(NULLIF(heatmap_selector,''), element_selector) sel, COUNT(*) c,
+				           TIMESTAMPDIFF(SECOND, MIN(created_at), MAX(created_at)) span
+				    FROM $events
+				    WHERE $person_click AND $metric_where
+				    GROUP BY session_id, sel
+				    HAVING c >= 4 AND span <= 10
+				 ) bursts
+				 GROUP BY sel ORDER BY sessions DESC, clicks DESC LIMIT %d",
+				$rage_params
+			),
+			ARRAY_A
+		);
+		$rage_clicks = array();
+		foreach ( (array) $rage_rows as $row ) {
+			$sel = (string) $row['sel'];
+			if ( '' === $sel || false !== stripos( $sel, 'chat' ) || (int) $row['sessions'] < 2 ) {
+				continue;
+			}
+			$rage_clicks[] = array(
+				'selector' => $sel,
+				'label'    => isset( $labels[ $sel ] ) ? $labels[ $sel ] : '',
+				'sessions' => (int) $row['sessions'],
+				'clicks'   => (int) $row['clicks'],
+			);
+			if ( count( $rage_clicks ) >= 3 ) {
+				break;
+			}
+		}
+
+		$fold_share = $fold_known >= 5 ? round( $above_fold / $fold_known * 100 ) : null;
+
+		$insights = array();
+		if ( ! empty( $element_rows ) && $pageview_visitors > 0 && $element_rows[0]['visitors'] > 0 ) {
+			$insights[] = array(
+				'kind'     => 'top',
+				'label'    => $element_rows[0]['label'],
+				'selector' => $element_rows[0]['selector'],
+				'visitors' => $element_rows[0]['visitors'],
+				'share'    => $element_rows[0]['share'],
+			);
+		}
+		if ( null !== $fold_share ) {
+			$insights[] = array( 'kind' => 'fold', 'share' => (int) $fold_share );
+		}
+		if ( $total_scroll >= 5 ) {
+			$insights[] = array( 'kind' => 'scroll', 'band' => (int) $scroll_half, 'samples' => $total_scroll );
+		}
+		if ( ! empty( $dead_clicks ) ) {
+			$insights[] = array_merge( array( 'kind' => 'dead' ), $dead_clicks[0] );
+		}
+		if ( ! empty( $rage_clicks ) ) {
+			$insights[] = array_merge( array( 'kind' => 'rage' ), $rage_clicks[0] );
+		}
+		$device_total = array_sum( $devices );
+		if ( $device_total >= 10 ) {
+			$top_device = 'desktop';
+			$top_count  = -1;
+			foreach ( $devices as $key => $count ) {
+				if ( $count > $top_count ) {
+					$top_device = $key;
+					$top_count  = $count;
+				}
+			}
+			$insights[] = array( 'kind' => 'device', 'device' => $top_device, 'share' => (int) round( $top_count / $device_total * 100 ) );
+		}
+		$insights = array_slice( $insights, 0, 5 );
 
 		return array(
 			'points'            => $points,
 			'max_weight'        => $max_w,
 			'scroll'            => $scroll,
+			'scroll_half'       => $scroll_half,
 			'elements'          => $element_rows,
+			'dead_clicks'       => $dead_clicks,
+			'rage_clicks'       => $rage_clicks,
+			'insights'          => $insights,
+			'fold'              => array( 'above' => $above_fold, 'known' => $fold_known, 'share' => $fold_share ),
 			'search_terms'      => self::top_search_terms( $days, 10, $post_id, $device, $page_key ),
 			'pageviews'         => $pageviews,
 			'pageview_visitors' => $pageview_visitors,

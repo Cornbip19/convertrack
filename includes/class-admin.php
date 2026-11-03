@@ -354,6 +354,10 @@ class Admin {
 			'convertingSessions' => __( 'Visits in which at least one valuable action happened: a call, a booking, a message.', 'convertrack-click-conversion-analytics' ),
 			'visitors'           => __( 'Different people, as far as a browser can tell. One person on two devices counts twice.', 'convertrack-click-conversion-analytics' ),
 			'cta'                => __( 'A call to action: a button or link you want visitors to press, such as Book now or Call.', 'convertrack-click-conversion-analytics' ),
+			'firstScreen'        => __( 'The part of the page a visitor sees before scrolling. On phones it is small, so anything important should fit in it.', 'convertrack-click-conversion-analytics' ),
+			'notClickable'       => __( 'Something that is not a link or button but gets clicked anyway, such as an image or a heading. If people click it, they expect it to do something.', 'convertrack-click-conversion-analytics' ),
+			'repeatedClicks'     => __( 'The same element clicked four or more times within ten seconds by one visitor. It usually means the element did not respond, or the page was slow.', 'convertrack-click-conversion-analytics' ),
+			'shareOfVisitors'    => __( 'Out of everyone who viewed this page on this device, the percentage who clicked this element at least once.', 'convertrack-click-conversion-analytics' ),
 			'heatmapClicks'      => __( 'Clicks recorded together with where on the page they happened.', 'convertrack-click-conversion-analytics' ),
 			'scrollDepth'        => __( 'The share of visitors who scrolled at least this far down the page.', 'convertrack-click-conversion-analytics' ),
 			'path'               => __( 'The pages a visitor opened, in order, before the valuable action happened.', 'convertrack-click-conversion-analytics' ),
@@ -851,6 +855,40 @@ class Admin {
 						'form'        => __( 'form', 'convertrack-click-conversion-analytics' ),
 						'chat'        => __( 'chat widget', 'convertrack-click-conversion-analytics' ),
 					),
+					'whatStandsOut'   => __( 'What stands out', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: element name, %2$s: percentage, %3$s: number of people. */
+					'insightTop'      => __( '"%1$s" is the most used element: %2$s of visitors pressed it (%3$s people).', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'insightFold'     => __( '%1$s of clicks happen on the first screen, before anyone scrolls.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage of the page. */
+					'insightScroll'   => __( 'Half of visitors stop before %1$s of the page. Anything below that is seen by fewer than half.', 'convertrack-click-conversion-analytics' ),
+					'insightScrollAll' => __( 'More than half of visitors scroll all the way to the bottom.', 'convertrack-click-conversion-analytics' ),
+					'insightScrollTop' => __( 'Half of visitors never scroll past the first screen. Anything lower is seen by fewer than half.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: element name, %2$s: number of people, %3$s: number of clicks. */
+					'insightDead'     => __( '"%1$s" is not clickable, yet %2$s people clicked it (%3$s clicks). If it looks like a button, make it one.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: element name, %2$s: number of visitors. */
+					'insightRage'     => __( '"%1$s" was clicked four or more times in a row by %2$s visitors, a sign it did not respond quickly.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage, %2$s: device name. */
+					'insightDevice'   => __( '%1$s of clicks on this page come from %2$s visitors; switch the map to that device first.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage, %2$s: device name. */
+					'insightDeviceHere' => __( '%1$s of clicks on this page come from %2$s visitors, which is the device shown now.', 'convertrack-click-conversion-analytics' ),
+					'notClickable'    => __( 'Not clickable', 'convertrack-click-conversion-analytics' ),
+					'shareOfVisitors' => __( '% of visitors', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of pageviews. */
+					'viewsShort'      => __( '%1$s views', 'convertrack-click-conversion-analytics' ),
+					'legendFew'       => __( '1 click', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'legendMany'      => __( '%1$s clicks', 'convertrack-click-conversion-analytics' ),
+					'legendHint'      => __( 'Each glow is a click. The hotter the colour, the more clicks landed in that spot. Hover a spot for its numbers.', 'convertrack-click-conversion-analytics' ),
+					'firstScreenLine' => __( 'First screen ends here', 'convertrack-click-conversion-analytics' ),
+					'halfStopLine'    => __( 'Half of visitors stop here', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: visitors who clicked, %2$s: visitors who viewed, %3$s: percentage. */
+					'visitorsClickedShare' => __( '%1$s of %2$s visitors clicked (%3$s)', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of clicks. */
+					'clicksCount'     => __( '%1$s clicks', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage of the page. */
+					'halfStopBefore'  => __( 'Half of visitors stop before %1$s of the page.', 'convertrack-click-conversion-analytics' ),
+					'noInsights'      => __( 'Not enough clicks yet to say what stands out. Check back once this page has a few dozen visitors.', 'convertrack-click-conversion-analytics' ),
 					'confSafe'        => __( 'Safe to approve', 'convertrack-click-conversion-analytics' ),
 					'confCheck'       => __( 'Worth a look before approving', 'convertrack-click-conversion-analytics' ),
 					'confLow'         => __( 'Weak match', 'convertrack-click-conversion-analytics' ),

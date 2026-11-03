@@ -117,3 +117,36 @@ test( 'unlabelled heatmap rows are named by the kind of element that was clicked
 	assert.equal( client.unlabelledLabel( 'custom-thing' ), 'Unlabelled custom-thing' );
 	assert.equal( client.unlabelledLabel( '' ), 'Unlabelled element' );
 } );
+
+test( 'heat colours run from blue for one click to red for the busiest spot', () => {
+	const client = loadClient( () => Promise.resolve( response( true, 200, {} ) ) );
+	// Arrays come from the vm realm, so compare by value.
+	const rgb = ( value ) => JSON.stringify( client.heatColor( value ) );
+	assert.equal( rgb( 0 ), '[36,99,235]' );
+	assert.equal( rgb( 1 ), '[225,50,30]' );
+	assert.equal( rgb( 2 ), '[225,50,30]' );
+	assert.equal( rgb( 0.6 ), '[120,200,60]' );
+	const between = client.heatColor( 0.175 );
+	assert.ok( between[ 0 ] > 36 && between[ 0 ] < 42 + 1 && between[ 2 ] < 235 && between[ 2 ] > 190 );
+} );
+
+test( 'insight sentences are built from the server figures in plain language', () => {
+	const client = loadClient( () => Promise.resolve( response( true, 200, {} ) ) );
+	assert.equal(
+		client.insightText( { kind: 'top', label: 'Book Online', selector: 'nav>a:nth-of-type(3)', visitors: 9, share: 14.1 } ),
+		'"Book Online" is the most used element: 14.1% of visitors pressed it (9 people).'
+	);
+	assert.equal( client.insightText( { kind: 'fold', share: 48 } ), '48% of clicks happen on the first screen, before anyone scrolls.' );
+	assert.equal( client.insightText( { kind: 'scroll', band: 40, samples: 80 } ), 'Half of visitors stop before 50% of the page. Anything below that is seen by fewer than half.' );
+	assert.equal( client.insightText( { kind: 'scroll', band: 100, samples: 80 } ), 'More than half of visitors scroll all the way to the bottom.' );
+	assert.equal( client.insightText( { kind: 'scroll', band: 0, samples: 80 } ), 'Half of visitors never scroll past the first screen.' );
+	assert.equal(
+		client.insightText( { kind: 'dead', label: '', selector: 'main>section:nth-of-type(2)>img', visitors: 7, clicks: 12 } ),
+		'"Unlabelled image" is not clickable, yet 7 people clicked it (12 clicks). If it looks like a button, make it one.'
+	);
+	assert.equal( client.insightText( { kind: 'rage', label: 'See more', selector: 'section>button', sessions: 3, clicks: 14 } ), '"See more" was clicked four or more times in a row by 3 visitors, a sign it did not respond quickly.' );
+	assert.equal( client.insightText( { kind: 'device', device: 'mobile', share: 85 }, 'desktop' ), '85% of clicks on this page come from mobile visitors; switch the map to that device first.' );
+	assert.equal( client.insightText( { kind: 'device', device: 'mobile', share: 85 }, 'mobile' ), '85% of clicks on this page come from mobile visitors, which is the device shown now.' );
+	assert.equal( client.insightText( { kind: 'unknown' } ), '' );
+	assert.equal( client.insightText( null ), '' );
+} );
