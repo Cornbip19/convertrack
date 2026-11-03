@@ -4795,3 +4795,174 @@ a.cvtrk-health-card:focus {
 	background: rgba(255, 255, 255, 0.22);
 	color: #fff;
 }
+
+/* 2.14: heatmap insights, legend, guide lines, hover tip */
+.cvtrk-heatmap-insights {
+	margin-bottom: 18px;
+}
+
+.cvtrk-insight-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: 10px 18px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.cvtrk-insight {
+	position: relative;
+	margin: 0;
+	padding: 10px 12px 10px 38px;
+	border: 1px solid var(--cvtrk-border);
+	border-radius: var(--cvtrk-radius-sm);
+	background: #fff;
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.cvtrk-insight::before {
+	content: "";
+	position: absolute;
+	top: 13px;
+	left: 13px;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: var(--cvtrk-teal);
+	box-shadow: 0 0 0 4px var(--cvtrk-teal-soft);
+}
+
+.cvtrk-insight.is-top::before {
+	background: var(--cvtrk-teal);
+}
+
+.cvtrk-insight.is-fold::before,
+.cvtrk-insight.is-scroll::before {
+	background: var(--cvtrk-navy);
+	box-shadow: 0 0 0 4px rgba(11, 42, 74, 0.12);
+}
+
+.cvtrk-insight.is-dead::before,
+.cvtrk-insight.is-rage::before {
+	background: #d9822b;
+	box-shadow: 0 0 0 4px rgba(217, 130, 43, 0.18);
+}
+
+.cvtrk-insight.is-device::before {
+	background: #7c6fd0;
+	box-shadow: 0 0 0 4px rgba(124, 111, 208, 0.18);
+}
+
+.cvtrk-insight strong {
+	font-weight: 600;
+}
+
+.cvtrk-heat-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 10px;
+	margin-top: 10px;
+	color: var(--cvtrk-muted);
+	font-size: 12px;
+}
+
+.cvtrk-heat-legend-bar {
+	display: inline-block;
+	width: 140px;
+	height: 10px;
+	border-radius: 999px;
+	background: linear-gradient(90deg, rgb(36, 99, 235) 0%, rgb(42, 180, 190) 35%, rgb(120, 200, 60) 60%, rgb(250, 200, 40) 80%, rgb(225, 50, 30) 100%);
+	box-shadow: inset 0 0 0 1px rgba(11, 42, 74, 0.12);
+}
+
+.cvtrk-heat-legend-label {
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.cvtrk-heat-legend-hint {
+	flex-basis: 100%;
+}
+
+.cvtrk-heatmap-line {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 0;
+	border-top: 2px dashed rgba(11, 42, 74, 0.55);
+	pointer-events: none;
+}
+
+.cvtrk-heatmap-line.is-half {
+	border-top-color: rgba(217, 130, 43, 0.85);
+}
+
+.cvtrk-heatmap-line span {
+	position: absolute;
+	right: 8px;
+	top: -11px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	background: rgba(11, 42, 74, 0.88);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 16px;
+	white-space: nowrap;
+}
+
+.cvtrk-heatmap-line.is-half span {
+	background: rgba(217, 130, 43, 0.95);
+}
+
+.cvtrk-heatmap-tip {
+	position: absolute;
+	z-index: 3;
+	max-width: 260px;
+	padding: 6px 9px;
+	border-radius: var(--cvtrk-radius-sm);
+	background: rgba(11, 42, 74, 0.94);
+	color: #fff;
+	font-size: 12px;
+	line-height: 1.4;
+	white-space: nowrap;
+	transform: translate(-50%, calc(-100% - 12px));
+	pointer-events: none;
+	box-shadow: 0 6px 18px rgba(11, 42, 74, 0.25);
+}
+
+.cvtrk-heatmap-tip .cvtrk-tip-label {
+	display: block;
+	max-width: 240px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: rgba(255, 255, 255, 0.82);
+}
+
+.cvtrk-heatmap-stage.has-points {
+	cursor: crosshair;
+}
+
+/* The page preview is an iframe, which would swallow mouse movement; the
+   canvas above it takes the pointer so hover tips and wheel scrolling work. */
+.cvtrk-heatmap-canvas {
+	pointer-events: auto;
+}
+
+.cvtrk-scrollband.is-half {
+	box-shadow: inset 3px 0 0 #d9822b;
+}
+
+.cvtrk-scroll-summary {
+	margin: 0 0 10px;
+	color: var(--cvtrk-ink);
+	font-size: 13px;
+}
+
+.cvtrk-cell-chip {
+	display: inline-block;
+	margin-top: 3px;
+}

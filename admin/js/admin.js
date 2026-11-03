@@ -2135,8 +2135,8 @@
 		return rows;
 	}
 
-	function formatTemplate( template, first, second ) {
-		return String( template ).split( '%1$s' ).join( String( first ) ).split( '%2$s' ).join( String( second ) );
+	function formatTemplate( template, first, second, third ) {
+		return String( template ).split( '%1$s' ).join( String( first ) ).split( '%2$s' ).join( String( second ) ).split( '%3$s' ).join( String( third ) );
 	}
 
 	// Grouped view: one row per conversion kind for the whole range (rollups
@@ -2313,7 +2313,7 @@
 
 	/* Heatmaps ------------------------------------------------------------ */
 
-	function renderScrollDepth( scroll, samples ) {
+	function renderScrollDepth( scroll, samples, half ) {
 		var box = attr( 'scroll-depth' );
 		if ( ! box ) {
 			return;
@@ -2323,10 +2323,20 @@
 			empty( box, I18N.noHeatmap );
 			return;
 		}
+		// `half` is the deepest band still reached by at least half of the
+		// visitors; the band after it is where fewer than half arrive.
+		half = Number( half ) || 0;
+		var stopBand = half >= 100 ? 100 : half + 10;
+		if ( Number( samples ) >= 5 ) {
+			box.appendChild( el( 'p', 'cvtrk-scroll-summary', scrollSentence( half ) ) );
+		}
 		var map = el( 'div', 'cvtrk-scrollmap' );
 		scroll.forEach( function ( b ) {
 			var pct = Number( b.pct ) || 0;
 			var row = el( 'div', 'cvtrk-scrollband' );
+			if ( half < 100 && Number( b.depth ) === stopBand ) {
+				row.classList.add( 'is-half' );
+			}
 			var alpha = Math.max( 0.04, ( pct / 100 ) * 0.82 );
 			row.style.background = 'rgba(45,45,45,' + alpha.toFixed( 3 ) + ')';
 			if ( alpha > 0.5 ) {
@@ -2340,7 +2350,7 @@
 		box.appendChild( el( 'p', 'cvtrk-note', formatTemplate( I18N.visitorsSampled || '%1$s visitors sampled', num( samples ) ) ) );
 	}
 
-	function renderHeatmapElements( items ) {
+	function renderHeatmapElements( items, pageviewVisitors ) {
 		var box = attr( 'heatmap-elements' );
 		if ( ! box ) {
 			return;
@@ -2355,7 +2365,7 @@
 		var t = table( [
 			{ label: I18N.buttonOrLink || 'Button or link' },
 			{ label: I18N.clicks || 'Clicks', num: true },
-			{ label: I18N.visitors || 'Visitors', num: true, help: 'visitors' },
+			{ label: I18N.visitors || 'Visitors', num: true, help: 'shareOfVisitors' },
 			{ label: I18N.conversions || 'Conversions', num: true, hide: 'sm' }
 		] );
 		var body = t.querySelector( 'tbody' );
@@ -2365,13 +2375,162 @@
 			// The server falls back to the CSS selector when an element has no
 			// text; name the kind of thing instead, with the selector beneath.
 			var label = it.label && it.label !== selector ? it.label : unlabelledLabel( selector );
-			tr.appendChild( labelCell( label, selector || it.href || '' ) );
+			var cell = labelCell( label, selector || it.href || '' );
+			// Chat launchers are custom elements, clickable but not tracked
+			// controls, so they get no "Not clickable" chip.
+			if ( it.kind === 'content' && String( selector ).toLowerCase().indexOf( 'chat' ) === -1 ) {
+				cell.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray cvtrk-cell-chip', I18N.notClickable || 'Not clickable' ) );
+			}
+			tr.appendChild( cell );
 			tr.appendChild( clicksCell( it.clicks, max ) );
-			tr.appendChild( numCell( it.visitors ) );
+			var visitorsCell = numCell( it.visitors );
+			var share = it.share !== undefined && it.share !== null ? Number( it.share ) : ( Number( pageviewVisitors ) > 0 ? Math.min( 100, ( Number( it.visitors ) || 0 ) / Number( pageviewVisitors ) * 100 ) : null );
+			if ( share !== null && isFinite( share ) ) {
+				visitorsCell.appendChild( el( 'span', 'cvtrk-cell-sub', ( Math.round( share * 10 ) / 10 ) + '%' ) );
+			}
+			tr.appendChild( visitorsCell );
 			tr.appendChild( convCell( it.conversions ) );
 			body.appendChild( tr );
 		} );
 		box.appendChild( t );
+	}
+
+	/* Heat colours, guide lines and plain-language insights ---------------- */
+
+	var HEAT_STOPS = [ [ 0, [ 36, 99, 235 ] ], [ 0.35, [ 42, 180, 190 ] ], [ 0.6, [ 120, 200, 60 ] ], [ 0.8, [ 250, 200, 40 ] ], [ 1, [ 225, 50, 30 ] ] ];
+	var heatLut = null;
+	var heatState = { points: [], radius: 0, scrollHalf: 0, scrollSamples: 0, labels: {} };
+
+	// Colour for a density between 0 (one click) and 1 (the busiest spot).
+	function heatColor( t ) {
+		t = Math.max( 0, Math.min( 1, Number( t ) || 0 ) );
+		var a = HEAT_STOPS[ 0 ];
+		var b = HEAT_STOPS[ HEAT_STOPS.length - 1 ];
+		for ( var i = 0; i < HEAT_STOPS.length - 1; i++ ) {
+			if ( t >= HEAT_STOPS[ i ][ 0 ] && t <= HEAT_STOPS[ i + 1 ][ 0 ] ) {
+				a = HEAT_STOPS[ i ];
+				b = HEAT_STOPS[ i + 1 ];
+				break;
+			}
+		}
+		var f = b[ 0 ] === a[ 0 ] ? 0 : ( t - a[ 0 ] ) / ( b[ 0 ] - a[ 0 ] );
+		return [
+			Math.round( a[ 1 ][ 0 ] + ( b[ 1 ][ 0 ] - a[ 1 ][ 0 ] ) * f ),
+			Math.round( a[ 1 ][ 1 ] + ( b[ 1 ][ 1 ] - a[ 1 ][ 1 ] ) * f ),
+			Math.round( a[ 1 ][ 2 ] + ( b[ 1 ][ 2 ] - a[ 1 ][ 2 ] ) * f )
+		];
+	}
+
+	function heatPalette() {
+		if ( ! heatLut ) {
+			heatLut = [];
+			for ( var i = 0; i < 256; i++ ) {
+				heatLut.push( heatColor( i / 255 ) );
+			}
+		}
+		return heatLut;
+	}
+
+	function placeGuideLines( h, viewport ) {
+		var fold = attr( 'heatmap-fold-line' );
+		var half = attr( 'heatmap-half-line' );
+		var foldY = viewport && viewport.h ? viewport.h : 0;
+		if ( fold ) {
+			var showFold = foldY > 0 && h > foldY + 80;
+			fold.hidden = ! showFold;
+			if ( showFold ) {
+				fold.style.top = foldY + 'px';
+			}
+		}
+		if ( half ) {
+			// Fewer than half of the visitors reach the band after the one the
+			// server reports, so that is where the line goes.
+			var band = Number( heatState.scrollHalf ) || 0;
+			var showHalf = Number( heatState.scrollSamples ) >= 5 && band >= 10 && band < 100;
+			half.hidden = ! showHalf;
+			if ( showHalf ) {
+				half.style.top = Math.round( h * ( band + 10 ) / 100 ) + 'px';
+			}
+		}
+	}
+
+	function updateHeatLegend( maxW, count ) {
+		var legend = attr( 'heatmap-legend' );
+		if ( ! legend ) {
+			return;
+		}
+		legend.hidden = ! count;
+		var few = attr( 'legend-few' );
+		var many = attr( 'legend-many' );
+		if ( few ) {
+			few.textContent = I18N.legendFew || '1 click';
+		}
+		if ( many ) {
+			many.textContent = formatTemplate( I18N.legendMany || '%1$s clicks', num( Math.max( 1, Number( maxW ) || 1 ) ) );
+		}
+	}
+
+	function scrollSentence( half ) {
+		half = Number( half ) || 0;
+		if ( half >= 100 ) {
+			return I18N.insightScrollAll || 'More than half of visitors scroll all the way to the bottom.';
+		}
+		if ( half < 10 ) {
+			return I18N.insightScrollTop || 'Half of visitors never scroll past the first screen.';
+		}
+		return formatTemplate( I18N.insightScroll || 'Half of visitors stop before %1$s of the page. Anything below that is seen by fewer than half.', ( half + 10 ) + '%' );
+	}
+
+	// One sentence per finding; the server supplies the numbers.
+	function insightText( ins, currentDevice ) {
+		if ( ! ins || ! ins.kind ) {
+			return '';
+		}
+		var pct = function ( v ) {
+			return ( Math.round( ( Number( v ) || 0 ) * 10 ) / 10 ) + '%';
+		};
+		var label = ins.label && ins.label !== ins.selector ? ins.label : unlabelledLabel( ins.selector || '' );
+		switch ( ins.kind ) {
+			case 'top':
+				return formatTemplate( I18N.insightTop || '"%1$s" is the most used element: %2$s of visitors pressed it (%3$s people).', label, pct( ins.share ), num( ins.visitors ) );
+			case 'fold':
+				return formatTemplate( I18N.insightFold || '%1$s of clicks happen on the first screen, before anyone scrolls.', pct( ins.share ) );
+			case 'scroll':
+				return scrollSentence( ins.band );
+			case 'dead':
+				return formatTemplate( I18N.insightDead || '"%1$s" is not clickable, yet %2$s people clicked it (%3$s clicks). If it looks like a button, make it one.', label, num( ins.visitors ), num( ins.clicks ) );
+			case 'rage':
+				return formatTemplate( I18N.insightRage || '"%1$s" was clicked four or more times in a row by %2$s visitors, a sign it did not respond quickly.', label, num( ins.sessions ) );
+			case 'device':
+				var deviceWord = String( I18N[ ins.device ] || ins.device || '' ).toLowerCase();
+				if ( currentDevice && currentDevice === ins.device ) {
+					return formatTemplate( I18N.insightDeviceHere || '%1$s of clicks on this page come from %2$s visitors, which is the device shown now.', pct( ins.share ), deviceWord );
+				}
+				return formatTemplate( I18N.insightDevice || '%1$s of clicks on this page come from %2$s visitors; switch the map to that device first.', pct( ins.share ), deviceWord );
+		}
+		return '';
+	}
+
+	function renderHeatmapInsights( d ) {
+		var card = attr( 'heatmap-insights' );
+		var list = attr( 'heatmap-insight-list' );
+		if ( ! card || ! list ) {
+			return;
+		}
+		clear( list );
+		var shown = 0;
+		( ( d && d.insights ) || [] ).forEach( function ( ins ) {
+			var text = insightText( ins, d && d.device );
+			if ( ! text ) {
+				return;
+			}
+			list.appendChild( el( 'li', 'cvtrk-insight is-' + ins.kind, text ) );
+			shown++;
+		} );
+		if ( ! shown ) {
+			list.appendChild( el( 'li', 'cvtrk-insight is-none', I18N.noInsights || 'Not enough clicks yet to say what stands out.' ) );
+		}
+		card.hidden = false;
 	}
 
 	var ELEMENT_KINDS = {
@@ -2552,15 +2711,32 @@
 		if ( markers ) {
 			markers.style.width = w + 'px';
 			markers.style.height = h + 'px';
-			clear( markers );
 		}
 		var ctx = canvas.getContext( '2d' );
 		ctx.clearRect( 0, 0, w, h );
+		heatState.points = [];
+		heatState.radius = 0;
+		var stage = page.parentNode;
+		if ( stage && stage.classList ) {
+			stage.classList.toggle( 'has-points', !! ( points && points.length ) );
+		}
+		placeGuideLines( h, viewport );
 		if ( ! points || ! points.length ) {
+			updateHeatLegend( 0, 0 );
 			return;
 		}
-		var r = Math.max( 9, Math.min( 28, Math.round( w * 0.016 ) ) );
-		ctx.globalCompositeOperation = 'source-over';
+		var r = Math.max( 10, Math.min( 30, Math.round( w * 0.018 ) ) );
+		// Density first: every click adds translucent black to an offscreen
+		// canvas, so overlapping clicks build up alpha. The alpha is then mapped
+		// through the colour ramp: blue for a lone click, red for the busiest
+		// spot. One pass over the rows that hold clicks, no DOM per click.
+		var heat = document.createElement( 'canvas' );
+		heat.width = w;
+		heat.height = h;
+		var hctx = heat.getContext( '2d' );
+		var minY = h;
+		var maxY = 0;
+		var plotted = [];
 		points.forEach( function ( p ) {
 			var pos = pointPosition( p, w, h, frame, mode, viewport );
 			var x = pos.x;
@@ -2568,29 +2744,42 @@
 			if ( x < 0 || y < 0 || x > w || y > h ) {
 				return;
 			}
-			var a = Math.max( 0.12, Math.min( 0.85, ( p.w / ( maxW || 1 ) ) ) );
-			var g = ctx.createRadialGradient( x, y, 0, x, y, r );
-			g.addColorStop( 0, 'rgba(220,50,30,' + a.toFixed( 3 ) + ')' );
-			g.addColorStop( 0.5, 'rgba(255,150,40,' + ( a * 0.5 ).toFixed( 3 ) + ')' );
-			g.addColorStop( 1, 'rgba(255,200,60,0)' );
-			ctx.fillStyle = g;
-			ctx.beginPath();
-			ctx.arc( x, y, r, 0, 6.2832 );
-			ctx.fill();
-			if ( markers ) {
-				var marker = el( 'span', 'cvtrk-heatmap-marker' );
-				var size = Math.max( 5, Math.min( 11, Math.round( 4 + ( p.w / ( maxW || 1 ) ) * 7 ) ) );
-				marker.style.left = x + 'px';
-				marker.style.top = y + 'px';
-				marker.style.width = size + 'px';
-				marker.style.height = size + 'px';
-				marker.title = num( p.w ) + ' ' + ( I18N.clicksHere || 'clicks' ) +
-					( p.v ? ' · ' + num( p.v ) + ' ' + ( I18N.visitors || 'visitors' ).toLowerCase() : '' ) +
-					( p.selector ? ' - ' + p.selector : '' );
-				markers.appendChild( marker );
-			}
+			var a = Math.max( 0.2, Math.min( 1, p.w / ( maxW || 1 ) ) );
+			var g = hctx.createRadialGradient( x, y, 0, x, y, r );
+			g.addColorStop( 0, 'rgba(0,0,0,' + a.toFixed( 3 ) + ')' );
+			g.addColorStop( 1, 'rgba(0,0,0,0)' );
+			hctx.fillStyle = g;
+			hctx.beginPath();
+			hctx.arc( x, y, r, 0, 6.2832 );
+			hctx.fill();
+			plotted.push( { x: x, y: y, w: p.w, v: p.v, selector: p.selector } );
+			minY = Math.min( minY, y - r );
+			maxY = Math.max( maxY, y + r );
 		} );
-		ctx.globalCompositeOperation = 'source-over';
+		if ( plotted.length ) {
+			var y0 = Math.max( 0, Math.floor( minY ) );
+			var y1 = Math.min( h, Math.ceil( maxY ) );
+			if ( y1 > y0 ) {
+				var img = hctx.getImageData( 0, y0, w, y1 - y0 );
+				var d = img.data;
+				var lut = heatPalette();
+				for ( var i = 3; i < d.length; i += 4 ) {
+					var alpha = d[ i ];
+					if ( ! alpha ) {
+						continue;
+					}
+					var c = lut[ alpha ];
+					d[ i - 3 ] = c[ 0 ];
+					d[ i - 2 ] = c[ 1 ];
+					d[ i - 1 ] = c[ 2 ];
+					d[ i ] = Math.min( 235, Math.round( alpha * 1.4 ) + 30 );
+				}
+				ctx.putImageData( img, 0, y0 );
+			}
+		}
+		heatState.points = plotted;
+		heatState.radius = r;
+		updateHeatLegend( maxW, plotted.length );
 	}
 
 	function renderClickMap( data, showPage, mode ) {
@@ -2856,6 +3045,14 @@
 			if ( frameBlocked ) {
 				frameBlocked.hidden = true;
 			}
+			var insights = attr( 'heatmap-insights' );
+			if ( insights ) {
+				insights.hidden = true;
+			}
+			heatState.points = [];
+			heatState.scrollHalf = 0;
+			heatState.scrollSamples = 0;
+			heatState.labels = {};
 			var stage = attr( 'heatmap-stage' );
 			var page = attr( 'heatmap-page' );
 			var frame = attr( 'heatmap-frame' );
@@ -2887,32 +3084,51 @@
 				clearHeatmapSurface( 'Select a page to view heatmap data.' );
 				return;
 			}
+			var wantSnapshot = showChk ? showChk.checked : true;
+			// When the device is already known, fetch the page preview at the
+			// same time as the figures instead of after them.
+			var earlySnapshot = wantSnapshot && deviceChosen ? loadSnapshot( post, selectedDevice() ).then( null, function () {
+				return null;
+			} ) : null;
 			api( '/stats/heatmap?post=' + encodeURIComponent( post ) + '&page_key=' + encodeURIComponent( pageKey ) + '&range=' + encodeURIComponent( range ) + '&device=' + encodeURIComponent( device ) )
 				.then( function ( d ) {
 					data = d;
 					applyServerDevice( d.device );
 					renderDeviceCounts( d.devices );
-					if ( showChk && showChk.checked ) {
-						return loadSnapshot( post, selectedDevice() ).then( function ( snapshot ) {
+					heatState.scrollHalf = Number( d.scroll_half ) || 0;
+					heatState.scrollSamples = Number( d.scroll_samples ) || 0;
+					heatState.labels = {};
+					( d.elements || [] ).forEach( function ( it ) {
+						if ( it && it.label && it.label !== it.selector ) {
+							heatState.labels[ it.selector ] = it.label;
+						}
+					} );
+					if ( wantSnapshot ) {
+						var pending = earlySnapshot && d.device === selectedDevice() ? earlySnapshot : loadSnapshot( post, selectedDevice() ).then( null, function () {
+							return null;
+						} );
+						return pending.then( function ( snapshot ) {
 							data.snapshot = snapshot;
-							return data;
-						}, function () {
 							return data;
 						} );
 					}
 					return data;
 				} )
 				.then( function ( d ) {
-					renderScrollDepth( d.scroll, d.scroll_samples );
-					renderHeatmapElements( d.elements );
+					renderHeatmapInsights( d );
+					renderScrollDepth( d.scroll, d.scroll_samples, d.scroll_half );
+					renderHeatmapElements( d.elements, d.pageview_visitors );
 					renderSearchTerms( 'heatmap-keywords', d.search_terms, d.search_keywords_enabled );
 					renderClickMap( d, showChk ? showChk.checked : true, mode() );
 					var meta = attr( 'heatmap-meta' );
 					var heatmapClicks = Number( d.heatmap_clicks !== undefined ? d.heatmap_clicks : d.clicks ) || 0;
 					var plotted = plottedClicks( d );
 					var clickVisitors = Number( d.visitors ) || 0;
-					var summary = formatTemplate( I18N.pageviewsCount || '%1$s pageviews', num( d.pageviews ) ) + ' · ' +
+					var viewVisitors = Number( d.pageview_visitors ) || 0;
+					var people = viewVisitors > 0 ?
+						formatTemplate( I18N.visitorsClickedShare || '%1$s of %2$s visitors clicked (%3$s)', num( clickVisitors ), num( viewVisitors ), Math.round( Math.min( 100, clickVisitors / viewVisitors * 100 ) ) + '%' ) + ' · ' + formatTemplate( I18N.clicksCount || '%1$s clicks', num( heatmapClicks ) ) :
 						formatTemplate( I18N.clicksFromVisitors || '%1$s clicks from %2$s visitors', num( heatmapClicks ), num( clickVisitors ) );
+					var summary = formatTemplate( I18N.pageviewsCount || '%1$s pageviews', num( d.pageviews ) ) + ' · ' + people;
 					if ( meta ) {
 						var viewport = heatmapViewport( d.device );
 						meta.textContent = viewport.label + ' · ' + summary;
@@ -2953,7 +3169,7 @@
 							var o = document.createElement( 'option' );
 							o.value = Number( p.post_id ) > 0 ? p.post_id : 0;
 							o.setAttribute( 'data-page-key', pageKey );
-							o.textContent = p.title;
+							o.textContent = p.title + ( p.pageviews !== undefined ? ' \u00b7 ' + formatTemplate( I18N.viewsShort || '%1$s views', num( p.pageviews ) ) : '' );
 							postSel.appendChild( o );
 							if ( current.pageKey ? pageKey === current.pageKey : ( ! pageKey && String( p.post_id ) === String( current.post ) ) ) {
 								currentIndex = postSel.options.length - 1;
@@ -3031,6 +3247,52 @@
 			}
 			resizeTimer = window.setTimeout( renderCurrent, 120 );
 		} );
+		var tip = attr( 'heatmap-tip' );
+		var stageEl = attr( 'heatmap-stage' );
+		var pageEl = attr( 'heatmap-page' );
+		function hideTip() {
+			if ( tip ) {
+				tip.hidden = true;
+			}
+		}
+		if ( tip && stageEl && pageEl ) {
+			stageEl.addEventListener( 'mousemove', function ( e ) {
+				var pts = heatState.points;
+				if ( ! pts.length ) {
+					hideTip();
+					return;
+				}
+				var rect = pageEl.getBoundingClientRect();
+				var x = e.clientX - rect.left;
+				var y = e.clientY - rect.top;
+				var reach = Math.max( 12, heatState.radius || 12 );
+				var best = null;
+				var bestD = reach * reach;
+				for ( var i = 0; i < pts.length; i++ ) {
+					var dx = pts[ i ].x - x;
+					var dy = pts[ i ].y - y;
+					var dd = dx * dx + dy * dy;
+					if ( dd <= bestD ) {
+						bestD = dd;
+						best = pts[ i ];
+					}
+				}
+				if ( ! best ) {
+					hideTip();
+					return;
+				}
+				clear( tip );
+				tip.appendChild( el( 'strong', null, formatTemplate( I18N.clicksCount || '%1$s clicks', num( best.w ) ) + ( best.v ? ' \u00b7 ' + num( best.v ) + ' ' + String( I18N.visitors || 'visitors' ).toLowerCase() : '' ) ) );
+				var label = best.selector ? ( heatState.labels[ best.selector ] || unlabelledLabel( best.selector ) ) : '';
+				if ( label ) {
+					tip.appendChild( el( 'span', 'cvtrk-tip-label', label ) );
+				}
+				tip.style.left = best.x + 'px';
+				tip.style.top = best.y + 'px';
+				tip.hidden = false;
+			} );
+			stageEl.addEventListener( 'mouseleave', hideTip );
+		}
 		syncDeviceToggle();
 		loadPages();
 	}
@@ -7270,7 +7532,9 @@
 			clear: clear,
 			errorMessage: errorMessage,
 			errorState: errorState,
-			unlabelledLabel: unlabelledLabel
+			unlabelledLabel: unlabelledLabel,
+			heatColor: heatColor,
+			insightText: insightText
 		};
 		return;
 	}

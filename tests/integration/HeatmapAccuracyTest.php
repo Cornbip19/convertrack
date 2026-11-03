@@ -156,6 +156,131 @@ class Convertrack_Heatmap_Accuracy_Test extends WP_UnitTestCase {
 		$this->assertSame( 1, $data['visitors'] );
 	}
 
+	public function test_heatmap_insights_cover_fold_scroll_dead_and_repeated_clicks() {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		$url     = get_permalink( $post_id );
+		$base    = current_time( 'timestamp' ) - 300;
+		$at      = function ( $offset ) use ( $base ) {
+			return gmdate( 'Y-m-d H:i:s', $base + $offset );
+		};
+		$book = array( 'element_tag' => 'a', 'element_text' => 'Book now', 'element_selector' => 'a#book', 'heatmap_selector' => 'main>a:nth-of-type(1)', 'rel_x' => 500, 'rel_y' => 500 );
+		$rows = array();
+		// Two visitors each click the booking link four times within five seconds,
+		// above the fold (page Y 300/1000 of a 2000px page = 600px, viewport 800).
+		foreach ( array( array( 'a', 'sa' ), array( 'b', 'sb' ) ) as $pair ) {
+			$visitor = wp_generate_uuid4();
+			$session = wp_generate_uuid4();
+			$rows[]  = $this->event( $visitor, $session, $post_id, $url, 'pageview', 'mobile', array( 'created_at' => $at( 0 ) ) );
+			for ( $i = 0; $i < 4; $i++ ) {
+				$rows[] = $this->event( $visitor, $session, $post_id, $url, 'click', 'mobile', $book + array( 'pos_x' => 300, 'pos_y' => 300, 'created_at' => $at( 10 + $i ) ) );
+			}
+			$rows[] = $this->event( $visitor, $session, $post_id, $url, 'scroll', 'mobile', array( 'scroll_depth' => 60, 'created_at' => $at( 20 ) ) );
+		}
+		// Two more visitors click a hero image that is not clickable, below the fold.
+		foreach ( array( 1, 2 ) as $n ) {
+			$visitor = wp_generate_uuid4();
+			$session = wp_generate_uuid4();
+			$rows[]  = $this->event( $visitor, $session, $post_id, $url, 'pageview', 'mobile', array( 'created_at' => $at( 0 ) ) );
+			$rows[]  = $this->event( $visitor, $session, $post_id, $url, 'heatmap_click', 'mobile', array( 'element_tag' => 'img', 'heatmap_selector' => 'main>section:nth-of-type(2)>img', 'pos_x' => 500, 'pos_y' => 700, 'created_at' => $at( 30 ) ) );
+			if ( 1 === $n ) {
+				$rows[] = $this->event( $visitor, $session, $post_id, $url, 'heatmap_click', 'mobile', array( 'element_tag' => 'img', 'heatmap_selector' => 'main>section:nth-of-type(2)>img', 'pos_x' => 505, 'pos_y' => 705, 'created_at' => $at( 40 ) ) );
+			}
+			$rows[] = $this->event( $visitor, $session, $post_id, $url, 'scroll', 'mobile', array( 'scroll_depth' => 1 === $n ? 100 : 30, 'created_at' => $at( 50 ) ) );
+		}
+		// Two scroll-only visitors: one reads everything, one leaves early.
+		foreach ( array( 100, 20 ) as $depth ) {
+			$rows[] = $this->event( wp_generate_uuid4(), wp_generate_uuid4(), $post_id, $url, 'scroll', 'mobile', array( 'scroll_depth' => $depth, 'created_at' => $at( 60 ) ) );
+		}
+		$this->assertSame( count( $rows ), Database::insert_events( $rows ) );
+
+		$d = Database::heatmap_data( $post_id, 7, 'mobile' );
+		$this->assertSame( 11, $d['clicks'] );
+		$this->assertSame( 8, $d['fold']['above'], 'Eight booking clicks sit within the first screen.' );
+		$this->assertSame( 11, $d['fold']['known'] );
+		$this->assertSame( 73, (int) $d['fold']['share'] );
+		// Scroll samples: 60, 60, 100, 30, 100, 20 -> at least half reach 60%.
+		$this->assertSame( 6, $d['scroll_samples'] );
+		$this->assertSame( 60, $d['scroll_half'] );
+
+		$this->assertCount( 1, $d['dead_clicks'] );
+		$this->assertSame( 'main>section:nth-of-type(2)>img', $d['dead_clicks'][0]['selector'] );
+		$this->assertSame( 'img', $d['dead_clicks'][0]['tag'] );
+		$this->assertSame( 3, $d['dead_clicks'][0]['clicks'] );
+		$this->assertSame( 2, $d['dead_clicks'][0]['visitors'] );
+
+		$this->assertCount( 1, $d['rage_clicks'] );
+		$this->assertSame( 'main>a:nth-of-type(1)', $d['rage_clicks'][0]['selector'] );
+		$this->assertSame( 'Book now', $d['rage_clicks'][0]['label'] );
+		$this->assertSame( 2, $d['rage_clicks'][0]['sessions'] );
+
+		$booking = $this->element_row( $d['elements'], 'main>a:nth-of-type(1)' );
+		$this->assertSame( 'control', $booking['kind'] );
+		$this->assertSame( 50.0, (float) $booking['share'], 'Two of four viewing visitors clicked the booking link.' );
+		$image = $this->element_row( $d['elements'], 'main>section:nth-of-type(2)>img' );
+		$this->assertSame( 'content', $image['kind'] );
+
+		$kinds = wp_list_pluck( $d['insights'], 'kind' );
+		$this->assertSame( array( 'top', 'fold', 'scroll', 'dead', 'rage' ), $kinds, 'Five findings in a fixed order; the device mix is only added when nothing else fills the list.' );
+		$this->assertSame( 'Book now', $d['insights'][0]['label'] );
+		$this->assertSame( 60, $d['insights'][2]['band'] );
+
+		$quiet = Database::heatmap_data( $post_id, 7, 'desktop' );
+		$this->assertCount( 1, $quiet['insights'], 'With no desktop clicks the only finding is where the clicks are.' );
+		$this->assertSame( 'device', $quiet['insights'][0]['kind'] );
+		$this->assertSame( 'mobile', $quiet['insights'][0]['device'] );
+		$this->assertSame( 100, $quiet['insights'][0]['share'] );
+		$this->assertSame( 0, $quiet['scroll_half'] );
+		$this->assertNull( $quiet['fold']['share'] );
+	}
+
+	public function test_snapshot_is_cached_per_device_and_refreshable() {
+		$post_id = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		$admin   = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $admin );
+		$fetches = 0;
+		$mock    = function () use ( &$fetches ) {
+			$fetches++;
+			return array(
+				'headers'  => array(),
+				'body'     => '<html><head><title>Snap</title></head><body><script>alert(1)</script><p>Hello</p></body></html>',
+				'response' => array( 'code' => 200, 'message' => 'OK' ),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+		add_filter( 'pre_http_request', $mock );
+
+		$controller = new Rest_Controller();
+		$call       = function ( $device, $refresh = 0 ) use ( $controller, $post_id ) {
+			$request = new WP_REST_Request( 'GET', '/convertrack/v1/stats/heatmap-snapshot' );
+			$request->set_param( 'post', $post_id );
+			$request->set_param( 'device', $device );
+			$request->set_param( 'refresh', $refresh );
+			return $controller->stats_heatmap_snapshot( $request )->get_data();
+		};
+
+		$first = $call( 'mobile' );
+		$this->assertFalse( $first['cached'] );
+		$this->assertStringNotContainsString( '<script', $first['html'], 'Snapshots are script-free.' );
+		$this->assertStringContainsString( '<p>Hello</p>', $first['html'] );
+		$this->assertSame( 1, $fetches );
+
+		$second = $call( 'mobile' );
+		$this->assertTrue( $second['cached'] );
+		$this->assertSame( $first['html'], $second['html'] );
+		$this->assertSame( 1, $fetches, 'The second request for the same device is served from the transient.' );
+
+		$desktop = $call( 'desktop' );
+		$this->assertFalse( $desktop['cached'] );
+		$this->assertSame( 2, $fetches, 'Each device keeps its own snapshot.' );
+
+		$refreshed = $call( 'mobile', 1 );
+		$this->assertFalse( $refreshed['cached'] );
+		$this->assertSame( 3, $fetches );
+
+		remove_filter( 'pre_http_request', $mock );
+	}
+
 	public function test_collector_drops_positionless_heatmap_clicks_and_keeps_odd_tag_clicks_structurally() {
 		$method = new ReflectionMethod( Collector::class, 'sanitize_event' );
 		$method->setAccessible( true );

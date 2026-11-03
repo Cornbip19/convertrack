@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.13.0
+Stable tag: 2.14.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,13 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.14.0 =
+* New: "What stands out" on the Heatmaps screen: up to five plain-language findings worked out from the page's clicks and scrolling, such as the most used element and the share of visitors who pressed it, how many clicks happen on the first screen, where half of visitors stop scrolling, content that is not clickable yet gets clicked (images, headings, text), and elements clicked four or more times in a row.
+* New: the click map is a real heat map: every click adds to a density layer that is coloured from blue (one click) to red (the busiest spot), with a legend, and hovering a spot shows its clicks, visitors and the element's name. Dashed lines mark where the first screen ends and where half of visitors stop scrolling.
+* New: Clicked elements shows the share of visitors who clicked each element under the visitor count, and marks rows that are not links or buttons as "Not clickable"; the page list shows how many views each page had in the range; the summary line says how many of the page's visitors clicked at all.
+* Performance: the map no longer creates one DOM marker per click (up to 1,500), density is computed in a single pass over the rows that hold clicks, the page preview is cached for ten minutes per device on the server, and the preview is fetched in parallel with the figures when the device is already chosen.
+* Change: Scroll depth gets a one-line summary ("Half of visitors stop before 40% of the page") and highlights that band.
 
 = 2.13.0 =
 * Fix: Heatmaps count only clicks that a person made. Clicks fired by scripts (chat widgets, pop-ups, cookie tools) arrive without a position and could make up most "heatmap clicks"; the tracker now ignores them, the collector refuses them, and the screen leaves older ones out of every figure.
