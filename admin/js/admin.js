@@ -2376,7 +2376,9 @@
 			// text; name the kind of thing instead, with the selector beneath.
 			var label = it.label && it.label !== selector ? it.label : unlabelledLabel( selector );
 			var cell = labelCell( label, selector || it.href || '' );
-			if ( it.kind === 'content' ) {
+			// Chat launchers are custom elements, clickable but not tracked
+			// controls, so they get no "Not clickable" chip.
+			if ( it.kind === 'content' && String( selector ).toLowerCase().indexOf( 'chat' ) === -1 ) {
 				cell.appendChild( el( 'span', 'cvtrk-badge cvtrk-badge-gray cvtrk-cell-chip', I18N.notClickable || 'Not clickable' ) );
 			}
 			tr.appendChild( cell );
