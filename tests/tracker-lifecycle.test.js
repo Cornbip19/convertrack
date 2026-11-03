@@ -136,6 +136,8 @@ function makeHarness( options ) {
 	const window = {
 		ConvertrackConfig: config,
 		__CONVERTRACK_TEST__: true,
+		__cvtrkEarly: options.early,
+		performance: options.performance,
 		localStorage: storage,
 		Date: FakeDate,
 		TextEncoder,
@@ -362,3 +364,149 @@ for ( const bodyReadFails of [ false, true ] ) {
 		assert.equal( harness.api.getState().retries.length, 0 );
 	} );
 }
+
+/* Heatmap click accuracy (2.13) ------------------------------------------ */
+
+const earlySource = fs.readFileSync( path.join( __dirname, '..', 'public', 'js', 'convertrack-early.js' ), 'utf8' );
+
+function fakeElement( tag, options ) {
+	options = options || {};
+	const matches = options.matches || [ tag ];
+	return {
+		nodeType: 1,
+		tagName: tag.toUpperCase(),
+		id: options.id || '',
+		type: options.type || '',
+		ownerDocument: {},
+		parentNode: null,
+		textContent: options.text || '',
+		isContentEditable: false,
+		getAttribute( name ) {
+			return options.attrs && options.attrs[ name ] !== undefined ? options.attrs[ name ] : null;
+		},
+		matches( selector ) {
+			const parts = String( selector ).split( ',' ).map( ( part ) => part.trim() );
+			return matches.some( ( candidate ) => parts.includes( candidate ) );
+		},
+		closest( selector ) {
+			return this.matches( selector ) ? this : null;
+		},
+		getBoundingClientRect() {
+			return options.rect || { left: 100, top: 200, width: 200, height: 50 };
+		}
+	};
+}
+
+test( 'script-generated and coordinate-less clicks are ignored unless they activate a tracked control', () => {
+	const harness = makeHarness( { config: { selectors: [ 'a' ] } } );
+	const api = harness.api;
+	api.takeBatch( 60000 ); // discard the initial pageview fixture.
+	const click = harness.listeners.document.click;
+	const content = fakeElement( 'div' );
+	const link = fakeElement( 'a', { attrs: { href: '#top' }, text: 'Book now' } );
+
+	// element.click() / dispatchEvent from a chat widget: not a visitor click.
+	click( { target: content, isTrusted: false, detail: 1, clientX: 10, clientY: 10, pageX: 10, pageY: 10 } );
+	// A trusted "click" on plain content with no pointer position (synthetic).
+	click( { target: content, isTrusted: true, detail: 0, clientX: 0, clientY: 0, pageX: 0, pageY: 0 } );
+	assert.equal( api.getState().queue.length, 0 );
+
+	// A real tap on content becomes a positioned heatmap-only click.
+	click( { target: content, isTrusted: true, detail: 1, clientX: 300, clientY: 150, pageX: 300, pageY: 150 } );
+	let queued = api.getState().queue;
+	assert.equal( queued.length, 1 );
+	assert.equal( queued[ 0 ].t, 'heatmap_click' );
+	assert.equal( queued[ 0 ].hsel, 'div' );
+	assert.equal( queued[ 0 ].cx, 250 );
+	assert.equal( queued[ 0 ].cy, 63 );
+
+	// Keyboard activation of a tracked link is still a click, without a position.
+	click( { target: link, isTrusted: true, detail: 0, clientX: 0, clientY: 0, pageX: 0, pageY: 0 } );
+	queued = api.getState().queue;
+	assert.equal( queued.length, 2 );
+	assert.equal( queued[ 1 ].t, 'click' );
+	assert.equal( queued[ 1 ].txt, 'Book now' );
+	assert.equal( queued[ 1 ].cx, 0 );
+	assert.equal( queued[ 1 ].cy, 0 );
+	assert.equal( api.hasPointer( { detail: 0, clientX: 0, clientY: 0 } ), false );
+	assert.equal( api.hasPointer( { detail: 1, clientX: 0, clientY: 0 } ), true );
+} );
+
+test( 'clicks inside ignored elements are never recorded', () => {
+	const harness = makeHarness( { config: { selectors: [ 'a' ], ignoreSelectors: [ '#cookie-banner' ] } } );
+	harness.api.takeBatch( 60000 );
+	const banner = fakeElement( 'a', { matches: [ 'a', '#cookie-banner' ], text: 'Accept', attrs: { href: '#' } } );
+	harness.listeners.document.click( { target: banner, isTrusted: true, detail: 1, clientX: 20, clientY: 20, pageX: 20, pageY: 20 } );
+	assert.equal( harness.api.getState().queue.length, 0 );
+} );
+
+test( 'clicks buffered before the tracker booted are replayed with their original geometry and time', () => {
+	let stopped = false;
+	const link = fakeElement( 'a', { attrs: { href: '/book/' }, text: 'Book' } );
+	const early = [ {
+		el: link, cx: 50, cy: 20, px: 50, py: 20, detail: 1, ts: 1699999990000,
+		vw: 800, vh: 600, dw: 800, dh: 1600, sx: 0, sy: 0, rect: { l: 0, t: 0, w: 100, h: 40 }
+	} ];
+	early.stop = () => { stopped = true; };
+	const harness = makeHarness( { config: { selectors: [ 'a' ] }, early } );
+	const queued = harness.api.getState().queue;
+	assert.equal( queued.length, 2 );
+	assert.equal( queued[ 0 ].t, 'pageview' );
+	assert.equal( queued[ 1 ].t, 'click' );
+	assert.equal( queued[ 1 ].ts, 1699999990000 );
+	assert.equal( queued[ 1 ].cx, 63 );
+	assert.equal( queued[ 1 ].cy, 13 );
+	assert.equal( queued[ 1 ].rx, 500 );
+	assert.equal( queued[ 1 ].ry, 500 );
+	assert.equal( queued[ 1 ].vw, 800 );
+	assert.equal( queued[ 1 ].dh, 1600 );
+	assert.equal( stopped, true );
+	assert.equal( harness.window.__cvtrkEarly, null );
+	// A navigating link that was replayed must not trigger an unload-style flush.
+	assert.equal( harness.requests.filter( ( request ) => request.url === harness.config.collectUrl ).length, 0 );
+} );
+
+test( 'the first pageview is stamped with the navigation start when it is recent', () => {
+	const recent = makeHarness( { performance: { timeOrigin: 1700000000000 - 3000 } } );
+	assert.equal( recent.api.getState().queue[ 0 ].ts, 1700000000000 - 3000 );
+	const stale = makeHarness( { performance: { timeOrigin: 1700000000000 - 3600000 } } );
+	assert.equal( stale.api.getState().queue[ 0 ].ts, 1700000000000 );
+	const none = makeHarness();
+	assert.equal( none.api.getState().queue[ 0 ].ts, 1700000000000 );
+} );
+
+test( 'the inline early-click bootstrap buffers trusted clicks and stops cleanly', () => {
+	const handlers = {};
+	const document = {
+		documentElement: { clientWidth: 1000, clientHeight: 700, scrollWidth: 1000, scrollHeight: 3000, scrollLeft: 0, scrollTop: 0 },
+		body: { scrollWidth: 1000, scrollHeight: 3000 },
+		addEventListener( type, handler, capture ) {
+			handlers[ type ] = { handler, capture };
+		},
+		removeEventListener( type ) {
+			delete handlers[ type ];
+		}
+	};
+	const window = { innerWidth: 1000, innerHeight: 700, pageXOffset: 0, pageYOffset: 120 };
+	vm.runInNewContext( earlySource, { document, window, Date, Math }, { filename: 'convertrack-early.js' } );
+	assert.ok( handlers.click && handlers.click.capture === true );
+	const target = { nodeType: 1, getBoundingClientRect: () => ( { left: 10, top: 20, width: 100, height: 40 } ) };
+	handlers.click.handler( { target, isTrusted: false, detail: 1, clientX: 5, clientY: 5 } );
+	handlers.click.handler( { target, isTrusted: true, detail: 1, clientX: 50, clientY: 60 } );
+	const buffer = window.__cvtrkEarly;
+	assert.equal( buffer.length, 1 );
+	assert.equal( buffer[ 0 ].el, target );
+	assert.equal( buffer[ 0 ].px, 50 );
+	assert.equal( buffer[ 0 ].py, 180 );
+	assert.equal( buffer[ 0 ].dh, 3000 );
+	assert.equal( buffer[ 0 ].sy, 120 );
+	// The buffer object was created inside the vm realm, so compare by value.
+	assert.equal( JSON.stringify( buffer[ 0 ].rect ), JSON.stringify( { l: 10, t: 20, w: 100, h: 40 } ) );
+	for ( let i = 0; i < 60; i++ ) {
+		handlers.click.handler( { target, isTrusted: true, detail: 1, clientX: 1, clientY: 1 } );
+	}
+	assert.equal( buffer.length, 50 );
+	buffer.stop();
+	assert.equal( handlers.click, undefined );
+	assert.equal( buffer.done, true );
+} );

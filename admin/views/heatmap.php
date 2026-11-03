@@ -35,10 +35,10 @@ defined( 'ABSPATH' ) || exit;
 	Admin::render_guide(
 		'heatmaps',
 		array(
-			'lead'   => __( 'Pick a page and a device. The map shows every recorded click on top of a preview of that page; the panels on the right show the same clicks as a list, plus how far people scroll.', 'convertrack-click-conversion-analytics' ),
+			'lead'   => __( 'Pick a page. The map opens on the device with the most clicks and shows every click a real person made on top of a preview of that page; the panels on the right show the same clicks as a list, plus how far people scroll.', 'convertrack-click-conversion-analytics' ),
 			'points' => array(
-				array( __( 'Click map', 'convertrack-click-conversion-analytics' ), __( 'Each dot is a click. Brighter, denser spots mean many people clicked the same place.', 'convertrack-click-conversion-analytics' ) ),
-				array( __( 'Clicked elements', 'convertrack-click-conversion-analytics' ), __( 'Which buttons and links were pressed, most popular first. "Unlabelled element" means a clickable area with no text on it.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Click map', 'convertrack-click-conversion-analytics' ), __( 'Each dot is a click by a person. Clicks fired by scripts (chat pop-ups, cookie tools) are left out. Brighter, denser spots mean many people clicked the same place.', 'convertrack-click-conversion-analytics' ) ),
+				array( __( 'Clicked elements', 'convertrack-click-conversion-analytics' ), __( 'What was pressed, most popular first. Visitors counts each person once, so 40 clicks from 8 visitors means a few people clicked repeatedly. "Unlabelled image" or "Unlabelled text" means something without a caption was clicked.', 'convertrack-click-conversion-analytics' ) ),
 				array( __( 'Scroll depth', 'convertrack-click-conversion-analytics' ), __( 'The share of visitors who scrolled at least this far down the page. 25% at the halfway mark means three in four left before seeing the lower half.', 'convertrack-click-conversion-analytics' ) ),
 			),
 			'tip'    => __( 'If an important button sits below the point where most people stop scrolling, move it higher up the page.', 'convertrack-click-conversion-analytics' ),
@@ -117,7 +117,7 @@ defined( 'ABSPATH' ) || exit;
 
 		<aside class="cvtrk-heatmap-detail-panel" aria-label="<?php esc_attr_e( 'Heatmap details', 'convertrack-click-conversion-analytics' ); ?>">
 			<div class="cvtrk-card">
-				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Clicked elements', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Buttons and links on this page, most clicked first', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
+				<div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Clicked elements', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'What visitors pressed on this page, most clicked first', 'convertrack-click-conversion-analytics' ); ?></span></div></div>
 				<div class="cvtrk-card-body"><div data-cvtrk="heatmap-elements"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div>
 			</div>
 

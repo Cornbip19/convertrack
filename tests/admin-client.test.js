@@ -107,3 +107,13 @@ test( 'unexpected network details never reach the public error message', async (
 		}
 	);
 } );
+
+test( 'unlabelled heatmap rows are named by the kind of element that was clicked', () => {
+	const client = loadClient( () => Promise.resolve( response( true, 200, {} ) ) );
+	assert.equal( client.unlabelledLabel( 'body#top>chat-widget' ), 'Unlabelled chat widget' );
+	assert.equal( client.unlabelledLabel( 'main>section:nth-of-type(2)>img' ), 'Unlabelled image' );
+	assert.equal( client.unlabelledLabel( 'div#hero>p:nth-of-type(1)' ), 'Unlabelled text' );
+	assert.equal( client.unlabelledLabel( 'section#services>div>div:nth-of-type(3)>button' ), 'Unlabelled button' );
+	assert.equal( client.unlabelledLabel( 'custom-thing' ), 'Unlabelled custom-thing' );
+	assert.equal( client.unlabelledLabel( '' ), 'Unlabelled element' );
+} );

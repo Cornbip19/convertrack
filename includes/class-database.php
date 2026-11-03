@@ -2283,20 +2283,25 @@ class Database {
 	 * Click positions are stored as tenths of a percent of the page (0-1000) and
 	 * aggregated here into a 0-100 x 0-100 grid so the payload stays bounded.
 	 *
+	 * Only clicks made by a person count: tracked clicks on buttons and links
+	 * always (keyboard activation carries no position), heatmap-only clicks only
+	 * when they carry a position. Script-generated clicks arrive without one.
+	 *
 	 * @param int    $post_id Post ID.
 	 * @param int    $days    Days back.
-	 * @param string $device  Device filter: all|desktop|tablet|mobile.
+	 * @param string $device  Device filter: all|desktop|tablet|mobile|auto (busiest).
 	 * @param string $page_key Optional canonical page key.
 	 * @return array
 	 */
 	public static function heatmap_data( $post_id, $days, $device = 'all', $page_key = '' ) {
 		global $wpdb;
 
-		$post_id = (int) $post_id;
-		$days    = max( 1, (int) $days );
-		$start   = self::date_days_ago( $days - 1 ) . ' 00:00:00';
-		$events  = self::events_table();
-		$device  = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
+		$post_id  = (int) $post_id;
+		$days     = max( 1, (int) $days );
+		$start    = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events   = self::events_table();
+		$auto     = 'auto' === $device;
+		$device   = in_array( $device, array( 'desktop', 'tablet', 'mobile' ), true ) ? $device : 'all';
 		$page_key = substr( sanitize_text_field( (string) $page_key ), 0, 191 );
 		if ( '' !== $page_key ) {
 			$page_where  = '(page_key=%s';
@@ -2313,12 +2318,44 @@ class Database {
 			$page_params = array( $post_id );
 		}
 
-		$click_where  = "event_type IN ('click','heatmap_click') AND $page_where AND created_at >= %s AND (pos_x > 0 OR pos_y > 0)";
-		$click_params = array_merge( $page_params, array( $start ) );
-		if ( 'all' !== $device ) {
-			$click_where   .= ' AND device_type=%s';
-			$click_params[] = $device;
+		$person_click = "(event_type='click' OR (event_type='heatmap_click' AND (pos_x > 0 OR pos_y > 0)))";
+		$base_where   = "$page_where AND created_at >= %s";
+		$base_params  = array_merge( $page_params, array( $start ) );
+
+		// Clicks per device regardless of the device filter, so the screen can
+		// open on the device with the most data and label the toggle with counts.
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$device_rows = $wpdb->get_results(
+			$wpdb->prepare( "SELECT device_type, COUNT(*) c FROM $events WHERE $person_click AND $base_where GROUP BY device_type", $base_params ),
+			ARRAY_A
+		);
+		$devices = array( 'desktop' => 0, 'tablet' => 0, 'mobile' => 0 );
+		foreach ( (array) $device_rows as $r ) {
+			$key = (string) $r['device_type'];
+			if ( isset( $devices[ $key ] ) ) {
+				$devices[ $key ] = (int) $r['c'];
+			}
 		}
+		if ( $auto ) {
+			$device = 'desktop';
+			$best   = -1;
+			foreach ( array( 'desktop', 'mobile', 'tablet' ) as $key ) {
+				if ( $devices[ $key ] > $best ) {
+					$best   = $devices[ $key ];
+					$device = $key;
+				}
+			}
+		}
+
+		$metric_where  = $base_where;
+		$metric_params = $base_params;
+		if ( 'all' !== $device ) {
+			$metric_where   .= ' AND device_type=%s';
+			$metric_params[] = $device;
+		}
+
+		$click_where  = "$person_click AND (pos_x > 0 OR pos_y > 0) AND $metric_where";
+		$click_params = $metric_params;
 		$click_params[] = 1500;
 
 		// Click density, aggregated to a 0-100 grid. New rows also include
@@ -2342,7 +2379,8 @@ class Database {
 				        AVG(scroll_y) sy,
 				        MAX(CASE WHEN COALESCE(NULLIF(heatmap_selector,''), element_selector) <> '' AND (rel_x > 0 OR rel_y > 0) THEN 1 ELSE 0 END) has_rel,
 				        MAX(CASE WHEN viewport_w > 0 AND viewport_h > 0 AND document_w > 0 AND document_h > 0 THEN 1 ELSE 0 END) has_viewport,
-				        COUNT(*) w
+				        COUNT(*) w,
+				        COUNT(DISTINCT visitor_id) v
 				 FROM $events
 				 WHERE $click_where
 				 GROUP BY sel, gx, gy, erx, ery ORDER BY w DESC LIMIT %d",
@@ -2353,7 +2391,7 @@ class Database {
 
 		$points = array();
 		$max_w  = 0;
-		foreach ( $clicks as $r ) {
+		foreach ( (array) $clicks as $r ) {
 			$w        = (int) $r['w'];
 			$points[] = array(
 				'selector' => (string) $r['sel'],
@@ -2372,17 +2410,11 @@ class Database {
 				'has_rel'  => ! empty( $r['has_rel'] ) ? 1 : 0,
 				'has_viewport' => ! empty( $r['has_viewport'] ) ? 1 : 0,
 				'w'        => $w,
+				'v'        => (int) $r['v'],
 			);
 			if ( $w > $max_w ) {
 				$max_w = $w;
 			}
-		}
-
-		$scroll_where  = "event_type='scroll' AND $page_where AND created_at >= %s";
-		$scroll_params = array_merge( $page_params, array( $start ) );
-		if ( 'all' !== $device ) {
-			$scroll_where   .= ' AND device_type=%s';
-			$scroll_params[] = $device;
 		}
 
 		// Scroll-depth samples grouped by reached depth.
@@ -2391,16 +2423,16 @@ class Database {
 			$wpdb->prepare(
 				"SELECT scroll_depth d, COUNT(*) c
 				 FROM $events
-				 WHERE $scroll_where
+				 WHERE event_type='scroll' AND $metric_where
 				 GROUP BY scroll_depth",
-				$scroll_params
+				$metric_params
 			),
 			ARRAY_A
 		);
 
 		$total_scroll = 0;
 		$by_depth     = array();
-		foreach ( $rows as $r ) {
+		foreach ( (array) $rows as $r ) {
 			$by_depth[ (int) $r['d'] ] = (int) $r['c'];
 			$total_scroll             += (int) $r['c'];
 		}
@@ -2420,30 +2452,32 @@ class Database {
 			);
 		}
 
-		$metric_where  = "$page_where AND created_at >= %s";
-		$metric_params = array_merge( $page_params, array( $start ) );
-		if ( 'all' !== $device ) {
-			$metric_where   .= ' AND device_type=%s';
-			$metric_params[] = $device;
-		}
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$totals = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT COUNT(*) clicks,
+				        COALESCE(SUM(CASE WHEN pos_x > 0 OR pos_y > 0 THEN 1 ELSE 0 END),0) plotted,
+				        COALESCE(SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END),0) tracked,
+				        COUNT(DISTINCT visitor_id) visitors
+				 FROM $events WHERE $person_click AND $metric_where",
+				$metric_params
+			),
+			ARRAY_A
+		);
+		$click_total   = isset( $totals['clicks'] ) ? (int) $totals['clicks'] : 0;
+		$plotted_total = isset( $totals['plotted'] ) ? (int) $totals['plotted'] : 0;
+		$tracked_total = isset( $totals['tracked'] ) ? (int) $totals['tracked'] : 0;
+		$click_visitors = isset( $totals['visitors'] ) ? (int) $totals['visitors'] : 0;
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$pageviews = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='pageview' AND $metric_where", $metric_params ) );
+		$views = $wpdb->get_row(
+			$wpdb->prepare( "SELECT COUNT(*) pageviews, COUNT(DISTINCT visitor_id) visitors FROM $events WHERE event_type='pageview' AND $metric_where", $metric_params ),
+			ARRAY_A
+		);
+		$pageviews         = isset( $views['pageviews'] ) ? (int) $views['pageviews'] : 0;
+		$pageview_visitors = isset( $views['visitors'] ) ? (int) $views['visitors'] : 0;
 
-		$tracked_click_params = $metric_params;
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$tracked_click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type='click' AND $metric_where", $tracked_click_params ) );
-
-		$heatmap_click_params = $metric_params;
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$heatmap_click_total = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM $events WHERE event_type IN ('click','heatmap_click') AND $metric_where", $heatmap_click_params ) );
-
-		$element_params = array_merge( $page_params, array( $start ) );
-		$element_where  = "event_type IN ('click','heatmap_click') AND $page_where AND created_at >= %s";
-		if ( 'all' !== $device ) {
-			$element_where   .= ' AND device_type=%s';
-			$element_params[] = $device;
-		}
+		$element_params   = $metric_params;
 		$element_params[] = 20;
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -2453,9 +2487,10 @@ class Database {
 				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_text)),'|||',-1) element_text,
 				        SUBSTRING_INDEX(MAX(CONCAT(created_at,'|||',element_href)),'|||',-1) element_href,
 				        COUNT(*) clicks,
+				        COUNT(DISTINCT visitor_id) visitors,
 				        SUM(CASE WHEN event_type='click' THEN is_conversion ELSE 0 END) conversions
 				 FROM $events
-				 WHERE $element_where
+				 WHERE $person_click AND $metric_where
 				 GROUP BY COALESCE(NULLIF(heatmap_selector,''), element_selector)
 				 ORDER BY clicks DESC LIMIT %d",
 				$element_params
@@ -2464,7 +2499,7 @@ class Database {
 		);
 
 		$element_rows = array();
-		foreach ( $elements as $row ) {
+		foreach ( (array) $elements as $row ) {
 			$label = trim( (string) $row['element_text'] );
 			if ( '' === $label ) {
 				$label = (string) $row['element_selector'];
@@ -2474,22 +2509,28 @@ class Database {
 				'selector'    => (string) $row['element_selector'],
 				'href'        => (string) $row['element_href'],
 				'clicks'      => (int) $row['clicks'],
+				'visitors'    => (int) $row['visitors'],
 				'conversions' => (int) $row['conversions'],
 			);
 		}
 
 		return array(
-			'points'         => $points,
-			'max_weight'     => $max_w,
-			'scroll'         => $scroll,
-			'elements'       => $element_rows,
-			'search_terms'   => self::top_search_terms( $days, 10, $post_id, $device, $page_key ),
-			'pageviews'      => $pageviews,
-			'clicks'         => $heatmap_click_total,
-			'heatmap_clicks' => $heatmap_click_total,
-			'tracked_clicks' => $tracked_click_total,
-			'scroll_samples' => $total_scroll,
-			'device'         => $device,
+			'points'            => $points,
+			'max_weight'        => $max_w,
+			'scroll'            => $scroll,
+			'elements'          => $element_rows,
+			'search_terms'      => self::top_search_terms( $days, 10, $post_id, $device, $page_key ),
+			'pageviews'         => $pageviews,
+			'pageview_visitors' => $pageview_visitors,
+			'clicks'            => $click_total,
+			'heatmap_clicks'    => $click_total,
+			'tracked_clicks'    => $tracked_total,
+			'plotted'           => $plotted_total,
+			'unplotted'         => max( 0, $click_total - $plotted_total ),
+			'visitors'          => $click_visitors,
+			'devices'           => $devices,
+			'scroll_samples'    => $total_scroll,
+			'device'            => $device,
 		);
 	}
 

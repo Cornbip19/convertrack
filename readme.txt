@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.12.0
+Stable tag: 2.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,15 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.13.0 =
+* Fix: Heatmaps count only clicks that a person made. Clicks fired by scripts (chat widgets, pop-ups, cookie tools) arrive without a position and could make up most "heatmap clicks"; the tracker now ignores them, the collector refuses them, and the screen leaves older ones out of every figure.
+* Fix: clicks made before the tracker script ran are no longer lost. A small inline bootstrap keeps them, with their position and time, while a host or optimizer delays the tracker until the first interaction, and the tracker replays them when it starts. The first pageview is stamped at the moment the page was opened.
+* New: Heatmaps opens each page on the device with the most clicks and shows a click count on every device button, so the first view is never an empty desktop map of a mobile audience.
+* New: "Visitors" next to "Clicks" in Clicked elements and on the map's dots, so 40 clicks from 8 people reads differently from 40 clicks from 40 people. The summary line and the note under the map say how many clicks from how many visitors are plotted, and how many had no position (keyboard).
+* New: Settings > Ignored elements: CSS selectors whose clicks are never recorded (a cookie banner, a chat launcher), so they stop crowding out your own buttons in Heatmaps, Pages & Buttons and Journeys.
+* Change: a tracked click on an unusual element (a list item or icon marked as a button) is kept as a positioned heatmap click instead of being dropped, and unlabelled rows are named by what was clicked ("Unlabelled image", "Unlabelled chat widget").
+* Change: the tracker tag carries data-cfasync="false" and nowprocket so Cloudflare Rocket Loader and WP Rocket's delay do not postpone it.
 
 = 2.12.0 =
 * New: every screen opens with a short "How to read this screen" guide in plain language (what the numbers mean and where to start), which you can collapse; Convertrack remembers your choice.

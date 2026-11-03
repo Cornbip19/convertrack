@@ -71,6 +71,7 @@
 	var detectedSource = detectSource();
 	var source = resolveAcquisitionSource( detectedSource );
 	var selector = buildSelector( cfg.selectors );
+	var ignoreSelector = buildSelector( cfg.ignoreSelectors );
 	var batchMax = Math.min( 25, cfg.batchMax > 0 ? cfg.batchMax : 25 );
 	var queueMax = 100;
 	var collectMaxBytes = 60000;
@@ -95,20 +96,29 @@
 			queue.length = 0;
 			return;
 		}
+		// Script-generated clicks (element.click(), dispatchEvent) are not
+		// visitor clicks. Chat widgets and pop-ups fire them constantly.
+		if ( ! e || e.isTrusted === false ) {
+			return;
+		}
 		rotateSessionIfExpired();
 		var target = e.target;
 		var heatmapEl = heatmapTarget( target );
 		if ( ! heatmapEl ) {
 			return;
 		}
+		if ( ignoreSelector && closestSafe( heatmapEl, ignoreSelector ) ) {
+			return;
+		}
 
-		var el = null;
-		if ( selector && target.closest ) {
-			try {
-				el = target.closest( selector );
-			} catch ( err ) {
-				el = null;
-			}
+		var el = selector ? closestSafe( heatmapEl, selector ) : null;
+		var tracked = !! ( el && isButtonLike( el ) );
+
+		// A real pointer click carries coordinates (or a click count). Keyboard
+		// activation of a button or link is still a click, but a coordinate-less
+		// "click" on plain content never comes from a person.
+		if ( ! tracked && ! hasPointer( e ) ) {
+			return;
 		}
 
 		var attr = eventAttribution();
@@ -117,12 +127,18 @@
 		// Tracked clicks keep the existing dashboard/conversion semantics and
 		// also feed the heatmap. Untracked clicks are recorded as heatmap-only
 		// events so all-click heatmaps do not inflate click analytics.
-		if ( el && isButtonLike( el ) ) {
+		if ( tracked ) {
 			var href = el.getAttribute ? ( el.getAttribute( 'href' ) || '' ) : '';
 			var goal = conversionRule( el, href );
 			enqueue( clickPayload( e, el, href, attr, eventDevice, goal ) );
 		} else {
 			enqueue( heatmapPayload( e, heatmapEl, attr, eventDevice ) );
+		}
+
+		if ( e.__cvtrkReplay ) {
+			// Replayed early clicks did not navigate; the regular flush cadence
+			// batches them together with the pageview.
+			return;
 		}
 
 		// Flush immediately if this click is likely to navigate away, so the
@@ -149,6 +165,68 @@
 		return el;
 	}
 
+	function closestSafe( el, sel ) {
+		if ( ! el || ! el.closest || ! sel ) {
+			return null;
+		}
+		try {
+			return el.closest( sel );
+		} catch ( err ) {
+			return null;
+		}
+	}
+
+	function hasPointer( e ) {
+		return ( parseInt( e.detail, 10 ) || 0 ) > 0 || ( Number( e.clientX ) || 0 ) > 0 || ( Number( e.clientY ) || 0 ) > 0;
+	}
+
+	function eventTs( event ) {
+		var ts = event && event.__cvtrkTs ? parseInt( event.__cvtrkTs, 10 ) : 0;
+		return ts > 0 ? ts : nowMs();
+	}
+
+	// Clicks made before this script executed (hosts and optimizers often delay
+	// trackers until the first interaction) are buffered by the inline
+	// bootstrap in convertrack-early.js and replayed here with their original
+	// coordinates and time.
+	function drainEarlyClicks() {
+		var early = window.__cvtrkEarly;
+		if ( ! early || typeof early.length !== 'number' ) {
+			return 0;
+		}
+		var items = [];
+		for ( var i = 0; i < early.length && i < 50; i++ ) {
+			items.push( early[ i ] );
+		}
+		try {
+			if ( typeof early.stop === 'function' ) {
+				early.stop();
+			}
+		} catch ( err ) {} // eslint-disable-line no-empty
+		window.__cvtrkEarly = null;
+		var replayed = 0;
+		for ( var j = 0; j < items.length; j++ ) {
+			var it = items[ j ];
+			if ( ! it || ! it.el ) {
+				continue;
+			}
+			onClick( {
+				target: it.el,
+				isTrusted: true,
+				detail: it.detail || 0,
+				clientX: it.cx || 0,
+				clientY: it.cy || 0,
+				pageX: it.px || 0,
+				pageY: it.py || 0,
+				__cvtrkTs: it.ts,
+				__cvtrkSnap: it,
+				__cvtrkReplay: true
+			} );
+			replayed++;
+		}
+		return replayed;
+	}
+
 	function heatmapHref( el ) {
 		if ( ! el ) {
 			return '';
@@ -170,7 +248,7 @@
 		return {
 			t: 'click',
 			eid: uuid(),
-			ts: nowMs(),
+			ts: eventTs( event ),
 			pid: cfg.postId || 0,
 			pk: identity.pk,
 			ot: identity.ot,
@@ -216,7 +294,7 @@
 		var coords = clickPosition( event, el );
 		var identity = pageIdentity();
 		return {
-			t: 'heatmap_click', eid: uuid(), ts: nowMs(), pid: cfg.postId || 0,
+			t: 'heatmap_click', eid: uuid(), ts: eventTs( event ), pid: cfg.postId || 0,
 			pk: identity.pk, ot: identity.ot, oid: identity.oid, pit: identity.pit,
 			url: currentPath(), title: docTitle(), tag: tagOf( el ),
 			id: '', cls: '', txt: '', sel: '', hsel: heatmapPath( el ), href: '', conv: 0,
@@ -231,9 +309,10 @@
 	 * Pageview + heartbeat
 	 * ----------------------------------------------------------------- */
 
-	enqueuePageview();
+	enqueuePageview( true );
+	drainEarlyClicks();
 
-	function enqueuePageview() {
+	function enqueuePageview( initial ) {
 		var pageAttr = eventAttribution();
 		var pageViewMetrics = viewportSnapshot();
 		var pageDevice = detectDevice();
@@ -241,7 +320,7 @@
 		enqueue( {
 			t: 'pageview',
 			eid: uuid(),
-			ts: nowMs(),
+			ts: initial ? landingTs() : nowMs(),
 			pid: cfg.postId || 0,
 			pk: identity.pk,
 			ot: identity.ot,
@@ -272,6 +351,26 @@
 			sx: pageViewMetrics.sx,
 			sy: pageViewMetrics.sy
 		} );
+	}
+
+	// The first pageview is stamped with the navigation start, so a tracker
+	// delayed by an optimizer still records when the visit really began. Older
+	// starts (restores, very late boots) are stamped now instead.
+	function landingTs() {
+		var now = nowMs();
+		var start = 0;
+		try {
+			var perf = window.performance;
+			if ( perf && typeof perf.timeOrigin === 'number' ) {
+				start = perf.timeOrigin;
+			} else if ( perf && perf.timing && perf.timing.navigationStart ) {
+				start = perf.timing.navigationStart;
+			}
+		} catch ( err ) {
+			start = 0;
+		}
+		start = Math.floor( Number( start ) || 0 );
+		return start > 0 && now - start >= 0 && now - start < 600000 ? start : now;
 	}
 
 	heartbeat();
@@ -1230,15 +1329,30 @@
 	// clicked element. The element-relative values let heatmaps stay attached
 	// to sticky/fixed controls instead of smearing by viewport scroll offset.
 	function clickPosition( e, el ) {
-		var d = pageDims();
+		// A replayed early click carries the page geometry and element box from
+		// the moment it happened; everything else measures the live page.
+		var snap = e && e.__cvtrkSnap ? e.__cvtrkSnap : null;
+		var d = snap && snap.dw > 0 && snap.dh > 0 ? { w: snap.dw, h: snap.dh } : pageDims();
 		var px = ( typeof e.pageX === 'number' ) ? e.pageX : ( ( e.clientX || 0 ) + ( window.pageXOffset || 0 ) );
 		var py = ( typeof e.pageY === 'number' ) ? e.pageY : ( ( e.clientY || 0 ) + ( window.pageYOffset || 0 ) );
-		var view = viewportSnapshot();
+		var view = snap && snap.vw > 0 ? {
+			vw: clampInt( snap.vw, 1, 1000000 ),
+			vh: clampInt( snap.vh || 1, 1, 1000000 ),
+			dw: clampInt( d.w, 1, 1000000 ),
+			dh: clampInt( d.h, 1, 1000000 ),
+			sx: clampInt( snap.sx || 0, 0, 1000000 ),
+			sy: clampInt( snap.sy || 0, 0, 1000000 )
+		} : viewportSnapshot();
 		var rx = 0;
 		var ry = 0;
+		var rect = null;
 
-		if ( el && el.getBoundingClientRect ) {
-			var rect = el.getBoundingClientRect();
+		if ( snap && snap.rect && snap.el === el && snap.rect.w > 0 ) {
+			rect = { left: snap.rect.l, top: snap.rect.t, width: snap.rect.w, height: snap.rect.h };
+		} else if ( el && el.getBoundingClientRect ) {
+			rect = el.getBoundingClientRect();
+		}
+		if ( rect ) {
 			if ( rect.width > 0 ) {
 				rx = clampInt( Math.round( ( ( ( e.clientX || 0 ) - rect.left ) / rect.width ) * 1000 ), 0, 1000 );
 			}
@@ -1418,6 +1532,10 @@
 			rotateSessionIfExpired: rotateSessionIfExpired,
 			scheduleRetry: scheduleRetry,
 			drainRetry: drainRetry,
+			onClick: onClick,
+			drainEarlyClicks: drainEarlyClicks,
+			landingTs: landingTs,
+			hasPointer: hasPointer,
 			getState: function () {
 				return {
 					sessionId: sessionId,

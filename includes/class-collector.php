@@ -188,13 +188,17 @@ class Collector {
 		$conversion_kind  = '';
 		$conversion_goal  = '';
 
+		if ( 'click' === $type && ! in_array( $tag, array( 'a', 'button', 'input', 'div', 'span' ), true ) ) {
+			// A tracked click on an unexpected tag (li, label, svg...) keeps only
+			// its structural path and position, as a heatmap-only click, instead of
+			// disappearing from the page's click count.
+			$type = 'heatmap_click';
+		}
+
 		if ( 'click' === $type ) {
 			// Current and cached trackers may report custom role=button elements as
 			// div/span. Editable tags are accepted only structurally and never retain
 			// their value/label.
-			if ( ! in_array( $tag, array( 'a', 'button', 'input', 'div', 'span' ), true ) ) {
-				return null;
-			}
 			$element_id       = self::sanitize_identifier( isset( $raw['id'] ) ? $raw['id'] : '', 191 );
 			$element_classes  = self::sanitize_class_list( isset( $raw['cls'] ) ? $raw['cls'] : '' );
 			$element_selector = self::sanitize_structural_selector( isset( $raw['sel'] ) ? $raw['sel'] : '' );
@@ -215,6 +219,14 @@ class Collector {
 			// heatmap-only clicks. Generated tag paths and coordinates are sufficient.
 			$heatmap_selector = self::sanitize_structural_selector( isset( $raw['hsel'] ) ? $raw['hsel'] : '' );
 			if ( '' === $heatmap_selector ) {
+				return null;
+			}
+			// A heatmap-only click with no position did not come from a pointer.
+			// Scripts (chat widgets, pop-ups) dispatch such clicks constantly and a
+			// cached pre-2.13 tracker forwards them; they are not visitor clicks.
+			$pointer_x = isset( $raw['cx'] ) ? absint( $raw['cx'] ) : 0;
+			$pointer_y = isset( $raw['cy'] ) ? absint( $raw['cy'] ) : 0;
+			if ( 0 === $pointer_x && 0 === $pointer_y ) {
 				return null;
 			}
 		} elseif ( 'pageview' === $type ) {

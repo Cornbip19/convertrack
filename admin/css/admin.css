@@ -4574,16 +4574,16 @@ a.cvtrk-health-card:focus {
 /* Heatmap side panel: narrow cards must still show the numbers. */
 .cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-label,
 .cvtrk-heatmap-detail-panel .cvtrk-table .cvtrk-sub {
-	max-width: min(190px, 15vw);
+	max-width: min(150px, 11vw);
 }
 
 .cvtrk-heatmap-detail-panel .cvtrk-table th,
 .cvtrk-heatmap-detail-panel .cvtrk-table td {
-	padding: 9px 8px;
+	padding: 9px 6px;
 }
 
 .cvtrk-heatmap-detail-panel .cvtrk-meter {
-	width: 44px;
+	width: 32px;
 }
 
 /* Indexing: one line under each coverage group title. */
@@ -4775,4 +4775,23 @@ a.cvtrk-health-card:focus {
 
 .cvtrk-table th.cvtrk-sortable .cvtrk-help {
 	vertical-align: middle;
+}
+
+/* 2.13: device toggle counts */
+.cvtrk-segment-count {
+	display: inline-block;
+	min-width: 18px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: rgba(11, 42, 74, 0.08);
+	color: var(--cvtrk-secondary);
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 16px;
+	text-align: center;
+}
+
+.cvtrk-segment.is-active .cvtrk-segment-count {
+	background: rgba(255, 255, 255, 0.22);
+	color: #fff;
 }
