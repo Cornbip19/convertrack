@@ -150,3 +150,52 @@ test( 'insight sentences are built from the server figures in plain language', (
 	assert.equal( client.insightText( { kind: 'unknown' } ), '' );
 	assert.equal( client.insightText( null ), '' );
 } );
+
+test( 'trend buckets add days into weeks and months, mark the partial bucket and average visitors', () => {
+	const client = loadClient( () => Promise.resolve( response( true, 200, {} ) ) );
+	const series = {};
+	// Mon 2026-10-26 .. Tue 2026-11-03 (nine days across two ISO weeks and two months).
+	const days = [ '2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03' ];
+	days.forEach( ( d, i ) => {
+		series[ d ] = { pageviews: 10 + i, clicks: 2, conversions: 1, conversion_events: 1, visitors: 4 };
+	} );
+	const weeks = JSON.parse( JSON.stringify( client.groupSeries( series, 'week', '2026-11-03' ) ) );
+	assert.equal( weeks.length, 2 );
+	assert.equal( weeks[ 0 ].key, '2026-10-26' );
+	assert.equal( weeks[ 0 ].days, 7 );
+	assert.equal( weeks[ 0 ].pageviews, 10 + 11 + 12 + 13 + 14 + 15 + 16 );
+	assert.equal( weeks[ 0 ].visitors, 4, 'visitors are averaged per day inside a bucket' );
+	assert.equal( weeks[ 0 ].partial, false );
+	assert.equal( weeks[ 1 ].key, '2026-11-02' );
+	assert.equal( weeks[ 1 ].days, 2 );
+	assert.equal( weeks[ 1 ].partial, true );
+	assert.ok( weeks[ 1 ].longLabel.indexOf( 'so far' ) !== -1 );
+
+	const months = JSON.parse( JSON.stringify( client.groupSeries( series, 'month', '2026-11-03' ) ) );
+	assert.equal( months.length, 2 );
+	assert.equal( months[ 0 ].key, '2026-10' );
+	assert.equal( months[ 0 ].days, 6 );
+	assert.equal( months[ 1 ].conversion_events, 3 );
+
+	const daysOut = JSON.parse( JSON.stringify( client.groupSeries( series, 'day', '2026-11-03' ) ) );
+	assert.equal( daysOut.length, 9 );
+	assert.equal( daysOut[ 8 ].partial, true );
+	assert.equal( daysOut[ 0 ].visitors, 4 );
+
+	assert.equal( client.autoGroupMode( 7 ), 'day' );
+	assert.equal( client.autoGroupMode( 30 ), 'day' );
+	assert.equal( client.autoGroupMode( 90 ), 'week' );
+	assert.equal( client.autoGroupMode( 365 ), 'month' );
+} );
+
+test( 'period comparison words are rounded and honest about missing history', () => {
+	const client = loadClient( () => Promise.resolve( response( true, 200, {} ) ) );
+	assert.equal( client.percentChange( 120, 100 ), 20 );
+	assert.equal( client.percentChange( 95, 100 ), -5 );
+	assert.equal( client.percentChange( 1, 3 ), -66.7 );
+	assert.equal( client.percentChange( 5, 0 ), null );
+	assert.equal( client.changeWords( 20 ), 'up 20%' );
+	assert.equal( client.changeWords( -5 ), 'down 5%' );
+	assert.equal( client.changeWords( 0 ), 'unchanged' );
+	assert.equal( client.changeWords( null ), 'no earlier data to compare' );
+} );

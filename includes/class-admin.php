@@ -358,6 +358,10 @@ class Admin {
 			'notClickable'       => __( 'Something that is not a link or button but gets clicked anyway, such as an image or a heading. If people click it, they expect it to do something.', 'convertrack-click-conversion-analytics' ),
 			'repeatedClicks'     => __( 'The same element clicked four or more times within ten seconds by one visitor. It usually means the element did not respond, or the page was slow.', 'convertrack-click-conversion-analytics' ),
 			'shareOfVisitors'    => __( 'Out of everyone who viewed this page on this device, the percentage who clicked this element at least once.', 'convertrack-click-conversion-analytics' ),
+			'previousPeriod'     => __( 'The same number of days immediately before the selected range, lined up day by day, so you compare like with like.', 'convertrack-click-conversion-analytics' ),
+			'todaySoFar'         => __( 'Today is still in progress, so its numbers are lower than a full day. It is drawn hollow and left out of the averages.', 'convertrack-click-conversion-analytics' ),
+			'changeNote'         => __( 'A date when settings or the plugin version changed. A step in the lines right after a flag may come from that change rather than from your visitors.', 'convertrack-click-conversion-analytics' ),
+			'groupBy'            => __( 'Add the days up into weeks or months to see the direction without day-to-day noise. Auto picks days for short ranges and weeks or months for long ones.', 'convertrack-click-conversion-analytics' ),
 			'heatmapClicks'      => __( 'Clicks recorded together with where on the page they happened.', 'convertrack-click-conversion-analytics' ),
 			'scrollDepth'        => __( 'The share of visitors who scrolled at least this far down the page.', 'convertrack-click-conversion-analytics' ),
 			'path'               => __( 'The pages a visitor opened, in order, before the valuable action happened.', 'convertrack-click-conversion-analytics' ),
@@ -856,6 +860,42 @@ class Admin {
 						'chat'        => __( 'chat widget', 'convertrack-click-conversion-analytics' ),
 					),
 					'whatStandsOut'   => __( 'What stands out', 'convertrack-click-conversion-analytics' ),
+					'groupBy'         => __( 'Group by', 'convertrack-click-conversion-analytics' ),
+					'groupAuto'       => __( 'Auto', 'convertrack-click-conversion-analytics' ),
+					'groupDay'        => __( 'Day', 'convertrack-click-conversion-analytics' ),
+					'groupWeek'       => __( 'Week', 'convertrack-click-conversion-analytics' ),
+					'groupMonth'      => __( 'Month', 'convertrack-click-conversion-analytics' ),
+					'comparePrevious' => __( 'Compare with previous period', 'convertrack-click-conversion-analytics' ),
+					'previousPeriod'  => __( 'Previous period', 'convertrack-click-conversion-analytics' ),
+					'previousShort'   => __( 'before', 'convertrack-click-conversion-analytics' ),
+					'todaySoFar'      => __( 'Today so far', 'convertrack-click-conversion-analytics' ),
+					'soFar'           => __( 'so far', 'convertrack-click-conversion-analytics' ),
+					'changes'         => __( 'Changes', 'convertrack-click-conversion-analytics' ),
+					'change'          => __( 'Change', 'convertrack-click-conversion-analytics' ),
+					'avgPerDay'       => __( 'avg per day', 'convertrack-click-conversion-analytics' ),
+					'convertingVisits' => __( 'converting visits', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: date range, %2$s: pageviews, %3$s: clicks, %4$s: conversions. */
+					'trendTotals'     => __( '%1$s: %2$s pageviews, %3$s clicks and %4$s conversions.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: pageviews, %2$s: clicks, %3$s: conversions. */
+					'trendAverage'    => __( 'Daily average, today excluded: %1$s pageviews, %2$s clicks, %3$s conversions.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of days, %2$s: pageviews change, %3$s: conversions change. */
+					'trendCompare'    => __( 'Compared with the %1$s days before: pageviews %2$s, conversions %3$s.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'trendUp'         => __( 'up %1$s', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: percentage. */
+					'trendDown'       => __( 'down %1$s', 'convertrack-click-conversion-analytics' ),
+					'trendFlat'       => __( 'unchanged', 'convertrack-click-conversion-analytics' ),
+					'trendNoBase'     => __( 'no earlier data to compare', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: date, %2$s: pageviews. */
+					'trendBusiest'    => __( 'Busiest day: %1$s with %2$s pageviews.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: pageviews, %2$s: clicks, %3$s: conversions. */
+					'trendToday'      => __( 'Today so far: %1$s pageviews, %2$s clicks, %3$s conversions.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: date. */
+					'trendDataStart'  => __( 'Tracking data starts on %1$s; earlier days are not shown.', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: date, %2$s: note text. */
+					'trendChangeOne'  => __( 'One change is flagged on the chart (%1$s: %2$s).', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: number of changes. */
+					'trendChangesMany' => __( '%1$s changes are flagged on the chart; hover a flag to read it.', 'convertrack-click-conversion-analytics' ),
 					/* translators: %1$s: element name, %2$s: percentage, %3$s: number of people. */
 					'insightTop'      => __( '"%1$s" is the most used element: %2$s of visitors pressed it (%3$s people).', 'convertrack-click-conversion-analytics' ),
 					/* translators: %1$s: percentage. */
