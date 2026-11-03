@@ -4966,3 +4966,103 @@ a.cvtrk-health-card:focus {
 	display: inline-block;
 	margin-top: 3px;
 }
+
+/* 2.15: performance trend */
+.cvtrk-overview-trend .cvtrk-linechart {
+	width: 100%;
+	height: auto;
+}
+
+.cvtrk-trend-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 18px;
+}
+
+.cvtrk-trend-controls .cvtrk-mini-field {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.cvtrk-trend-controls .cvtrk-mini-field > span,
+.cvtrk-trend-controls .cvtrk-checkbox-field > span {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--cvtrk-secondary);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.cvtrk-overview-trend .cvtrk-chart-axis {
+	font-size: 12px;
+}
+
+.cvtrk-overview-trend .cvtrk-chart-axis.is-tick {
+	font-size: 12px;
+}
+
+.cvtrk-overview-trend .cvtrk-line {
+	stroke-width: 2.4;
+}
+
+.cvtrk-line.is-visitors { stroke: #7c6fd0; }
+.cvtrk-line-dot.is-visitors { stroke: #7c6fd0; }
+.cvtrk-swatch.is-visitors { background: #7c6fd0; }
+
+.cvtrk-line.is-prev {
+	stroke-width: 1.6;
+	stroke-dasharray: 4 4;
+	opacity: 0.55;
+}
+
+.cvtrk-line-dot.is-partial {
+	stroke-dasharray: 2 2;
+}
+
+.cvtrk-chart-axis.is-today {
+	fill: var(--cvtrk-navy);
+	font-weight: 600;
+}
+
+.cvtrk-chart-partial {
+	fill: rgba(11, 42, 74, 0.05);
+}
+
+.cvtrk-chart-flag {
+	fill: #d9822b;
+	stroke: #fff;
+	stroke-width: 1;
+}
+
+.cvtrk-legend-item.is-static {
+	cursor: default;
+}
+
+.cvtrk-legend-item .cvtrk-swatch.is-flag {
+	width: 0;
+	height: 0;
+	border-left: 5px solid transparent;
+	border-right: 5px solid transparent;
+	border-bottom: 9px solid #d9822b;
+	border-radius: 0;
+	background: transparent;
+}
+
+.cvtrk-legend-item .cvtrk-swatch.is-prev {
+	background: transparent;
+	border-top: 2px dashed var(--cvtrk-secondary);
+	height: 0;
+	border-radius: 0;
+}
+
+.cvtrk-chart-tip-row.is-note span:first-child {
+	white-space: normal;
+	max-width: 260px;
+}
+
+.cvtrk-chart-summary .cvtrk-chart-summary-line + .cvtrk-chart-summary-line {
+	margin-top: 4px;
+}

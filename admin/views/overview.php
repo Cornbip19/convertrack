@@ -121,7 +121,22 @@ $cvtrk_sections = array(
 			<div class="cvtrk-card-head">
 				<div>
 					<h2><?php esc_html_e( 'Performance trend', 'convertrack-click-conversion-analytics' ); ?></h2>
-					<span class="cvtrk-card-sub"><?php esc_html_e( 'Pageviews and clicks on the left scale, conversions on the right. Hover a day for its numbers.', 'convertrack-click-conversion-analytics' ); ?></span>
+					<span class="cvtrk-card-sub"><?php esc_html_e( 'Pageviews, visitors and clicks on the left scale, conversions on the right. Hover a point for its numbers; flags mark days when settings or the plugin changed.', 'convertrack-click-conversion-analytics' ); ?></span>
+				</div>
+				<div class="cvtrk-trend-controls">
+					<label class="cvtrk-mini-field">
+						<span><?php esc_html_e( 'Group by', 'convertrack-click-conversion-analytics' ); ?><?php Admin::help( 'groupBy' ); ?></span>
+						<select data-cvtrk="trend-group">
+							<option value="auto" selected><?php esc_html_e( 'Auto', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="day"><?php esc_html_e( 'Day', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="week"><?php esc_html_e( 'Week', 'convertrack-click-conversion-analytics' ); ?></option>
+							<option value="month"><?php esc_html_e( 'Month', 'convertrack-click-conversion-analytics' ); ?></option>
+						</select>
+					</label>
+					<label class="cvtrk-checkbox-field">
+						<input type="checkbox" data-cvtrk="trend-compare" />
+						<span><?php esc_html_e( 'Compare with previous period', 'convertrack-click-conversion-analytics' ); ?><?php Admin::help( 'previousPeriod' ); ?></span>
+					</label>
 				</div>
 			</div>
 			<div class="cvtrk-card-body">

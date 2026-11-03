@@ -236,8 +236,13 @@ final class Plugin {
 			return 'failed';
 		}
 
+		$previous = (string) get_option( self::VERSION_OPTION, '' );
 		update_option( self::VERSION_OPTION, CONVERTRACK_VERSION, true );
 		delete_transient( self::UPGRADE_ATTEMPT_KEY );
+		if ( '' !== $previous ) {
+			/* translators: %1$s: new version, %2$s: previous version. */
+			Database::add_note( sprintf( __( 'Convertrack updated to %1$s (from %2$s)', 'convertrack-click-conversion-analytics' ), CONVERTRACK_VERSION, $previous ), 'update' );
+		}
 
 		/**
 		 * Fires once every module schema is current after a plugin update.

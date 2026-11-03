@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.14.0
+Stable tag: 2.15.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,15 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.15.0 =
+* Change: the dashboard's Performance trend is drawn at the card's real width and 380px tall instead of being shrunk into a fixed 920x300 box, with readable axis text, thicker lines, a Visitors line, and dots on every point when there are 40 or fewer.
+* New: Group by Day, Week or Month (Auto picks by range) so a long range shows the direction without day-to-day noise; weekly and monthly buckets carry visitors as an average per day.
+* New: Compare with previous period draws the same number of days before the range as dashed lines, lined up day by day, and the tooltip shows each value next to the one before it.
+* New: today is drawn hollow and shaded as "Today so far" and left out of the daily average, so a low last point is not read as a drop; days before tracking started are not drawn at all.
+* New: dated flags on the chart mark changes that affect what gets counted: every settings save that changes tracked, ignored or conversion elements, goal pages, sample rate or privacy options, and every plugin update. Hover a flag to read it; the summary counts them.
+* New: a plain-language summary under the chart: totals for the range, daily average with today excluded, the change versus the days before, the busiest day and today so far.
+* Fix: a past day whose daily rollup has not completed yet is read from the raw events instead of showing a false zero.
 
 = 2.14.0 =
 * New: "What stands out" on the Heatmaps screen: up to five plain-language findings worked out from the page's clicks and scrolling, such as the most used element and the share of visitors who pressed it, how many clicks happen on the first screen, where half of visitors stop scrolling, content that is not clickable yet gets clicked (images, headings, text), and elements clicked four or more times in a row.

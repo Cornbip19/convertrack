@@ -17,6 +17,8 @@ class Database {
 	/**
 	 * Bump when the schema changes so maybe_upgrade() re-runs dbDelta.
 	 */
+	const NOTES_OPTION = 'convertrack_notes';
+
 	const DB_VERSION = '2.1.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
@@ -2915,19 +2917,30 @@ class Database {
 	}
 
 	/**
-	 * Daily click time-series for charts.
+	 * Daily series of clicks, pageviews, conversions and visitors.
 	 *
-	 * @param int $days Days back.
-	 * @return array Map of date => clicks (oldest first).
+	 * Past days come from the completed rollups; today is read live from the
+	 * raw events. A past day whose rollup has not completed yet (or never ran)
+	 * is read from the raw events as well, so the chart never shows a false
+	 * zero for yesterday. With an offset the same window is returned for an
+	 * earlier period, which the dashboard lines up as "previous period".
+	 *
+	 * @param int $days   Days in the window.
+	 * @param int $offset Days to shift the window back (0 = ending today).
+	 * @return array Keyed by Y-m-d: clicks, pageviews, conversions, conversion_events, visitors.
 	 */
-	public static function clicks_timeseries( $days ) {
+	public static function clicks_timeseries( $days, $offset = 0 ) {
 		global $wpdb;
 
 		$days     = max( 1, (int) $days );
-		$start    = self::date_days_ago( $days - 1 );
+		$offset   = max( 0, (int) $offset );
+		$start    = self::date_days_ago( $days - 1 + $offset );
+		$end      = self::date_days_ago( $offset );
 		$daily    = self::daily_table();
 		$sessions = self::session_days_table();
 		$visitors = self::visitor_days_table();
+		$state    = self::rollup_state_table();
+		$events   = self::events_table();
 
 		// Every event belongs to exactly one daily bucket, so conversion_events
 		// sums cleanly across buckets; converting sessions do not (one session
@@ -2936,8 +2949,9 @@ class Database {
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT stat_date, SUM(clicks) clicks, SUM(pageviews) pageviews, SUM(conversion_events) conversion_events
-				 FROM $daily WHERE stat_date >= %s GROUP BY stat_date",
-				$start
+				 FROM $daily WHERE stat_date >= %s AND stat_date <= %s GROUP BY stat_date",
+				$start,
+				$end
 			),
 			ARRAY_A
 		);
@@ -2945,8 +2959,9 @@ class Database {
 		$conversion_rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT stat_date,COUNT(DISTINCT session_hash) conversions
-				 FROM $sessions WHERE stat_date >= %s AND converted=1 GROUP BY stat_date",
-				$start
+				 FROM $sessions WHERE stat_date >= %s AND stat_date <= %s AND converted=1 GROUP BY stat_date",
+				$start,
+				$end
 			),
 			ARRAY_A
 		);
@@ -2957,38 +2972,167 @@ class Database {
 		// One row per visitor per day: an exact daily unique count.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$visitor_rows = $wpdb->get_results(
-			$wpdb->prepare( "SELECT stat_date, COUNT(*) visitors FROM $visitors WHERE stat_date >= %s GROUP BY stat_date", $start ),
+			$wpdb->prepare( "SELECT stat_date, COUNT(*) visitors FROM $visitors WHERE stat_date >= %s AND stat_date <= %s GROUP BY stat_date", $start, $end ),
 			ARRAY_A
 		);
 		$visitors_by_date = array();
 		foreach ( (array) $visitor_rows as $visitor_row ) {
 			$visitors_by_date[ (string) $visitor_row['stat_date'] ] = (int) $visitor_row['visitors'];
 		}
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$state_rows = $wpdb->get_results(
+			$wpdb->prepare( "SELECT stat_date, status FROM $state WHERE stat_date >= %s AND stat_date <= %s", $start, $end ),
+			ARRAY_A
+		);
+		$complete = array();
+		foreach ( (array) $state_rows as $state_row ) {
+			if ( 'complete' === (string) $state_row['status'] ) {
+				$complete[ (string) $state_row['stat_date'] ] = true;
+			}
+		}
 
 		$map = array();
-		foreach ( $rows as $row ) {
+		foreach ( (array) $rows as $row ) {
 			$map[ $row['stat_date'] ] = $row;
 		}
 
 		// Fill gaps and append a live "today" bucket from raw events.
-		$series = array();
+		$today    = self::today();
+		$series   = array();
+		$fallback = array();
 		for ( $i = $days - 1; $i >= 0; $i-- ) {
-			$date = self::date_days_ago( $i );
-			if ( $date === self::today() ) {
+			$date = self::date_days_ago( $i + $offset );
+			if ( $date === $today ) {
 				$series[ $date ] = self::today_counts();
-			} else {
-				$row = isset( $map[ $date ] ) ? $map[ $date ] : array();
+				continue;
+			}
+			$row             = isset( $map[ $date ] ) ? $map[ $date ] : array();
+			$series[ $date ] = array(
+				'clicks'            => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
+				'pageviews'         => isset( $row['pageviews'] ) ? (int) $row['pageviews'] : 0,
+				'conversions'       => isset( $conversions_by_date[ $date ] ) ? $conversions_by_date[ $date ] : 0,
+				'conversion_events' => isset( $row['conversion_events'] ) ? (int) $row['conversion_events'] : 0,
+				'visitors'          => isset( $visitors_by_date[ $date ] ) ? $visitors_by_date[ $date ] : 0,
+			);
+			if ( empty( $complete[ $date ] ) ) {
+				$fallback[] = $date;
+			}
+		}
+
+		if ( ! empty( $fallback ) ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$raw_rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT DATE(created_at) d,
+					        SUM(CASE WHEN event_type='click' THEN 1 ELSE 0 END) clicks,
+					        SUM(CASE WHEN event_type='pageview' THEN 1 ELSE 0 END) pageviews,
+					        SUM(CASE WHEN is_conversion=1 THEN 1 ELSE 0 END) conversion_events,
+					        COUNT(DISTINCT CASE WHEN is_conversion=1 THEN session_id END) conversions,
+					        COUNT(DISTINCT visitor_id) visitors
+					 FROM $events
+					 WHERE created_at >= %s AND created_at < %s
+					 GROUP BY DATE(created_at)",
+					min( $fallback ) . ' 00:00:00',
+					gmdate( 'Y-m-d', strtotime( max( $fallback ) ) + DAY_IN_SECONDS ) . ' 00:00:00'
+				),
+				ARRAY_A
+			);
+			$wanted = array_flip( $fallback );
+			foreach ( (array) $raw_rows as $raw ) {
+				$date = (string) $raw['d'];
+				if ( ! isset( $wanted[ $date ] ) || ! isset( $series[ $date ] ) ) {
+					continue;
+				}
 				$series[ $date ] = array(
-					'clicks'            => isset( $row['clicks'] ) ? (int) $row['clicks'] : 0,
-					'pageviews'         => isset( $row['pageviews'] ) ? (int) $row['pageviews'] : 0,
-					'conversions'       => isset( $conversions_by_date[ $date ] ) ? $conversions_by_date[ $date ] : 0,
-					'conversion_events' => isset( $row['conversion_events'] ) ? (int) $row['conversion_events'] : 0,
-					'visitors'          => isset( $visitors_by_date[ $date ] ) ? $visitors_by_date[ $date ] : 0,
+					'clicks'            => (int) $raw['clicks'],
+					'pageviews'         => (int) $raw['pageviews'],
+					'conversions'       => (int) $raw['conversions'],
+					'conversion_events' => (int) $raw['conversion_events'],
+					'visitors'          => (int) $raw['visitors'],
 				);
 			}
 		}
 
 		return $series;
+	}
+
+	/**
+	 * Record a dated note (a settings change, a plugin update) that the
+	 * dashboard draws on the trend chart, so a step in the lines can be told
+	 * apart from a change in visitor behaviour. Bounded to the latest 60.
+	 *
+	 * @param string      $text Plain text, at most 160 characters.
+	 * @param string      $kind settings|update|manual.
+	 * @param string|null $date Y-m-d, default today.
+	 * @return bool Whether a note was stored.
+	 */
+	public static function add_note( $text, $kind = 'settings', $date = null ) {
+		$text = trim( wp_strip_all_tags( (string) $text ) );
+		if ( '' === $text ) {
+			return false;
+		}
+		$text = function_exists( 'mb_substr' ) ? mb_substr( $text, 0, 160 ) : substr( $text, 0, 160 );
+		$date = $date ? substr( (string) $date, 0, 10 ) : self::today();
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $date ) ) {
+			$date = self::today();
+		}
+		$notes = get_option( self::NOTES_OPTION, array() );
+		$notes = is_array( $notes ) ? array_values( $notes ) : array();
+		$last  = end( $notes );
+		if ( is_array( $last ) && isset( $last['date'], $last['text'] ) && $last['date'] === $date && $last['text'] === $text ) {
+			return false;
+		}
+		$notes[] = array(
+			'date' => $date,
+			'kind' => sanitize_key( $kind ),
+			'text' => $text,
+			'at'   => current_time( 'mysql' ),
+		);
+		if ( count( $notes ) > 60 ) {
+			$notes = array_slice( $notes, -60 );
+		}
+		update_option( self::NOTES_OPTION, array_values( $notes ), false );
+		return true;
+	}
+
+	/**
+	 * Notes dated within a window, oldest first.
+	 *
+	 * @param string $from Y-m-d.
+	 * @param string $to   Y-m-d.
+	 * @return array
+	 */
+	public static function notes_between( $from, $to ) {
+		$notes = get_option( self::NOTES_OPTION, array() );
+		$out   = array();
+		$order = 0;
+		foreach ( (array) $notes as $note ) {
+			if ( ! is_array( $note ) || empty( $note['date'] ) || empty( $note['text'] ) ) {
+				continue;
+			}
+			$date = (string) $note['date'];
+			if ( $date < $from || $date > $to ) {
+				continue;
+			}
+			$out[] = array(
+				'date'  => $date,
+				'kind'  => isset( $note['kind'] ) ? (string) $note['kind'] : 'manual',
+				'text'  => (string) $note['text'],
+				'order' => $order++,
+			);
+		}
+		// Stable on every PHP version: by date, then by the order they were added.
+		usort(
+			$out,
+			function ( $a, $b ) {
+				$by_date = strcmp( $a['date'], $b['date'] );
+				return 0 !== $by_date ? $by_date : $a['order'] - $b['order'];
+			}
+		);
+		foreach ( $out as $index => $note ) {
+			unset( $out[ $index ]['order'] );
+		}
+		return array_values( $out );
 	}
 
 	/**

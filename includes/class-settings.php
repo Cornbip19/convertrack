@@ -116,7 +116,42 @@ class Settings {
 				'error'
 			);
 		}
-		return self::sanitize( $input );
+		$clean = self::sanitize( $input );
+		self::note_changes( self::all(), $clean );
+		return $clean;
+	}
+
+	/**
+	 * Leave a dated note on the dashboard trend when a setting that changes
+	 * what gets counted is saved, so a step in the lines is explainable.
+	 *
+	 * @param array $before Settings before the save.
+	 * @param array $after  Sanitized settings being saved.
+	 */
+	public static function note_changes( array $before, array $after ) {
+		$watch = array(
+			'enabled'              => __( 'Tracking on/off', 'convertrack-click-conversion-analytics' ),
+			'track_selectors'      => __( 'Tracked elements', 'convertrack-click-conversion-analytics' ),
+			'ignore_selectors'     => __( 'Ignored elements', 'convertrack-click-conversion-analytics' ),
+			'conversion_selectors' => __( 'Buttons that count as conversions', 'convertrack-click-conversion-analytics' ),
+			'conversion_urls'      => __( 'Pages that count as conversions', 'convertrack-click-conversion-analytics' ),
+			'sample_rate'          => __( 'Sample rate', 'convertrack-click-conversion-analytics' ),
+			'respect_dnt'          => __( 'Do Not Track', 'convertrack-click-conversion-analytics' ),
+			'track_logged_in'      => __( 'Logged-in tracking', 'convertrack-click-conversion-analytics' ),
+			'exclude_urls'         => __( 'Excluded URLs', 'convertrack-click-conversion-analytics' ),
+		);
+		$changed = array();
+		foreach ( $watch as $key => $label ) {
+			$old = isset( $before[ $key ] ) ? $before[ $key ] : '';
+			$new = isset( $after[ $key ] ) ? $after[ $key ] : '';
+			if ( is_scalar( $old ) && is_scalar( $new ) && (string) $old !== (string) $new ) {
+				$changed[] = $label;
+			}
+		}
+		if ( ! empty( $changed ) ) {
+			/* translators: %s: comma-separated list of setting names. */
+			Database::add_note( sprintf( __( 'Settings changed: %s', 'convertrack-click-conversion-analytics' ), implode( ', ', $changed ) ), 'settings' );
+		}
 	}
 
 	/**

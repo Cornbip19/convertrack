@@ -1294,10 +1294,27 @@
 		return n;
 	}
 
-	// Series-visibility state for the Activity trend chart, kept at module scope
-	// so legend toggles persist across date-range changes and auto-refresh.
-	var seriesHidden = { pageviews: false, clicks: false, conversions: false };
+	// Series-visibility state for the Performance trend chart, kept at module
+	// scope so legend toggles persist across date-range changes and auto-refresh.
+	var seriesHidden = { pageviews: false, visitors: false, clicks: false, conversions: false };
 	var lastSeries = null;
+	var lastTrendMeta = null;
+
+	function storeGet( key ) {
+		try {
+			return window.localStorage ? window.localStorage.getItem( key ) : null;
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function storeSet( key, value ) {
+		try {
+			if ( window.localStorage ) {
+				window.localStorage.setItem( key, value );
+			}
+		} catch ( e ) {} // eslint-disable-line no-empty
+	}
 
 	function legendToggle( key, cls, label, onToggle ) {
 		var btn = el( 'button', 'cvtrk-legend-item cvtrk-legend-toggle' + ( seriesHidden[ key ] ? ' is-off' : '' ) );
@@ -1309,63 +1326,214 @@
 		return btn;
 	}
 
-	function renderChart( series ) {
+	function isoDate( iso ) {
+		var parts = String( iso ).split( '-' );
+		return new Date( Number( parts[ 0 ] ), Number( parts[ 1 ] ) - 1, Number( parts[ 2 ] ) );
+	}
+
+	function isoFromDate( d ) {
+		return d.getFullYear() + '-' + ( '0' + ( d.getMonth() + 1 ) ).slice( -2 ) + '-' + ( '0' + d.getDate() ).slice( -2 );
+	}
+
+	// Monday of the week that holds the date, as Y-m-d.
+	function weekKey( iso ) {
+		var d = isoDate( iso );
+		d.setDate( d.getDate() - ( ( d.getDay() + 6 ) % 7 ) );
+		return isoFromDate( d );
+	}
+
+	function formatMonth( iso ) {
+		try {
+			return isoDate( iso ).toLocaleDateString( undefined, { month: 'short', year: 'numeric' } );
+		} catch ( e ) {
+			return String( iso ).substring( 0, 7 );
+		}
+	}
+
+	function autoGroupMode( days ) {
+		return days > 120 ? 'month' : ( days > 45 ? 'week' : 'day' );
+	}
+
+	// Add a day-keyed series up into day, week (Mon-Sun) or month buckets.
+	// Visitors are daily uniques, so a grouped bucket carries their average
+	// per day rather than a sum that would count people twice.
+	function groupSeries( series, mode, today ) {
+		var dates = Object.keys( series || {} );
+		var buckets = [];
+		var index = {};
+		dates.forEach( function ( date ) {
+			var key = mode === 'week' ? weekKey( date ) : ( mode === 'month' ? String( date ).substring( 0, 7 ) : date );
+			var bucket = index[ key ];
+			if ( ! bucket ) {
+				bucket = { key: key, dates: [], pageviews: 0, visitorDays: 0, clicks: 0, conversions: 0, conversion_events: 0, partial: false };
+				index[ key ] = bucket;
+				buckets.push( bucket );
+			}
+			var row = series[ date ] || {};
+			bucket.dates.push( date );
+			bucket.pageviews += Number( row.pageviews ) || 0;
+			bucket.visitorDays += Number( row.visitors ) || 0;
+			bucket.clicks += Number( row.clicks ) || 0;
+			bucket.conversions += Number( row.conversions ) || 0;
+			bucket.conversion_events += Number( row.conversion_events !== undefined ? row.conversion_events : row.conversions ) || 0;
+			if ( today && date === today ) {
+				bucket.partial = true;
+			}
+		} );
+		buckets.forEach( function ( bucket ) {
+			bucket.first = bucket.dates[ 0 ];
+			bucket.last = bucket.dates[ bucket.dates.length - 1 ];
+			bucket.days = bucket.dates.length;
+			bucket.visitors = mode === 'day' ? bucket.visitorDays : ( bucket.days ? Math.round( bucket.visitorDays / bucket.days ) : 0 );
+			if ( mode === 'day' ) {
+				bucket.label = formatDay( bucket.first );
+				bucket.longLabel = formatDayLong( bucket.first );
+			} else if ( mode === 'month' ) {
+				bucket.label = formatMonth( bucket.first );
+				bucket.longLabel = bucket.label;
+			} else {
+				bucket.label = formatDay( bucket.first );
+				bucket.longLabel = formatDay( bucket.first ) + ' – ' + formatDay( bucket.last );
+			}
+			if ( bucket.partial ) {
+				bucket.longLabel += ' (' + ( I18N.soFar || 'so far' ) + ')';
+			}
+		} );
+		return buckets;
+	}
+
+	function percentChange( current, previous ) {
+		current = Number( current ) || 0;
+		previous = Number( previous ) || 0;
+		if ( ! previous ) {
+			return null;
+		}
+		return Math.round( ( ( current - previous ) / previous ) * 1000 ) / 10;
+	}
+
+	function changeWords( pct ) {
+		if ( pct === null ) {
+			return I18N.trendNoBase || 'no earlier data to compare';
+		}
+		if ( Math.abs( pct ) < 0.05 ) {
+			return I18N.trendFlat || 'unchanged';
+		}
+		return formatTemplate( pct > 0 ? ( I18N.trendUp || 'up %1$s' ) : ( I18N.trendDown || 'down %1$s' ), Math.abs( pct ) + '%' );
+	}
+
+	function renderChart( series, meta ) {
 		var box = attr( 'chart' );
 		if ( ! box ) {
 			return;
 		}
 		lastSeries = series;
+		if ( meta ) {
+			lastTrendMeta = meta;
+		}
+		meta = lastTrendMeta || {};
 		clear( box );
 		box.removeAttribute( 'role' );
 		box.removeAttribute( 'aria-label' );
 
-		var dates = Object.keys( series || {} );
-		if ( ! dates.length ) {
+		var allDates = Object.keys( series || {} );
+		if ( ! allDates.length ) {
 			empty( box );
 			return;
 		}
-		var lastIndex = dates.length - 1;
+
+		// Days before tracking started would draw a false flat zero.
+		var from = String( meta.data_available_from || '' );
+		var dates = from ? allDates.filter( function ( d ) { return d >= from; } ) : allDates;
+		if ( ! dates.length ) {
+			dates = allDates;
+		}
+		var trimmed = {};
+		dates.forEach( function ( d ) { trimmed[ d ] = series[ d ]; } );
+		var today = String( meta.today || '' );
+		var hasToday = today && dates.indexOf( today ) !== -1;
+
+		var groupSel = attr( 'trend-group' );
+		var compareChk = attr( 'trend-compare' );
+		var modeChoice = groupSel ? groupSel.value : 'auto';
+		var mode = modeChoice === 'auto' || ! modeChoice ? autoGroupMode( dates.length ) : modeChoice;
+		var compare = !! ( compareChk && compareChk.checked && meta.previous );
+		var buckets = groupSeries( trimmed, mode, today );
+		var count = buckets.length;
+		var lastIndex = count - 1;
+
+		// The previous period is lined up by position (day 1 with day 1) and
+		// grouped exactly like the current one.
+		var prevBuckets = [];
+		var prevTotals = null;
+		if ( meta.previous ) {
+			var prevDates = Object.keys( meta.previous );
+			var skip = Math.max( 0, prevDates.length - dates.length );
+			var aligned = {};
+			prevDates.slice( skip ).forEach( function ( pd, i ) {
+				if ( dates[ i ] ) {
+					aligned[ dates[ i ] ] = meta.previous[ pd ];
+				}
+			} );
+			prevBuckets = groupSeries( aligned, mode, '' );
+			prevTotals = { pageviews: 0, clicks: 0, conversions: 0 };
+			prevBuckets.forEach( function ( b ) {
+				prevTotals.pageviews += b.pageviews;
+				prevTotals.clicks += b.clicks;
+				prevTotals.conversions += b.conversion_events;
+			} );
+		}
 
 		var seriesMeta = [
 			{ key: 'pageviews', cls: 'is-pageviews', label: I18N.pageviews || 'Pageviews', axis: 'left' },
+			{ key: 'visitors', cls: 'is-visitors', label: ( I18N.visitors || 'Visitors' ) + ( mode !== 'day' ? ' (' + ( I18N.avgPerDay || 'avg per day' ) + ')' : '' ), axis: 'left' },
 			{ key: 'clicks', cls: 'is-clicks', label: I18N.clicks || 'Clicks', axis: 'left' },
 			{ key: 'conversions', cls: 'is-conversions', label: I18N.conversions || 'Conversions', axis: 'right' }
 		];
-		// Conversions are conversion events; converting sessions ride along in
+		// Conversions are conversion events; converting visits ride along in
 		// the tooltip for the rate.
-		function value( d, key ) {
-			var row = series[ d ] || {};
-			if ( key === 'conversions' && row.conversion_events !== undefined ) {
-				return Number( row.conversion_events ) || 0;
+		function value( bucket, key ) {
+			if ( ! bucket ) {
+				return 0;
 			}
-			return Number( row[ key ] ) || 0;
+			if ( key === 'conversions' ) {
+				return Number( bucket.conversion_events ) || 0;
+			}
+			return Number( bucket[ key ] ) || 0;
 		}
 		var visible = seriesMeta.filter( function ( s ) { return ! seriesHidden[ s.key ]; } );
 		var showRight = visible.some( function ( s ) { return s.axis === 'right'; } );
 
 		var leftMax = 0;
 		var rightMax = 0;
-		dates.forEach( function ( d ) {
+		function consider( bucket ) {
 			visible.forEach( function ( s ) {
-				var v = value( d, s.key );
+				var v = value( bucket, s.key );
 				if ( s.axis === 'right' ) {
 					rightMax = Math.max( rightMax, v );
 				} else {
 					leftMax = Math.max( leftMax, v );
 				}
 			} );
-		} );
+		}
+		buckets.forEach( consider );
+		if ( compare ) {
+			prevBuckets.forEach( consider );
+		}
 		leftMax = niceCeil( leftMax );
 		rightMax = niceCeil( rightMax );
 
-		var width = 920;
-		var height = 300;
-		var pad = { top: 18, right: showRight ? 54 : 24, bottom: 40, left: 54 };
+		// Draw at the box's real width so text keeps its pixel size instead of
+		// being scaled down inside a letterboxed viewBox.
+		var width = Math.max( 560, Math.round( box.clientWidth || 920 ) );
+		var height = 380;
+		var pad = { top: 24, right: showRight ? 64 : 28, bottom: 60, left: 64 };
 		var innerW = width - pad.left - pad.right;
 		var innerH = height - pad.top - pad.bottom;
 		var svg = svgEl( 'svg', {
 			class: 'cvtrk-linechart',
 			viewBox: '0 0 ' + width + ' ' + height,
+			width: width,
+			height: height,
 			role: 'img',
 			'aria-label': I18N.activityTrend || 'Activity trend'
 		} );
@@ -1379,49 +1547,80 @@
 			return pad.top + innerH - ( v / ( max || 1 ) ) * innerH;
 		}
 
-		// Date ticks: at most ~8, always including the first and last day.
-		var tickEvery = Math.max( 1, Math.ceil( dates.length / 8 ) );
+		// A partial last bucket (today, or the week/month holding today) is
+		// shaded so a low last point is not read as a drop.
+		if ( hasToday && lastIndex > 0 && buckets[ lastIndex ].partial ) {
+			var halfStep = innerW / lastIndex / 2;
+			svg.appendChild( svgEl( 'rect', {
+				class: 'cvtrk-chart-partial',
+				x: ( xAt( lastIndex ) - halfStep ).toFixed( 2 ),
+				y: pad.top,
+				width: ( halfStep + pad.right - 6 ).toFixed( 2 ),
+				height: innerH
+			} ) );
+		}
+
+		// Date ticks: at most ~10, always including the first and last bucket.
+		var maxTicks = Math.max( 4, Math.min( 10, Math.floor( innerW / 90 ) ) );
+		var tickEvery = Math.max( 1, Math.ceil( count / maxTicks ) );
 		var ticks = [];
-		for ( var ti = 0; ti < dates.length; ti += tickEvery ) {
+		for ( var ti = 0; ti < count; ti += tickEvery ) {
 			ticks.push( ti );
 		}
 		if ( ticks[ ticks.length - 1 ] !== lastIndex ) {
-			if ( ticks.length > 1 && lastIndex - ticks[ ticks.length - 1 ] < tickEvery / 2 ) {
-				ticks.pop();
-			}
 			ticks.push( lastIndex );
 		}
+		// The last label is wider when it says "so far"; drop ticks that would
+		// sit underneath it.
+		var lastLabelWidth = buckets[ lastIndex ].partial ? 110 : 64;
+		while ( ticks.length > 2 && xAt( lastIndex ) - xAt( ticks[ ticks.length - 2 ] ) < lastLabelWidth ) {
+			ticks.splice( ticks.length - 2, 1 );
+		}
 		ticks.forEach( function ( i ) {
+			var partial = !! buckets[ i ].partial;
 			var t = svgEl( 'text', {
-				class: 'cvtrk-chart-axis is-tick',
+				class: 'cvtrk-chart-axis is-tick' + ( partial ? ' is-today' : '' ),
 				x: xAt( i ).toFixed( 2 ),
-				y: height - 14,
+				y: height - 32,
 				'text-anchor': i === lastIndex && lastIndex > 0 ? 'end' : ( i === 0 ? 'start' : 'middle' )
 			} );
-			t.textContent = formatDay( dates[ i ] );
+			if ( partial ) {
+				t.textContent = mode === 'day' ? ( I18N.todaySoFar || 'Today so far' ) : buckets[ i ].label + ' (' + ( I18N.soFar || 'so far' ) + ')';
+			} else {
+				t.textContent = buckets[ i ].label;
+			}
 			svg.appendChild( t );
 		} );
 
 		if ( ! seriesHidden.pageviews && lastIndex > 0 ) {
-			var areaD = dates.map( function ( d, i ) {
-				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( d, 'pageviews' ), 'left' ).toFixed( 2 );
+			var areaD = buckets.map( function ( b, i ) {
+				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( b, 'pageviews' ), 'left' ).toFixed( 2 );
 			} ).join( ' ' ) + ' L' + xAt( lastIndex ).toFixed( 2 ) + ' ' + ( pad.top + innerH ) + ' L' + xAt( 0 ).toFixed( 2 ) + ' ' + ( pad.top + innerH ) + ' Z';
 			svg.appendChild( svgEl( 'path', { class: 'cvtrk-area is-pageviews', d: areaD } ) );
 		}
 
+		if ( compare && prevBuckets.length > 1 ) {
+			visible.forEach( function ( s ) {
+				var pd = prevBuckets.map( function ( b, i ) {
+					return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( b, s.key ), s.axis ).toFixed( 2 );
+				} ).join( ' ' );
+				svg.appendChild( svgEl( 'path', { class: 'cvtrk-line is-prev ' + s.cls, d: pd } ) );
+			} );
+		}
+
 		var dots = {};
 		visible.forEach( function ( s ) {
-			var d = dates.map( function ( date, i ) {
-				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( date, s.key ), s.axis ).toFixed( 2 );
+			var d = buckets.map( function ( b, i ) {
+				return ( i === 0 ? 'M' : 'L' ) + xAt( i ).toFixed( 2 ) + ' ' + yAt( value( b, s.key ), s.axis ).toFixed( 2 );
 			} ).join( ' ' );
 			svg.appendChild( svgEl( 'path', { class: 'cvtrk-line ' + s.cls, d: d } ) );
-			if ( dates.length <= 31 ) {
-				dates.forEach( function ( date, i ) {
+			if ( count <= 40 ) {
+				buckets.forEach( function ( b, i ) {
 					var dot = svgEl( 'circle', {
-						class: 'cvtrk-line-dot ' + s.cls,
+						class: 'cvtrk-line-dot ' + s.cls + ( b.partial ? ' is-partial' : '' ),
 						cx: xAt( i ).toFixed( 2 ),
-						cy: yAt( value( date, s.key ), s.axis ).toFixed( 2 ),
-						r: 2.5
+						cy: yAt( value( b, s.key ), s.axis ).toFixed( 2 ),
+						r: 3
 					} );
 					svg.appendChild( dot );
 					dots[ s.key + ':' + i ] = dot;
@@ -1429,10 +1628,34 @@
 			}
 		} );
 
+		// Flags for dated notes (settings or plugin changes) under the axis.
+		var notesByBucket = {};
+		( meta.notes || [] ).forEach( function ( note ) {
+			if ( ! note || ! note.date ) {
+				return;
+			}
+			for ( var bi = 0; bi < count; bi++ ) {
+				if ( buckets[ bi ].dates.indexOf( note.date ) !== -1 ) {
+					( notesByBucket[ bi ] = notesByBucket[ bi ] || [] ).push( note );
+					return;
+				}
+			}
+		} );
+		var noteCount = ( meta.notes || [] ).length;
+		Object.keys( notesByBucket ).forEach( function ( bi ) {
+			var x = xAt( Number( bi ) );
+			var baseY = pad.top + innerH + 4;
+			var flag = svgEl( 'path', { class: 'cvtrk-chart-flag', d: 'M' + x.toFixed( 2 ) + ' ' + ( baseY + 10 ) + ' L' + ( x - 6 ).toFixed( 2 ) + ' ' + baseY + ' L' + ( x + 6 ).toFixed( 2 ) + ' ' + baseY + ' Z' } );
+			var title = svgEl( 'title' );
+			title.textContent = notesByBucket[ bi ].map( function ( n ) { return formatDay( n.date ) + ': ' + n.text; } ).join( '\n' );
+			flag.appendChild( title );
+			svg.appendChild( flag );
+		} );
+
 		var guide = svgEl( 'line', { class: 'cvtrk-chart-guide', x1: 0, x2: 0, y1: pad.top, y2: pad.top + innerH } );
 		guide.style.display = 'none';
 		svg.appendChild( guide );
-		var hit = svgEl( 'rect', { class: 'cvtrk-chart-hit', x: pad.left - 8, y: pad.top, width: innerW + 16, height: innerH } );
+		var hit = svgEl( 'rect', { class: 'cvtrk-chart-hit', x: pad.left - 8, y: pad.top, width: innerW + 16, height: innerH + 24 } );
 		svg.appendChild( hit );
 
 		var tip = chartTip( box );
@@ -1447,23 +1670,25 @@
 				return;
 			}
 			hovered = i;
-			var date = dates[ i ];
-			var row = series[ date ] || {};
+			var bucket = buckets[ i ];
+			var prev = compare ? prevBuckets[ i ] : null;
 			guide.setAttribute( 'x1', xAt( i ).toFixed( 2 ) );
 			guide.setAttribute( 'x2', xAt( i ).toFixed( 2 ) );
 			guide.style.display = '';
 			highlight( i );
 			var rows = seriesMeta.map( function ( s ) {
-				return { cls: s.cls, label: s.label, value: num( value( date, s.key ) ) };
+				var text = num( value( bucket, s.key ) );
+				if ( prev ) {
+					text += ' (' + num( value( prev, s.key ) ) + ' ' + ( I18N.previousShort || 'before' ) + ')';
+				}
+				return { cls: s.cls, label: s.label, value: text };
 			} );
-			if ( row.conversion_events !== undefined && row.conversions !== undefined ) {
-				rows.push( { label: I18N.convertingSessions || 'Converting sessions', value: num( row.conversions ) } );
-			}
-			if ( row.visitors !== undefined ) {
-				rows.push( { label: I18N.visitors || 'Visitors', value: num( row.visitors ) } );
-			}
+			rows.push( { label: I18N.convertingVisits ? I18N.convertingVisits.charAt( 0 ).toUpperCase() + I18N.convertingVisits.slice( 1 ) : 'Converting visits', value: num( bucket.conversions ) } );
+			( notesByBucket[ i ] || [] ).forEach( function ( n ) {
+				rows.push( { cls: 'is-flag', label: ( I18N.change || 'Change' ) + ': ' + n.text, value: '', note: true } );
+			} );
 			var p = svgPoint( box, svg, xAt( i ), pad.top, width, height );
-			showChartTip( box, tip, formatDayLong( date ), rows, p.x, p.y + 6 );
+			showChartTip( box, tip, bucket.longLabel, rows, p.x, p.y + 6 );
 		}
 		function indexFromEvent( e ) {
 			var rect = svg.getBoundingClientRect();
@@ -1493,31 +1718,83 @@
 		seriesMeta.forEach( function ( s ) {
 			legend.appendChild( legendToggle( s.key, s.cls, s.label + ( s.axis === 'right' ? ' (' + ( I18N.rightScale || 'right scale' ) + ')' : '' ), toggleSeries ) );
 		} );
+		if ( compare ) {
+			var prevItem = el( 'span', 'cvtrk-legend-item is-static' );
+			prevItem.appendChild( el( 'span', 'cvtrk-swatch is-prev' ) );
+			prevItem.appendChild( el( 'span', null, I18N.previousPeriod || 'Previous period' ) );
+			legend.appendChild( prevItem );
+		}
+		if ( noteCount ) {
+			var flagItem = el( 'span', 'cvtrk-legend-item is-static' );
+			flagItem.appendChild( el( 'span', 'cvtrk-swatch is-flag' ) );
+			flagItem.appendChild( el( 'span', null, ( I18N.changes || 'Changes' ) + ' (' + num( noteCount ) + ')' ) );
+			legend.appendChild( flagItem );
+		}
 
 		box.appendChild( svg );
 		box.appendChild( legend );
 
+		// Plain-language summary: totals, a daily average that leaves the
+		// partial day out, the comparison, the busiest day and today so far.
 		var totals = { pageviews: 0, clicks: 0, conversions: 0, sessions: 0 };
-		var peakDate = dates[ 0 ];
-		var peakValue = -1;
+		var fullDays = 0;
+		var busiestDate = dates[ 0 ];
+		var busiestViews = -1;
 		dates.forEach( function ( date ) {
-			var pv = value( date, 'pageviews' );
-			var ck = value( date, 'clicks' );
+			var row = series[ date ] || {};
+			var pv = Number( row.pageviews ) || 0;
+			var ev = Number( row.conversion_events !== undefined ? row.conversion_events : row.conversions ) || 0;
 			totals.pageviews += pv;
-			totals.clicks += ck;
-			totals.conversions += value( date, 'conversions' );
-			totals.sessions += Number( ( series[ date ] || {} ).conversions ) || 0;
-			if ( pv + ck > peakValue ) {
-				peakValue = pv + ck;
-				peakDate = date;
+			totals.clicks += Number( row.clicks ) || 0;
+			totals.conversions += ev;
+			totals.sessions += Number( row.conversions ) || 0;
+			if ( date !== today ) {
+				fullDays++;
+			}
+			if ( pv > busiestViews ) {
+				busiestViews = pv;
+				busiestDate = date;
 			}
 		} );
-		appendChartSummary( box, formatDay( dates[ 0 ] ) + ' – ' + formatDay( dates[ lastIndex ] ) + ': ' +
-			num( totals.pageviews ) + ' ' + String( I18N.pageviews || 'pageviews' ).toLowerCase() + ', ' +
-			num( totals.clicks ) + ' ' + String( I18N.clicks || 'clicks' ).toLowerCase() + ', ' +
-			num( totals.conversions ) + ' ' + String( I18N.conversions || 'conversions' ).toLowerCase() +
-			' (' + num( totals.sessions ) + ' ' + String( I18N.convertingSessions || 'converting sessions' ).toLowerCase() + '). ' +
-			( I18N.peakDay || 'Peak day' ) + ': ' + formatDay( peakDate ) + '.' );
+		var todayRow = hasToday ? ( series[ today ] || {} ) : null;
+		var avgBase = {
+			pageviews: totals.pageviews - ( todayRow ? Number( todayRow.pageviews ) || 0 : 0 ),
+			clicks: totals.clicks - ( todayRow ? Number( todayRow.clicks ) || 0 : 0 ),
+			conversions: totals.conversions - ( todayRow ? Number( todayRow.conversion_events !== undefined ? todayRow.conversion_events : todayRow.conversions ) || 0 : 0 )
+		};
+		var lines = [];
+		lines.push( formatTemplate( I18N.trendTotals || '%1$s: %2$s pageviews, %3$s clicks and %4$s conversions.',
+			formatDay( dates[ 0 ] ) + ' – ' + formatDay( dates[ dates.length - 1 ] ), num( totals.pageviews ), num( totals.clicks ), num( totals.conversions ) ) +
+			' (' + num( totals.sessions ) + ' ' + ( I18N.convertingVisits || 'converting visits' ) + ')' );
+		if ( fullDays > 0 ) {
+			lines.push( formatTemplate( I18N.trendAverage || 'Daily average, today excluded: %1$s pageviews, %2$s clicks, %3$s conversions.',
+				num( Math.round( avgBase.pageviews / fullDays ) ), num( Math.round( avgBase.clicks / fullDays ) ), ( Math.round( avgBase.conversions / fullDays * 10 ) / 10 ).toString() ) );
+		}
+		if ( prevTotals && ( prevTotals.pageviews > 0 || prevTotals.conversions > 0 ) ) {
+			lines.push( formatTemplate( I18N.trendCompare || 'Compared with the %1$s days before: pageviews %2$s, conversions %3$s.',
+				num( dates.length ), changeWords( percentChange( totals.pageviews, prevTotals.pageviews ) ), changeWords( percentChange( totals.conversions, prevTotals.conversions ) ) ) );
+		}
+		if ( busiestViews > 0 ) {
+			lines.push( formatTemplate( I18N.trendBusiest || 'Busiest day: %1$s with %2$s pageviews.', formatDay( busiestDate ), num( busiestViews ) ) );
+		}
+		if ( todayRow ) {
+			lines.push( formatTemplate( I18N.trendToday || 'Today so far: %1$s pageviews, %2$s clicks, %3$s conversions.',
+				num( todayRow.pageviews ), num( todayRow.clicks ), num( todayRow.conversion_events !== undefined ? todayRow.conversion_events : todayRow.conversions ) ) );
+		}
+		if ( from && dates.length < allDates.length ) {
+			lines.push( formatTemplate( I18N.trendDataStart || 'Tracking data starts on %1$s; earlier days are not shown.', formatDayLong( from ) ) );
+		}
+		if ( noteCount === 1 ) {
+			lines.push( formatTemplate( I18N.trendChangeOne || 'One change is flagged on the chart (%1$s: %2$s).', formatDay( meta.notes[ 0 ].date ), meta.notes[ 0 ].text ) );
+		} else if ( noteCount > 1 ) {
+			lines.push( formatTemplate( I18N.trendChangesMany || '%1$s changes are flagged on the chart; hover a flag to read it.', num( noteCount ) ) );
+		}
+		var summary = el( 'div', 'cvtrk-chart-summary' );
+		lines.forEach( function ( line ) {
+			summary.appendChild( el( 'span', 'cvtrk-chart-summary-line', line ) );
+		} );
+		box.appendChild( summary );
+		box.setAttribute( 'aria-label', lines.join( ' ' ) );
 	}
 
 	function renderHourlyChart( items ) {
@@ -2135,8 +2412,8 @@
 		return rows;
 	}
 
-	function formatTemplate( template, first, second, third ) {
-		return String( template ).split( '%1$s' ).join( String( first ) ).split( '%2$s' ).join( String( second ) ).split( '%3$s' ).join( String( third ) );
+	function formatTemplate( template, first, second, third, fourth ) {
+		return String( template ).split( '%1$s' ).join( String( first ) ).split( '%2$s' ).join( String( second ) ).split( '%3$s' ).join( String( third ) ).split( '%4$s' ).join( String( fourth ) );
 	}
 
 	// Grouped view: one row per conversion kind for the whole range (rollups
@@ -3527,12 +3804,47 @@
 		var timelineFilter = attr( 'timeline-filter' );
 		var timelineSort = attr( 'timeline-sort' );
 		var overviewRegions = [ 'chart', 'hourly-chart', 'engagement-chart', 'top-buttons', 'top-pages', 'top-sources', 'top-search-terms', 'top-countries', 'event-timeline', 'overview-health' ];
+		var trendGroup = attr( 'trend-group' );
+		var trendCompare = attr( 'trend-compare' );
+		var trendResizeTimer = null;
 		if ( rangeSel ) {
 			var initialRange = getUrlParam( 'range', rangeSel.value );
 			if ( rangeSel.querySelector( 'option[value="' + initialRange + '"]' ) ) {
 				rangeSel.value = initialRange;
 			}
 		}
+		// Grouping and comparison live in the URL (shareable, like the range)
+		// and fall back to the last choice made on this browser.
+		if ( trendGroup ) {
+			var initialGroup = getUrlParam( 'trend_group', storeGet( 'cvtrk_trend_group' ) || 'auto' );
+			if ( initialGroup && trendGroup.querySelector( 'option[value="' + initialGroup + '"]' ) ) {
+				trendGroup.value = initialGroup;
+			}
+			trendGroup.addEventListener( 'change', function () {
+				storeSet( 'cvtrk_trend_group', trendGroup.value );
+				setUrlParams( { trend_group: trendGroup.value }, false );
+				if ( lastSeries ) {
+					renderChart( lastSeries );
+				}
+			} );
+		}
+		if ( trendCompare ) {
+			trendCompare.checked = getUrlParam( 'trend_compare', storeGet( 'cvtrk_trend_compare' ) || '0' ) === '1';
+			trendCompare.addEventListener( 'change', function () {
+				storeSet( 'cvtrk_trend_compare', trendCompare.checked ? '1' : '0' );
+				setUrlParams( { trend_compare: trendCompare.checked ? '1' : '0' }, false );
+				if ( lastSeries ) {
+					renderChart( lastSeries );
+				}
+			} );
+		}
+		window.addEventListener( 'resize', function () {
+			if ( ! lastSeries ) {
+				return;
+			}
+			window.clearTimeout( trendResizeTimer );
+			trendResizeTimer = window.setTimeout( function () { renderChart( lastSeries ); }, 150 );
+		} );
 
 		function load() {
 			var range = rangeSel ? rangeSel.value : 7;
@@ -3554,7 +3866,14 @@
 							updated.textContent = I18N.loadError || 'Could not display dashboard metrics.';
 						}
 					}
-					renderRegionSafely( 'chart', function () { renderChart( data.series ); }, load );
+					renderRegionSafely( 'chart', function () {
+						renderChart( data.series, {
+							previous: data.series_previous || null,
+							notes: data.notes || [],
+							today: data.today || '',
+							data_available_from: data.data_available_from || ''
+						} );
+					}, load );
 					renderRegionSafely( 'hourly-chart', function () { renderHourlyChart( data.activity_hours ); }, load );
 					renderRegionSafely( 'engagement-chart', function () { renderEngagement( data.engagement ); }, load );
 					renderRegionSafely( 'top-buttons', function () { renderButtons( data.top_buttons, 10 ); }, load );
@@ -7534,7 +7853,11 @@
 			errorState: errorState,
 			unlabelledLabel: unlabelledLabel,
 			heatColor: heatColor,
-			insightText: insightText
+			insightText: insightText,
+			groupSeries: groupSeries,
+			percentChange: percentChange,
+			autoGroupMode: autoGroupMode,
+			changeWords: changeWords
 		};
 		return;
 	}
