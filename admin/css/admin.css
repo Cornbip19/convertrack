@@ -4946,6 +4946,12 @@ a.cvtrk-health-card:focus {
 	cursor: crosshair;
 }
 
+/* The page preview is an iframe, which would swallow mouse movement; the
+   canvas above it takes the pointer so hover tips and wheel scrolling work. */
+.cvtrk-heatmap-canvas {
+	pointer-events: auto;
+}
+
 .cvtrk-scrollband.is-half {
 	box-shadow: inset 3px 0 0 #d9822b;
 }
