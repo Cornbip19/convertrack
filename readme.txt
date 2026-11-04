@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.15.0
+Stable tag: 2.16.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,12 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.16.0 =
+* Fix: the WordPress-dashboard widget was unreadable for anyone whose computer is in dark mode with the Modern or Midnight admin colour scheme: a dark-scheme override painted near-white numbers and pale labels onto the white box. WordPress has no dark admin surface, so the override is gone and every colour is set against white.
+* Change: the widget's chart is one bar per day with the number printed on it, the busiest day in navy and today hollow as "so far", with weekday and date under each bar, instead of a thin unlabelled sparkline.
+* Change: four tiles, Pageviews, Visitors, Clicks and Conversions, each with its change against the 7 days before and a one-line rate (per day, visits, per pageview, % of visits); Conversions now means conversion events, the same as on every plugin screen.
+* Change: Top pages shows the full title on up to two lines with the path beneath, a share bar, and a Conv. column; a context line says the window and what the change chips compare against, with the live "online now" count beside it.
 
 = 2.15.0 =
 * Change: the dashboard's Performance trend is drawn at the card's real width and 380px tall instead of being shrunk into a fixed 920x300 box, with readable axis text, thicker lines, a Visitors line, and dots on every point when there are 40 or fewer.
