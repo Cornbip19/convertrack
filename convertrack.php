@@ -81,6 +81,7 @@ require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-index-reasons.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-index-fixes.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-database.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-logger.php';
+require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-relay.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-oauth.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-api.php';
 require_once CONVERTRACK_DIR . 'includes/gsc/class-gsc-sitemap-scanner.php';

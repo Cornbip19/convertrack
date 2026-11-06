@@ -38,7 +38,9 @@ The only optional exception is **Visitor location** (off by default): when you t
 
 **Search keyword tracking** is also optional and off by default. When enabled, Convertrack stores supported UTM term values, this site's search query parameter, and search-engine referrer query strings when browsers provide them. Modern search engines often hide organic queries, so those visits may appear as not provided.
 
-**Google Index Monitor** is optional and off until an administrator configures OAuth credentials and connects Google Search Console. When enabled, it sends configured site URLs and sitemap URLs to Google Search Console APIs for indexing inspection and sitemap submission. OAuth tokens are stored encrypted in this site's database, and queue/log data stays in separate `convertrack_gsc_*` tables.
+**Google Index Monitor** is optional and off until an administrator connects Google Search Console. When enabled, it sends configured site URLs and sitemap URLs to Google Search Console APIs for indexing inspection and sitemap submission. OAuth tokens are stored encrypted in this site's database, and queue/log data stays in separate `convertrack_gsc_*` tables.
+
+With **Sign in with Google**, the sign-in and token requests pass through a small relay service run by the plugin author (it holds the Google OAuth client the plugin signs in with). The relay stores nothing: it forwards the authorization code back to this site and forwards token requests to Google; your Google password and your Search Console data never pass through it. Sites that use their own Google Cloud credentials talk to Google directly and never contact the relay.
 
 **404 Monitor** is optional and stores its data locally in separate `convertrack_404_*` tables. It records the requested 404 URL/path, referrer URL, a hashed user-agent value, timestamps, hit counts, recommendations, and internal redirect hit counts. It does not store IP addresses and does not contact third-party APIs for 404 monitoring. It detects common redirect plugins for visibility/conflict warnings but does not write to their tables or to `.htaccess`.
 
@@ -69,7 +71,7 @@ The optional **404 Monitor** feature runs locally. It stores requested missing U
 
 For high-traffic sites: (1) disable WP-Cron and trigger `wp-cron.php` from a real system cron so rollups and cleanup run on schedule, and (2) run a persistent object cache (Redis or Memcached) — Convertrack then keeps its rate-limit counters and short stat caches in memory instead of the database.
 
-Optional: open **Convertrack -> Search & SEO -> Indexing** to configure Google OAuth, connect Search Console, scan the sitemap, and run indexing checks.
+Optional: open **Convertrack -> Search & SEO -> Indexing** and click **Sign in with Google** to connect Search Console. You are sent to Google to choose an account and allow access; the connection is stored (encrypted) in this site only, and monitoring turns on by itself. Prefer your own Google Cloud project? Open **Advanced: use your own Google Cloud credentials** on the same screen, paste an OAuth Client ID and Secret, and connect with those instead.
 
 Optional: open **Convertrack -> Broken URLs** to capture frontend 404s, refresh valid URL candidates, review recommendations, approve internal 301 redirects, export CSVs, and configure retention or spike alerts.
 
@@ -98,6 +100,14 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= Unreleased =
+* New: **Sign in with Google** for Search Console. One click sends you to Google to allow access; no Google Cloud project, consent screen, OAuth client or redirect URI to set up. The sign-in runs through a small stateless relay operated by the plugin author that holds the Google OAuth client; your site keeps its own anti-forgery state, PKCE verifier and (encrypted) tokens, and the relay stores nothing.
+* New: connecting turns the index monitor on, and a connected site whose monitor is off is told so, with a one-click "Turn on monitoring".
+* Change: the Google API credentials card and the connect-with-your-own-client flow moved under "Advanced: use your own Google Cloud credentials". Existing connections made with your own credentials keep working unchanged, and a "Switch to Sign in with Google" button moves a site over (your saved credentials are kept, so switching back is one click).
+* Change: a relay outage or error can never be mistaken for a revoked Google grant: tokens are cleared only when Google itself answers `invalid_grant`; relay and network failures are reported and retried later.
+* New: a public REST route `convertrack/v1/gsc/relay-challenge` that only ever serves a random, ten-minute registration challenge while a sign-in is being set up, so the relay can confirm the site is yours.
+* Dev: the relay lives in `relay/` (Cloudflare Worker, TypeScript, Vitest) with self-hosting instructions; it is never packaged into the plugin zip. Filter `convertrack_gsc_relay_url` to point a site at a self-hosted relay.
 
 = 2.16.0 =
 * Fix: the WordPress-dashboard widget was unreadable for anyone whose computer is in dark mode with the Modern or Midnight admin colour scheme: a dark-scheme override painted near-white numbers and pale labels onto the white box. WordPress has no dark admin surface, so the override is gone and every colour is set against white.

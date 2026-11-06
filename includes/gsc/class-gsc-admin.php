@@ -20,7 +20,10 @@ class Admin {
 		add_action( 'admin_post_convertrack_gsc_oauth_start', array( $this, 'oauth_start' ) );
 		add_action( 'admin_post_convertrack_gsc_oauth_callback', array( $this, 'oauth_callback' ) );
 		add_action( 'admin_post_convertrack_gsc_disconnect', array( $this, 'disconnect' ) );
+		add_action( 'admin_post_convertrack_gsc_switch_mode', array( $this, 'switch_mode' ) );
+		add_action( 'admin_post_convertrack_gsc_enable_monitor', array( $this, 'enable_monitor' ) );
 		add_action( 'admin_post_convertrack_gsc_export', array( $this, 'export' ) );
+		add_action( 'rest_api_init', array( $this, 'register_rest_routes' ) );
 		add_action( 'admin_notices', array( $this, 'migration_notice' ) );
 		add_action( 'admin_notices', array( $this, 'reconnect_notice' ) );
 	}
@@ -74,12 +77,30 @@ class Admin {
 	}
 
 	/**
-	 * Start OAuth flow.
+	 * Start the OAuth flow: "Sign in with Google" through the relay, or Connect
+	 * with the owner's own Google Cloud client.
 	 */
 	public function oauth_start() {
 		$this->check_admin_action( 'convertrack_gsc_oauth_start' );
+		$this->begin_oauth();
+	}
 
-		if ( ! Credentials::has_client() ) {
+	/**
+	 * Register the site with the relay when needed, mint the state and PKCE
+	 * verifier, and send the browser into the consent flow.
+	 */
+	private function begin_oauth() {
+		if ( Credentials::is_relay_mode() ) {
+			// Always (re)register: one cheap round-trip on a rare action, and it
+			// heals a stale registration (rotated relay key, changed relay URL)
+			// before the admin is sent anywhere.
+			$registered = Relay::register_site();
+			if ( is_wp_error( $registered ) ) {
+				$this->redirect( 'oauth-error', $registered->get_error_message() );
+			}
+		}
+
+		if ( ! OAuth::has_auth_source() ) {
 			$this->redirect( 'oauth-error', __( 'Enter and save your Google OAuth Client ID and Secret before connecting.', 'convertrack-click-conversion-analytics' ) );
 		}
 
@@ -138,6 +159,11 @@ class Admin {
 
 		// Connection succeeded; the reconnect prompt (if any) no longer applies.
 		delete_transient( 'convertrack_gsc_reconnect_required' );
+
+		// Connecting is the intent to monitor: turn the monitor on so the first
+		// scan and inspection batch run without a second trip to Settings.
+		// Keyword Insights keeps its own switch.
+		$this->enable_after_connect();
 
 		// Adopt the account's matching property when the setting is still the
 		// default or provably wrong, so verify_property() checks the right one.
@@ -219,7 +245,8 @@ class Admin {
 	}
 
 	/**
-	 * Disconnect OAuth tokens.
+	 * Disconnect OAuth tokens. The stored client credentials and the relay
+	 * registration stay, so reconnecting (in either mode) needs no re-entry.
 	 */
 	public function disconnect() {
 		$this->check_admin_action( 'convertrack_gsc_disconnect' );
@@ -227,6 +254,66 @@ class Admin {
 		Credentials::clear_tokens();
 		Logger::info( 'oauth', 'Google Search Console disconnected.' );
 		$this->redirect( 'oauth-disconnected' );
+	}
+
+	/**
+	 * Switch between "Sign in with Google" (relay) and the owner's own Google
+	 * Cloud client (direct). Tokens belong to the client that issued them, so
+	 * an existing connection is revoked and cleared; the stored client
+	 * credentials and the relay registration are both kept, so switching back
+	 * is one click. Switching to relay mode continues straight into the sign-in.
+	 */
+	public function switch_mode() {
+		$this->check_admin_action( 'convertrack_gsc_switch_mode' );
+
+		$mode = isset( $_POST['convertrack_gsc_mode'] ) ? sanitize_key( wp_unslash( $_POST['convertrack_gsc_mode'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified by check_admin_action().
+		if ( ! in_array( $mode, array( Credentials::MODE_RELAY, Credentials::MODE_DIRECT ), true ) ) {
+			$this->redirect( 'oauth-error', __( 'Unknown Search Console connection mode.', 'convertrack-click-conversion-analytics' ) );
+		}
+
+		if ( Credentials::auth_mode() !== $mode ) {
+			if ( Credentials::is_connected() ) {
+				OAuth::revoke();
+				Credentials::clear_tokens();
+			}
+			$stored = Credentials::set_auth_mode( $mode );
+			if ( is_wp_error( $stored ) ) {
+				$this->redirect( 'oauth-error', $stored->get_error_message() );
+			}
+			delete_transient( 'convertrack_gsc_reconnect_required' );
+			Logger::info( 'oauth', 'Search Console connection mode switched.', array( 'mode' => $mode ) );
+		}
+
+		if ( Credentials::MODE_RELAY === $mode ) {
+			$this->begin_oauth();
+		}
+
+		$this->redirect( 'mode-direct' );
+	}
+
+	/**
+	 * Turn the monitor on from the "connected but monitoring is off" prompt.
+	 */
+	public function enable_monitor() {
+		$this->check_admin_action( 'convertrack_gsc_enable_monitor' );
+		$this->enable_after_connect();
+		$this->redirect( 'monitor-enabled' );
+	}
+
+	/**
+	 * Turn the index monitor on (sitemap scans and inspection batches) after a
+	 * successful connect. Keyword Insights has its own switch and is left as
+	 * it is.
+	 *
+	 * @return bool Whether the setting changed.
+	 */
+	public function enable_after_connect() {
+		if ( Settings::get( 'enabled' ) ) {
+			return false;
+		}
+		Settings::save( array_merge( Settings::all(), array( 'enabled' => 1 ) ) );
+		Logger::info( 'settings', 'Google Index Monitor turned on.' );
+		return true;
 	}
 
 	/**
@@ -335,6 +422,39 @@ class Admin {
 	 */
 	public static function callback_url() {
 		return admin_url( 'admin-post.php?action=convertrack_gsc_oauth_callback' );
+	}
+
+	/**
+	 * Public REST route the relay reads during site registration. It only ever
+	 * returns the random challenge minted for a registration in progress (ten
+	 * minutes at most) and 404 otherwise, so it proves control of this site
+	 * without exposing anything else.
+	 */
+	public function register_rest_routes() {
+		register_rest_route(
+			\Convertrack\Rest_Controller::REST_NAMESPACE,
+			'/gsc/relay-challenge',
+			array(
+				'methods'             => 'GET',
+				'callback'            => array( $this, 'relay_challenge' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	/**
+	 * Serve the pending relay registration challenge.
+	 *
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function relay_challenge() {
+		$challenge = Relay::pending_challenge();
+		if ( '' === $challenge ) {
+			return new \WP_Error( 'convertrack_gsc_no_pending_registration', __( 'No sign-in service registration is in progress.', 'convertrack-click-conversion-analytics' ), array( 'status' => 404 ) );
+		}
+		$response = new \WP_REST_Response( array( 'challenge' => $challenge ), 200 );
+		$response->header( 'Cache-Control', 'no-store' );
+		return $response;
 	}
 
 	/**

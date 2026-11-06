@@ -1,0 +1,6 @@
+# Copy to `.dev.vars` for `wrangler dev`. Never commit the real values.
+GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=GOCSPX-replace-me
+# 32+ random bytes, e.g. `openssl rand -base64 48`
+RELAY_HMAC_KEY=replace-with-a-long-random-string
+ALLOW_INSECURE_SITES=true
