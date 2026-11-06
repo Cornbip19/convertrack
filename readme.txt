@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.16.0
+Stable tag: 2.16.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -98,6 +98,9 @@ The optional **404 Monitor** does not contact external services for monitoring. 
 Return `true` from the `convertrack_skip_tracking` filter while consent has not been granted (most consent-management plugins expose a state you can check), then allow tracking once the visitor accepts.
 
 == Changelog ==
+
+= 2.16.1 =
+* Fix: sitemap resubmission never reached Google. The Search Console "submit sitemap" request is a PUT with no body, and the plugin sent it without a Content-Length header, so Google rejected every attempt with "HTTP 411 Length Required" before even checking the sign-in. The activity log filled with "Sitemap resubmission failed" warnings and no sitemap was ever resubmitted after a page was found not indexed. The request now declares its empty body explicitly; the Google connection itself was never affected.
 
 = 2.16.0 =
 * Fix: the WordPress-dashboard widget was unreadable for anyone whose computer is in dark mode with the Modern or Midnight admin colour scheme: a dark-scheme override painted near-white numbers and pale labels onto the white box. WordPress has no dark admin surface, so the override is gone and every colour is set against white.
