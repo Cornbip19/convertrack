@@ -229,6 +229,13 @@ class API {
 		if ( null !== $body ) {
 			$args['headers']['Content-Type'] = 'application/json';
 			$args['body'] = wp_json_encode( $body );
+		} elseif ( in_array( $method, array( 'POST', 'PUT', 'PATCH' ), true ) ) {
+			// Google's front end answers "411 Length Required" to a body-less
+			// PUT/POST that carries no Content-Length (sitemaps.submit is
+			// documented as a bare PUT). The Requests cURL transport only sets
+			// POSTFIELDS for non-empty data, so declare the empty body here.
+			$args['body']                      = '';
+			$args['headers']['Content-Length'] = '0';
 		}
 
 		$response = wp_remote_request( $url, $args );
