@@ -32,6 +32,12 @@ class Relay {
 	 */
 	const DEFAULT_URL = 'https://connect.example.com';
 
+	/**
+	 * Privacy policy for the relay, linked from the sign-in button so the notice
+	 * is reachable from inside the product (Google API Services User Data Policy).
+	 */
+	const PRIVACY_URL = 'https://convertrack.io/privacy';
+
 	const CHALLENGE_TRANSIENT = 'convertrack_gsc_relay_challenge';
 	const CHALLENGE_TTL       = 600;
 	const TIMEOUT             = 20;

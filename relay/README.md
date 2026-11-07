@@ -64,7 +64,7 @@ Shows "Connect Search Console to https://example.com?" with what the site will b
 
 ### `POST /v1/authorize` — continue to Google
 
-Same fields as a form body. Redirects (302) to `https://accounts.google.com/o/oauth2/v2/auth` with the relay's `client_id`, `redirect_uri` = the relay's `/v1/callback`, the **site's** `code_challenge` (`S256`), `access_type=offline`, `prompt=consent`, and a relay-signed `state` (HMAC over the site id, the canonical site URL, the site's own state and a ten-minute expiry).
+Same fields as a form body. Redirects (302) to `https://accounts.google.com/o/oauth2/v2/auth` with the relay's `client_id`, `redirect_uri` = the relay's `/v1/callback`, the **site's** `code_challenge` (`S256`), `access_type=offline`, `prompt=consent`, `include_granted_scopes=true`, and a relay-signed `state` (HMAC over the site id, the canonical site URL, the site's own state and a ten-minute expiry).
 
 ### `GET /v1/callback` — Google's redirect
 
@@ -87,16 +87,20 @@ The relay appends `client_id` and `client_secret`, posts to `https://oauth2.goog
 
 Everything in this list can only be done by the relay operator (the plugin author), once.
 
-1. **Domain.** Pick the relay's domain, e.g. `connect.convertrack.example`, on a zone in your Cloudflare account. Google's app verification also wants a **homepage** that describes the app and a **privacy policy** page on a domain you own (they can live on the main project site).
-2. **Google Cloud project.** Create one and enable the **Google Search Console API**. Enable the **Web Search Indexing API** as well if sites should be able to use the plugin's Indexing API option through the relay.
-3. **OAuth consent screen.** User type *External*. App name, support email, developer contact, the app's homepage, the privacy policy URL, and the relay domain under *Authorized domains*. Add the scopes `https://www.googleapis.com/auth/webmasters`, `openid`, `email` (and `https://www.googleapis.com/auth/indexing` if enabled). Then **publish** the app and **submit it for verification**: `webmasters` is a sensitive scope, so Google reviews the app (brand verification first; allow a few weeks). While the app is still in *Testing*, only listed test users can sign in and their refresh tokens expire after seven days.
-4. **OAuth client.** Credentials → Create credentials → OAuth client ID → *Web application*. Authorized redirect URI: exactly `https://<relay-domain>/v1/callback`. No JavaScript origins are needed. Keep the client ID and secret for the next step.
-5. **Deploy the Worker** (below), with the custom domain, and confirm `https://<relay-domain>/v1/health` reports `"configured": true`.
-6. **Point the plugin at it.** Set `Relay::DEFAULT_URL` in `includes/gsc/class-gsc-relay.php` to `https://<relay-domain>` and release. Until that constant (or the `convertrack_gsc_relay_url` filter) names a real relay, the plugin shows Sign in with Google as unavailable and offers only the own-credentials path.
+1. **Domain and pages.** The relay lives at `connect.convertrack.io`. Register `convertrack.io` through Cloudflare Registrar (so the zone is on Cloudflare) and deploy the static site in `relay/site/` to `https://convertrack.io/` (homepage, `/privacy`, `/terms`) after filling in its `{{SUPPORT_EMAIL}}`, `{{DEVELOPER_NAME}}` and `{{EFFECTIVE_DATE}}` placeholders. Google's verification requires all three pages on a domain you own.
+2. **Google Cloud project.** Create one and enable the **Google Search Console API**. Leave the Web Search Indexing API, and its scope, for a later submission (see step 3).
+3. **Google Auth Platform** (`console.cloud.google.com/auth/overview`; this is where the former "OAuth consent screen" now lives, split into pages):
+   - *Branding*: app name, user support email, optional logo, homepage `https://convertrack.io/`, privacy policy `https://convertrack.io/privacy`, terms of service `https://convertrack.io/terms` (all three links are required for an external app in production), developer contact, and *Authorized domains* = `convertrack.io`. Every authorized domain must be verified in Search Console by an account that is an Owner or Editor of the Cloud project.
+   - *Audience*: user type External, then publish the app. While it is in Testing only listed test users can sign in and their refresh tokens expire after seven days.
+   - *Data Access*: add the scopes `https://www.googleapis.com/auth/webmasters`, `openid` and `email`. Do **not** declare `https://www.googleapis.com/auth/indexing` on the first submission: Google's Indexing API quickstart restricts that API to JobPosting and BroadcastEvent pages, so a general-purpose plugin risks a rejected justification. A site that turns on the plugin's Indexing API option then sees Google's unverified-scope warning until that scope is verified in a later submission.
+   - *Verification Center*: first **Verify Branding**, then **Publish branding** (a compliant branding result is only valid for 7 days before it must be published). Then submit the sensitive-scope verification for `webmasters` and allow up to 10 business days. It needs an unlisted YouTube demo video that shows the app name on the consent screen and the client ID in the address bar, so record it only after branding is published; reviewers may also ask for a login to a demo WordPress site ("in-app testing").
+4. **OAuth client.** Under *Clients*, create an OAuth client of type *Web application*. Authorized redirect URI: exactly `https://connect.convertrack.io/v1/callback`. No JavaScript origins are needed. Keep the client ID and secret for the next step.
+5. **Deploy the Worker** (below), with the custom domain, and confirm `https://connect.convertrack.io/v1/health` reports `"configured": true`.
+6. **Point the plugin at it.** Set `Relay::DEFAULT_URL` in `includes/gsc/class-gsc-relay.php` to `https://connect.convertrack.io` and release. Until that constant (or the `convertrack_gsc_relay_url` filter) names a real relay, the plugin shows Sign in with Google as unavailable and offers only the own-credentials path.
 
 ## Deploying (self-hosting)
 
-Requirements: Node 20+, a Cloudflare account, the three values from the checklist.
+Requirements: Node 22+ (Wrangler 4 requires it), a Cloudflare account whose email address is verified, the three values from the checklist.
 
 ```bash
 cd relay
@@ -104,17 +108,31 @@ npm install
 npx wrangler login
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
-npx wrangler secret put RELAY_HMAC_KEY      # e.g. the output of: openssl rand -base64 48
+npx wrangler secret put RELAY_HMAC_KEY      # see below: at least 16 characters, 64 hex recommended
 npx wrangler deploy
 ```
 
-Then add the custom domain: uncomment and edit the `routes` block in `wrangler.toml` (`{ pattern = "connect.example.com", custom_domain = true }`) and deploy again, or attach the domain in the Cloudflare dashboard under the Worker's *Settings → Domains & Routes*. The `workers.dev` URL also works, but the Google redirect URI must match whichever origin the relay is reached on, so pick one and keep it.
+`RELAY_HMAC_KEY` is used as raw UTF-8 bytes (it is not base64-decoded) and the Worker refuses to serve with fewer than 16 characters; use 32 random bytes written as 64 hex characters. Wrangler reads the value from a pipe and trims trailing whitespace:
+
+```bash
+# macOS / Linux
+openssl rand -hex 32 | npx wrangler secret put RELAY_HMAC_KEY
+```
+
+```bash
+# Windows (PowerShell or cmd)
+node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))" | npx wrangler secret put RELAY_HMAC_KEY
+```
+
+`wrangler.toml` is set up for production: `routes = [{ pattern = "connect.convertrack.io", custom_domain = true }]`, `workers_dev = false` and `preview_urls = false`, so the relay answers on exactly one origin (Google matches redirect URIs exactly; a live `workers.dev` or version-preview URL would be a second origin), and `RELAY_PUBLIC_URL = "https://connect.convertrack.io"`, so `redirect_uri` is pinned instead of derived from the Host header. For a different domain change those three places and the Google client's redirect URI together.
+
+The `convertrack.io` zone must be in the same Cloudflare account. On the first `wrangler deploy` Cloudflare creates the DNS record and the certificate for the custom domain itself; there is no documented time for that, so poll `curl -I https://connect.convertrack.io/v1/health` until TLS succeeds. Two zone-level points: **Bot Fight Mode must stay off** on the zone (it challenges API traffic and allows no exceptions, which would break the plugin's server-to-server calls), and the account's email address must be verified before the first deploy.
 
 Variables in `wrangler.toml`:
 
 | Name | Purpose |
 | --- | --- |
-| `RELAY_PUBLIC_URL` | Leave empty to derive the origin from each request. Set it only when a proxy rewrites the Host header. |
+| `RELAY_PUBLIC_URL` | The relay's public origin, pinned so `redirect_uri` can never vary with the Host header. Empty derives it from each request; `.dev.vars` sets `http://localhost:8787` for `wrangler dev`. |
 | `ALLOW_INSECURE_SITES` | `"true"` admits `http://` sites and non-public hosts. For `wrangler dev` only; keep `"false"` in production. |
 | `RELAY_OPERATOR_NAME` | Name shown on the interstitial. |
 | `[[ratelimits]] RATE_LIMITER` | Cloudflare's rate-limiting binding (20 requests per 60 s per key) for `POST /v1/sites`. Without it, an in-memory best-effort limiter is used. |
@@ -122,6 +140,16 @@ Variables in `wrangler.toml`:
 **Rotating `RELAY_HMAC_KEY`** invalidates every site's `site_secret` and every in-flight signed state. Sites recover on their own: the next token request gets `relay_invalid_site_credentials`, the plugin re-registers once and retries. A site that was registered by someone who no longer controls the domain keeps a valid secret until the key is rotated, because registration is deterministic; rotate the key if that ever matters.
 
 **Logs** contain only the route, the HTTP status, the relay error code, the site host and the grant type: never a URL, a query string, a token, a code or a body.
+
+## The convertrack.io site
+
+`relay/site/` holds the static homepage, privacy policy, terms of service and 404 page that Google's verification links to, as a Workers static-assets project with its own `wrangler.toml` (custom domains `convertrack.io` and `www.convertrack.io`; no Worker script, so requests are free). Replace the `{{SUPPORT_EMAIL}}`, `{{DEVELOPER_NAME}}` and `{{EFFECTIVE_DATE}}` placeholders in `public/*.html`, then:
+
+```bash
+cd relay/site && npx wrangler deploy
+```
+
+It resolves Wrangler from `relay/node_modules`, so run `npm install` in `relay/` first. Like the relay itself, the site is excluded from the plugin zip (`relay/` as a whole is).
 
 ## Local development
 
@@ -134,7 +162,7 @@ npm run typecheck
 npm run dev                        # http://localhost:8787
 ```
 
-`npm run dev` sets `ALLOW_INSECURE_SITES` from `.dev.vars`, so a local WordPress at e.g. `http://plugin-development.local` can register. Point the plugin at the dev relay from a must-use plugin or `functions.php`:
+`.dev.vars` overrides `ALLOW_INSECURE_SITES` and `RELAY_PUBLIC_URL` for `npm run dev`, so a local WordPress at e.g. `http://plugin-development.local` can register and the dev relay's callback is `http://localhost:8787/v1/callback` rather than the production origin. Point the plugin at the dev relay from a must-use plugin or `functions.php`:
 
 ```php
 add_filter( 'convertrack_gsc_relay_url', function () { return 'http://localhost:8787'; } );
@@ -157,7 +185,7 @@ This cannot run in CI because it needs Google's consent screen. Run it once agai
    VERIFIER=$(openssl rand -base64 48 | tr -d '=+/' | cut -c1-64)
    CHALLENGE=$(printf '%s' "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
    ```
-2. Register a site you control (the plugin does this when you click **Sign in with Google**; or call `POST /v1/sites` by hand while the plugin's challenge route is live). Note the `site_id`.
+2. Use a site you control that is registered with the relay (the plugin registers it when you click **Sign in with Google**) and read its credentials with WP-CLI: `wp eval 'echo \Convertrack\GSC\Credentials::site_id();'` and `wp eval 'echo \Convertrack\GSC\Credentials::site_secret();'`. Without WP-CLI, publish a challenge yourself with `wp transient set convertrack_gsc_relay_challenge <32-128 URL-safe characters> 600`, then `POST /v1/sites` with `{"site_url": "<site>", "challenge": "<same value>"}`: registration is deterministic, so it answers the same `site_id` and `site_secret` the plugin holds. (The plugin deletes its own challenge the moment its registration request returns, so there is no window to piggyback on its request.)
 3. Open `https://<relay>/v1/authorize?site_id=<site_id>&site_url=<site>&state=manualTestState0123456789&code_challenge=$CHALLENGE` in a browser, click **Continue to Google** and complete the consent. The relay bounces to the site's callback; the plugin rejects the state it did not mint (so it does **not** exchange the code) and the browser's address bar still shows `code=…`. Copy that code.
 4. Exchange it with a **wrong** verifier, within a minute:
    ```bash
@@ -179,7 +207,7 @@ Preconditions: the relay deployed and `configured: true`; the plugin build point
 
 1. Convertrack → Search & SEO → Indexing shows one setup step, **Sign in with Google**, with the own-credentials path folded under *Advanced*.
 2. Click **Sign in with Google**. The relay interstitial names the site; **Continue to Google**; choose the account; allow. You land back on the Indexing screen with "Google Search Console connected", the account email in the header, the matching property auto-selected and **monitoring on** (no "Connected, but monitoring is off" notice).
-3. The activity log shows "Site registered with the sign-in service", "Google Search Console connected" and "Google Index Monitor turned on".
+3. The activity log shows "Site registered with the sign-in service.", "Google Search Console connected." and "Google Index Monitor turned on.".
 4. **Scan Sitemap**, then **Run Batch**: URLs are inspected and coverage figures appear.
 5. Keyword Opportunities: run a sync; rows appear.
 6. After 60+ minutes (the access token expires in one hour), run another batch or wait for the hourly cron: the log shows "Google access token refreshed." and inspections continue. Stop the relay briefly (or point the filter at a dead URL) and run a batch: the batch stops with "The sign-in service could not be reached…", the connection stays, and no reconnect notice appears. Restore the relay: the next batch works without reconnecting.
@@ -193,7 +221,7 @@ Preconditions: the relay deployed and `configured: true`; the plugin build point
 
 ### Key rotation
 
-Rotate `RELAY_HMAC_KEY` (`wrangler secret put`) on a relay with a connected site. The next refresh logs "The sign-in service rejected the site credentials; registering again." followed by "Site registered with the sign-in service" and "Google access token refreshed."; no reconnect is needed.
+Rotate `RELAY_HMAC_KEY` (`wrangler secret put`) on a relay with a connected site. The next refresh logs "The sign-in service rejected the site credentials; registering again." followed by "Site registered with the sign-in service." and "Google access token refreshed."; no reconnect is needed.
 
 ## Security notes
 

@@ -572,6 +572,8 @@ class Convertrack_Gsc_Relay_Auth_Test extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'action=convertrack_gsc_oauth_start', $html );
 		$this->assertStringContainsString( 'Advanced: use your own Google Cloud credentials', $html );
 		$this->assertStringContainsString( 'name="convertrack_gsc_mode" value="direct"', $html );
+		$this->assertStringContainsString( 'Sign-in is brokered by relay.test', $html );
+		$this->assertStringContainsString( 'href="' . Relay::PRIVACY_URL . '"', $html, 'The privacy notice is reachable from the sign-in button.' );
 		$this->assertStringNotContainsString( 'id="cvtrk-gsc-client-id"', $html, 'The credentials form is not shown while relay mode is active.' );
 		$this->assertStringNotContainsString( 'id="convertrack-gsc-monitor-off"', $html );
 	}
@@ -613,6 +615,7 @@ class Convertrack_Gsc_Relay_Auth_Test extends WP_UnitTestCase {
 		$this->assertStringContainsString( 'id="convertrack-gsc-advanced" open', $html );
 		$this->assertStringNotContainsString( 'name="convertrack_gsc_mode" value="relay"', $html, 'No switch to a relay that does not exist.' );
 		$this->assertStringNotContainsString( 'cvtrk-google-signin', $html );
+		$this->assertStringNotContainsString( 'Sign-in is brokered by', $html );
 
 		$start = Relay::register_site();
 		$this->assertWPError( $start );

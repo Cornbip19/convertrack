@@ -1,6 +1,8 @@
 # Copy to `.dev.vars` for `wrangler dev`. Never commit the real values.
 GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-replace-me
-# 32+ random bytes, e.g. `openssl rand -base64 48`
+# At least 16 characters, used as raw UTF-8 bytes; 64 hex characters recommended.
 RELAY_HMAC_KEY=replace-with-a-long-random-string
+# The dev relay answers on localhost, not on the production origin from wrangler.toml.
+RELAY_PUBLIC_URL=http://localhost:8787
 ALLOW_INSECURE_SITES=true

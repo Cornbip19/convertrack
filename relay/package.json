@@ -1,6 +1,6 @@
 {
   "name": "convertrack-gsc-relay",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Stateless OAuth broker for Convertrack's \"Sign in with Google\" Search Console connection (Cloudflare Worker).",
   "license": "GPL-2.0-or-later",
@@ -21,6 +21,6 @@
     "wrangler": "^4.158.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

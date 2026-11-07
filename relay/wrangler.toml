@@ -9,26 +9,33 @@
 name = "convertrack-gsc-relay"
 main = "src/index.ts"
 compatibility_date = "2025-09-01"
-workers_dev = true
 
-# Custom domain. Replace with the domain the Google OAuth client is registered
-# for (the plugin's RELAY_URL / `convertrack_gsc_relay_url` filter must point
-# at the same origin, and `https://<domain>/v1/callback` must be an authorised
-# redirect URI on the Google OAuth client).
-# routes = [
-#   { pattern = "connect.example.com", custom_domain = true }
-# ]
+# Google matches OAuth redirect URIs exactly, so the relay must answer on one
+# origin only: the custom domain. No workers.dev origin and no version
+# preview URLs (preview URLs stay on by default once workers.dev was ever
+# enabled unless this is set).
+workers_dev = false
+preview_urls = false
+
+# The custom domain registered as `https://connect.convertrack.io/v1/callback`
+# on the Google OAuth client. The zone must be in the same Cloudflare account;
+# Cloudflare creates the DNS record and the certificate on deploy. The plugin's
+# Relay::DEFAULT_URL / `convertrack_gsc_relay_url` filter must name this origin.
+routes = [
+  { pattern = "connect.convertrack.io", custom_domain = true }
+]
 
 [vars]
-# Public origin of this relay. Leave empty to derive it from each request,
-# which is right for both `wrangler dev` and a custom domain. Set it when the
-# Worker sits behind a proxy that rewrites the Host header.
-RELAY_PUBLIC_URL = ""
+# Public origin of this relay, pinned so the redirect_uri sent to Google (and
+# required at /v1/token) can never vary with the Host header. `.dev.vars`
+# overrides it with http://localhost:8787 for `wrangler dev`; an empty value
+# derives the origin from each request.
+RELAY_PUBLIC_URL = "https://connect.convertrack.io"
 # "true" lets http:// sites and non-public hosts (e.g. plugin-development.local)
 # register — for `wrangler dev` only. Production must keep this "false".
 ALLOW_INSECURE_SITES = "false"
-# Where the Cancel button on the consent interstitial sends people. Shown as
-# plain text in the page footer as well.
+# Shown once on the consent interstitial: "<name> never sees your Google
+# password and keeps no copy of the connection."
 RELAY_OPERATOR_NAME = "Convertrack"
 
 # Cloudflare's rate-limiting binding (no storage, no state in the Worker).

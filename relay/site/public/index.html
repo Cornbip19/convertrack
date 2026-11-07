@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convertrack</title>
+<meta name="description" content="Convertrack is a WordPress plugin for click and conversion analytics, Google Search Console index monitoring and keyword insights.">
+<style>
+  :root { --bg:#ffffff; --fg:#1d2327; --muted:#50575e; --accent:#0a7c86; --rule:#dcdcde; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111417; --fg:#f0f0f1; --muted:#b4b9be; --accent:#5fd0d8; --rule:#2c3338; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:44rem; margin:0 auto; padding:3rem 1rem 4rem; }
+  h1 { font-size:2.2rem; line-height:1.15; margin:0 0 .5rem; }
+  h2 { font-size:1.25rem; margin:2.2rem 0 .6rem; }
+  p, li { margin:0 0 .8rem; }
+  .lede { color:var(--muted); font-size:1.1rem; }
+  a { color:var(--accent); }
+  ul { padding-left:1.2rem; }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule); color:var(--muted); font-size:.95rem; }
+  nav a { margin-right:1rem; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="/">Home</a><a href="/privacy">Privacy policy</a><a href="/terms">Terms</a><a href="https://github.com/Cornbip19/convertrack">Source on GitHub</a></nav>
+  <h1>Convertrack</h1>
+  <p class="lede">A WordPress plugin that shows what visitors click, which pages convert, and how Google indexes and ranks your site.</p>
+
+  <h2>What it does</h2>
+  <ul>
+    <li><strong>Click and conversion analytics.</strong> Tracks clicks on buttons and links across your site and measures page conversion, stored in your own WordPress database.</li>
+    <li><strong>Google Index Monitor.</strong> Checks the indexing status of your pages in Google Search Console, resubmits your sitemap when pages drop out, and explains why a page is not indexed.</li>
+    <li><strong>Keyword Insights.</strong> Turns your Search Console query data into on-page recommendations.</li>
+  </ul>
+
+  <h2>Connecting Google Search Console</h2>
+  <p>Convertrack connects to Google Search Console with a single <strong>Sign in with Google</strong> step. You choose the Google account that owns your Search Console property and approve access. The plugin then reads indexing and search performance data for that website only. Access can be withdrawn at any time from the plugin's Disconnect button or from your <a href="https://myaccount.google.com/permissions">Google account permissions</a>.</p>
+  <p>The sign-in is brokered by a small service at <code>connect.convertrack.io</code> that holds no database and keeps no copy of your data. The tokens Google issues are stored, encrypted, inside your own WordPress site. Details are in the <a href="/privacy">privacy policy</a>.</p>
+
+  <h2>Open source</h2>
+  <p>The plugin's code, including the sign-in service, is published at <a href="https://github.com/Cornbip19/convertrack">github.com/Cornbip19/convertrack</a>. Sites update themselves from the releases published there.</p>
+
+  <h2>Support</h2>
+  <p>Questions and bug reports: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a> or the <a href="https://github.com/Cornbip19/convertrack/issues">issue tracker</a>.</p>
+
+  <footer>Convertrack is developed by {{DEVELOPER_NAME}}. <a href="/privacy">Privacy policy</a>.</footer>
+</main>
+</body>
+</html>

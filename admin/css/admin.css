@@ -5085,6 +5085,11 @@ a.cvtrk-health-card:focus {
 	box-sizing: content-box;
 }
 
+.cvtrk-tools .cvtrk-gsc-relay-note {
+	flex-basis: 100%;
+	margin: 0;
+}
+
 .cvtrk-gsc-advanced {
 	margin-top: 16px;
 }
