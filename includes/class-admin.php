@@ -51,6 +51,9 @@ class Admin {
 		// resolve the country only; disclose that here.
 		if ( Settings::get( 'enable_geo' ) ) {
 			$content .= ' ' . __( 'Visitor location is enabled: each visitor\'s IP address is sent to a third-party geolocation service (ip-api.com) solely to determine their country. The IP address is not stored — only the resulting two-letter country code is kept.', 'convertrack-click-conversion-analytics' );
+			if ( Settings::get( 'geo_detail' ) ) {
+				$content .= ' ' . __( 'Click location detail is enabled: the same lookup also returns the approximate state or region, city, internet provider and connection type (home broadband, mobile carrier, VPN or datacenter) for the visitor\'s network. These are stored with each event to judge whether clicks come from real people; the IP address is still not stored.', 'convertrack-click-conversion-analytics' );
+			}
 		}
 
 		wp_add_privacy_policy_content( 'Convertrack', wp_kses_post( wpautop( $content ) ) );
@@ -119,6 +122,18 @@ class Admin {
 						}
 					}
 					CSV::write( $out, array( $code, $name, (int) $r['visitors'], (int) $r['pageviews'], (int) $r['clicks'], (int) $r['conversions'] ) );
+				}
+				break;
+
+			case 'conversions':
+				CSV::write( $out, array( 'Time', 'Conversion', 'Page', 'Country', 'State/region', 'City', 'Network', 'Connection', 'Device', 'Pointer', 'Seconds on page', 'Source', 'Verdict', 'Score', 'Reasons', 'Visitor', 'Session' ) );
+				foreach ( Database::conversion_evidence( $range, 50000 ) as $r ) {
+					CSV::write( $out, array(
+						$r['time'], $r['kind_label'] ? $r['kind_label'] : $r['element_text'], $r['page_url'], $r['country'], $r['region'], $r['city'],
+						$r['network'], $r['net_type'], $r['device'], $r['pointer'], $r['dwell_ms'] > 0 ? round( $r['dwell_ms'] / 1000, 1 ) : '',
+						$r['source'], $r['trust_verdict'], null === $r['trust_score'] ? '' : $r['trust_score'], implode( '; ', $r['trust_flags'] ),
+						$r['visitor'], $r['session'],
+					) );
 				}
 				break;
 
@@ -990,6 +1005,31 @@ class Admin {
 					'timeOnSite'     => __( 'Time on site', 'convertrack-click-conversion-analytics' ),
 					'unknownCountry' => __( 'Unknown', 'convertrack-click-conversion-analytics' ),
 					'geoOff'         => __( 'Turn on "Visitor location" in Settings to see where visitors are from.', 'convertrack-click-conversion-analytics' ),
+					'geoDetailOff' => __( 'Turn on "Visitor location" and "Click location detail" in Settings to see where conversion clicks come from and whether they look real.', 'convertrack-click-conversion-analytics' ),
+					'network' => __( 'Network', 'convertrack-click-conversion-analytics' ),
+					'connection' => __( 'Connection', 'convertrack-click-conversion-analytics' ),
+					'netMobile' => __( 'Mobile carrier', 'convertrack-click-conversion-analytics' ),
+					'netIsp' => __( 'Home/business internet', 'convertrack-click-conversion-analytics' ),
+					'netHosting' => __( 'Datacenter', 'convertrack-click-conversion-analytics' ),
+					'netProxy' => __( 'VPN/proxy', 'convertrack-click-conversion-analytics' ),
+					'verdict' => __( 'Verdict', 'convertrack-click-conversion-analytics' ),
+					'verdictReal' => __( 'Real', 'convertrack-click-conversion-analytics' ),
+					'verdictCheck' => __( 'Check', 'convertrack-click-conversion-analytics' ),
+					'verdictSuspicious' => __( 'Suspicious', 'convertrack-click-conversion-analytics' ),
+					'verdictUnscored' => __( 'Not scored', 'convertrack-click-conversion-analytics' ),
+					'pointerTouch' => __( 'Finger tap', 'convertrack-click-conversion-analytics' ),
+					'pointerMouse' => __( 'Mouse click', 'convertrack-click-conversion-analytics' ),
+					'pointerPen' => __( 'Pen tap', 'convertrack-click-conversion-analytics' ),
+					'pointerKeyboard' => __( 'Keyboard', 'convertrack-click-conversion-analytics' ),
+					/* translators: %1$s: duration. */
+					'dwellAfter' => __( '%1$s on the page first', 'convertrack-click-conversion-analytics' ),
+					'trustReasons' => __( 'Why', 'convertrack-click-conversion-analytics' ),
+					'trustClean' => __( 'No warning signs', 'convertrack-click-conversion-analytics' ),
+					/* translators: 1: real count, 2: scored count, 3: percent. */
+					'qualityLead' => __( '%1$s of %2$s scored conversion clicks look real (%3$s percent).', 'convertrack-click-conversion-analytics' ),
+					'qualityPending' => __( 'Conversions from before location detail was switched on are not scored; new ones will be.', 'convertrack-click-conversion-analytics' ),
+					'serviceArea' => __( 'Service area', 'convertrack-click-conversion-analytics' ),
+					'trustWarnings' => __( 'Warning signs seen', 'convertrack-click-conversion-analytics' ),
 					'vsPrev'       => __( 'vs. previous period', 'convertrack-click-conversion-analytics' ),
 					'reached'      => __( 'reached this depth', 'convertrack-click-conversion-analytics' ),
 					'clicksHere'   => __( 'clicks', 'convertrack-click-conversion-analytics' ),

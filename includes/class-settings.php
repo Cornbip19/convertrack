@@ -39,6 +39,10 @@ class Settings {
 			'conversion_kind_labels' => '',
 			'track_search_keywords' => 0,
 			'enable_geo'           => 0,
+			// Region, city and network per event (needs enable_geo).
+			'geo_detail'           => 0,
+			// Service area for click authenticity, e.g. "US-FL" or "US,CA".
+			'trust_market'         => '',
 			'active_window'        => 300,
 			'heartbeat_interval'   => 15,
 			'flush_interval'       => 5,
@@ -168,6 +172,8 @@ class Settings {
 		$clean['respect_dnt']     = empty( $input['respect_dnt'] ) ? 0 : 1;
 		$clean['track_logged_in'] = empty( $input['track_logged_in'] ) ? 0 : 1;
 		$clean['enable_geo']      = empty( $input['enable_geo'] ) ? 0 : 1;
+		$clean['geo_detail']      = empty( $input['geo_detail'] ) ? 0 : 1;
+		$clean['trust_market']    = Trust::sanitize_market( isset( $input['trust_market'] ) ? $input['trust_market'] : $d['trust_market'] );
 		$clean['track_search_keywords'] = empty( $input['track_search_keywords'] ) ? 0 : 1;
 
 		$clean['track_selectors']      = self::sanitize_selector_list( isset( $input['track_selectors'] ) ? $input['track_selectors'] : $d['track_selectors'] );

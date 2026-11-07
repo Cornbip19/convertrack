@@ -510,3 +510,83 @@ test( 'the inline early-click bootstrap buffers trusted clicks and stops cleanly
 	assert.equal( handlers.click, undefined );
 	assert.equal( buffer.done, true );
 } );
+
+/* Click authenticity signals (2.17) ------------------------------------- */
+
+test( 'tracked clicks carry authenticity signals: press, pointer, page age, activity and automation', () => {
+	const harness = makeHarness( { config: { selectors: [ 'a' ] }, performance: { now: () => 12345.6, timeOrigin: 1700000000000 - 12345 } } );
+	const api = harness.api;
+	api.takeBatch( 60000 );
+	// '#' keeps the click queued instead of flushing it as a navigation.
+	const link = fakeElement( 'a', { attrs: { href: '#call' }, text: 'Call' } );
+	link.contains = ( node ) => node === link;
+
+	// Some scrolling/movement, then a finger press on the link, then the click.
+	harness.listeners.document.touchmove( { isTrusted: true } );
+	harness.listeners.document.mousemove( { isTrusted: true } );
+	harness.listeners.document.mousemove( { isTrusted: false } );
+	const press = harness.listeners.document.pointerdown || harness.listeners.document.touchstart;
+	press( { isTrusted: true, pointerType: 'touch', type: 'pointerdown', target: link } );
+	harness.advance( 120 );
+	harness.listeners.document.click( { target: link, isTrusted: true, detail: 1, clientX: 150, clientY: 220, pageX: 150, pageY: 220 } );
+
+	const lastClick = () => {
+		const clicks = api.takeBatch( 60000 ).filter( ( ev ) => ev.t === 'click' );
+		assert.equal( clicks.length, 1 );
+		return JSON.parse( JSON.stringify( clicks[ 0 ].tq ) );
+	};
+	assert.deepEqual( lastClick(), { pt: 'touch', pd: 1, ms: 12346, ia: 2, hf: 1, wd: 0 } );
+
+	// Keyboard activation: no press, no position.
+	harness.advance( 5000 );
+	harness.listeners.document.click( { target: link, isTrusted: true, detail: 0, clientX: 0, clientY: 0, pageX: 0, pageY: 0 } );
+	const kb = lastClick();
+	assert.equal( kb.pt, 'keyboard' );
+	assert.equal( kb.pd, 0 );
+
+	// A positioned click with a stale press is not a pressed click.
+	harness.listeners.document.click( { target: link, isTrusted: true, detail: 1, clientX: 150, clientY: 220, pageX: 150, pageY: 220 } );
+	const stale = lastClick();
+	assert.equal( stale.pd, 0 );
+	assert.equal( stale.pt, '' );
+} );
+
+test( 'heatmap-only clicks carry no authenticity signals', () => {
+	const harness = makeHarness( { config: { selectors: [ 'a' ] } } );
+	harness.api.takeBatch( 60000 );
+	harness.listeners.document.click( { target: fakeElement( 'div' ), isTrusted: true, detail: 1, clientX: 300, clientY: 150, pageX: 300, pageY: 150 } );
+	const queued = harness.api.getState().queue;
+	assert.equal( queued[ 0 ].t, 'heatmap_click' );
+	assert.equal( queued[ 0 ].tq, undefined );
+} );
+
+test( 'the early bootstrap records press and activity signals with each buffered click', () => {
+	const docListeners = {};
+	const winListeners = {};
+	const d = {
+		documentElement: { clientWidth: 400, clientHeight: 800, scrollWidth: 400, scrollHeight: 2000 },
+		body: {},
+		hasFocus: () => true,
+		addEventListener( type, fn ) { docListeners[ type ] = fn; },
+		removeEventListener( type ) { delete docListeners[ type ]; }
+	};
+	const w = {
+		PointerEvent: function () {},
+		navigator: { webdriver: true },
+		performance: { now: () => 800.4 },
+		innerWidth: 400,
+		innerHeight: 800,
+		addEventListener( type, fn ) { winListeners[ type ] = fn; },
+		removeEventListener( type ) { delete winListeners[ type ]; }
+	};
+	vm.runInNewContext( earlySource, { document: d, window: w, Date } );
+	const button = { nodeType: 1, getBoundingClientRect: () => ( { left: 0, top: 0, width: 10, height: 10 } ), contains: ( n ) => n === button };
+	winListeners.scroll( { isTrusted: true } );
+	docListeners.pointerdown( { isTrusted: true, pointerType: 'mouse', target: button } );
+	docListeners.click( { isTrusted: true, target: button, detail: 1, clientX: 5, clientY: 5 } );
+	const item = w.__cvtrkEarly[ 0 ];
+	assert.deepEqual( JSON.parse( JSON.stringify( item.tq ) ), { pt: 'mouse', pd: 1, ms: 800, ia: 1, hf: 1, wd: 1 } );
+	w.__cvtrkEarly.stop();
+	assert.equal( docListeners.pointerdown, undefined );
+	assert.equal( winListeners.scroll, undefined );
+} );

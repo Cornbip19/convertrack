@@ -51,6 +51,7 @@ $cvtrk_sections = array(
 					<a class="button" data-cvtrk-export data-type="keywords"><?php esc_html_e( 'Keywords', 'convertrack-click-conversion-analytics' ); ?></a>
 					<a class="button" data-cvtrk-export data-type="countries"><?php esc_html_e( 'Countries', 'convertrack-click-conversion-analytics' ); ?></a>
 					<a class="button" data-cvtrk-export data-type="daily"><?php esc_html_e( 'Daily activity', 'convertrack-click-conversion-analytics' ); ?></a>
+					<a class="button" data-cvtrk-export data-type="conversions"><?php esc_html_e( 'Conversions with location', 'convertrack-click-conversion-analytics' ); ?></a>
 				</div>
 			</details>
 		</div>
@@ -180,6 +181,7 @@ $cvtrk_sections = array(
 
 	<section class="cvtrk-section" id="cvtrk-section-audience" aria-label="<?php echo esc_attr( $cvtrk_sections['audience'] ); ?>">
 		<div class="cvtrk-card"><div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Top countries', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Where visitors are located', 'convertrack-click-conversion-analytics' ); ?></span></div></div><div class="cvtrk-card-body"><div data-cvtrk="top-countries"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div></div>
+		<div class="cvtrk-card"><div class="cvtrk-card-head"><div><h2><?php esc_html_e( 'Are the conversions real?', 'convertrack-click-conversion-analytics' ); ?></h2><span class="cvtrk-card-sub"><?php esc_html_e( 'Where each conversion click came from, over which network, and how it was made', 'convertrack-click-conversion-analytics' ); ?></span></div></div><div class="cvtrk-card-body"><div data-cvtrk="conversion-quality"><p class="cvtrk-skeleton"><?php esc_html_e( 'Loading...', 'convertrack-click-conversion-analytics' ); ?></p></div></div></div>
 	</section>
 
 	<section class="cvtrk-section" id="cvtrk-section-timeline" aria-label="<?php echo esc_attr( $cvtrk_sections['timeline'] ); ?>">

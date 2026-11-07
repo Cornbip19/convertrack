@@ -2359,8 +2359,211 @@
 			item.element_href,
 			item.device,
 			item.country,
-			item.source
+			item.source,
+			item.region,
+			item.city,
+			item.network,
+			netTypeLabel( item.net_type ),
+			item.trust_verdict && item.trust_verdict !== 'unscored' ? verdictLabel( item.trust_verdict ) : ''
 		].join( ' ' ).toLowerCase();
+	}
+
+	// "Miami, FL, United States" from an event's location fields.
+	function locationText( item ) {
+		if ( ! item ) {
+			return '';
+		}
+		var parts = [];
+		if ( item.city ) {
+			parts.push( item.city );
+		}
+		if ( item.region ) {
+			parts.push( item.region );
+		}
+		if ( item.country ) {
+			var flag = flagEmoji( item.country );
+			parts.push( ( flag ? flag + ' ' : '' ) + ( parts.length ? item.country : countryName( item.country ) ) );
+		}
+		return parts.join( ', ' );
+	}
+
+	function netTypeLabel( type ) {
+		switch ( type ) {
+			case 'mobile':
+				return I18N.netMobile || 'Mobile carrier';
+			case 'isp':
+				return I18N.netIsp || 'Home/business internet';
+			case 'hosting':
+				return I18N.netHosting || 'Datacenter';
+			case 'proxy':
+				return I18N.netProxy || 'VPN/proxy';
+		}
+		return '';
+	}
+
+	function networkText( item ) {
+		if ( ! item ) {
+			return '';
+		}
+		var type = netTypeLabel( item.net_type );
+		if ( item.network && type ) {
+			return item.network + ' \u00b7 ' + type;
+		}
+		return item.network || type || '';
+	}
+
+	function verdictLabel( verdict ) {
+		switch ( verdict ) {
+			case 'real':
+				return I18N.verdictReal || 'Real';
+			case 'check':
+				return I18N.verdictCheck || 'Check';
+			case 'suspicious':
+				return I18N.verdictSuspicious || 'Suspicious';
+		}
+		return I18N.verdictUnscored || 'Not scored';
+	}
+
+	function verdictBadgeClass( verdict ) {
+		return 'cvtrk-badge ' + ( verdict === 'real' ? 'cvtrk-badge-green' : verdict === 'check' ? 'cvtrk-badge-amber' : verdict === 'suspicious' ? 'cvtrk-badge-red' : 'cvtrk-badge-gray' );
+	}
+
+	function pointerLabel( pointer ) {
+		switch ( pointer ) {
+			case 'touch':
+				return I18N.pointerTouch || 'Finger tap';
+			case 'mouse':
+				return I18N.pointerMouse || 'Mouse click';
+			case 'pen':
+				return I18N.pointerPen || 'Pen tap';
+			case 'keyboard':
+				return I18N.pointerKeyboard || 'Keyboard';
+		}
+		return '';
+	}
+
+	// Verdict chip with the evidence in its tooltip: how the click was made,
+	// how long the page had been open, and every reason that lowered the score.
+	function trustChip( item ) {
+		var chip = el( 'span', 'cvtrk-timeline-meta cvtrk-trust is-' + item.trust_verdict );
+		chip.appendChild( el( 'span', null, I18N.verdict || 'Verdict' ) );
+		var badge = el( 'b', verdictBadgeClass( item.trust_verdict ), verdictLabel( item.trust_verdict ) + ( item.trust_score !== null && item.trust_score !== undefined ? ' ' + item.trust_score : '' ) );
+		chip.appendChild( badge );
+		var evidence = [];
+		var how = pointerLabel( item.pointer );
+		if ( how ) {
+			evidence.push( how );
+		}
+		if ( Number( item.dwell_ms ) > 0 ) {
+			evidence.push( formatTemplate( I18N.dwellAfter || '%1$s on the page first', formatDuration( Number( item.dwell_ms ) / 1000 ), '', '', '' ) );
+		}
+		var flags = Array.isArray( item.trust_flags ) ? item.trust_flags : [];
+		var tip = evidence.join( ' \u00b7 ' );
+		if ( flags.length ) {
+			tip += ( tip ? '\n' : '' ) + ( I18N.trustReasons || 'Why' ) + ': ' + flags.join( ', ' );
+		} else if ( item.trust_verdict === 'real' ) {
+			tip += ( tip ? '\n' : '' ) + ( I18N.trustClean || 'No warning signs' );
+		}
+		if ( tip ) {
+			chip.title = tip;
+		}
+		return chip;
+	}
+
+	// "Are the conversions real?" card: verdict split, top locations with their
+	// verdicts, connection types, and the most common warning signs.
+	function renderConversionQuality( q, geoEnabled, geoDetail, market ) {
+		var box = attr( 'conversion-quality' );
+		if ( ! box ) {
+			return;
+		}
+		clear( box );
+		if ( ! geoEnabled || ! geoDetail ) {
+			empty( box, I18N.geoDetailOff || 'Turn on "Visitor location" and "Click location detail" in Settings to see where conversion clicks come from and whether they look real.' );
+			return;
+		}
+		if ( ! q || ! q.total ) {
+			empty( box, I18N.noConversions || 'No conversions in this range yet.' );
+			return;
+		}
+
+		var v = q.verdicts || {};
+		var scored = ( Number( v.real ) || 0 ) + ( Number( v.check ) || 0 ) + ( Number( v.suspicious ) || 0 );
+		var lead = el( 'p', 'cvtrk-chart-summary', scored > 0 ?
+			formatTemplate( I18N.qualityLead || '%1$s of %2$s scored conversion clicks look real (%3$s percent).', num( v.real || 0 ), num( scored ), Math.round( 100 * ( Number( v.real ) || 0 ) / scored ), '' ) :
+			( I18N.qualityPending || 'Conversions from before location detail was switched on are not scored; new ones will be.' ) );
+		box.appendChild( lead );
+
+		var badges = el( 'div', 'cvtrk-trust-summary' );
+		[ 'real', 'check', 'suspicious', 'unscored' ].forEach( function ( key ) {
+			if ( key === 'unscored' && ! Number( v.unscored ) ) {
+				return;
+			}
+			var b = el( 'span', verdictBadgeClass( key ), verdictLabel( key ) + ': ' + num( v[ key ] || 0 ) );
+			badges.appendChild( b );
+		} );
+		if ( market ) {
+			badges.appendChild( el( 'span', 'cvtrk-sub', ( I18N.serviceArea || 'Service area' ) + ': ' + market ) );
+		}
+		box.appendChild( badges );
+
+		var locs = q.locations || [];
+		if ( locs.length ) {
+			var max = 1;
+			locs.forEach( function ( it ) { max = Math.max( max, Number( it.conversions ) || 0 ); } );
+			var t = table( [
+				{ label: I18N.location || 'Location' },
+				{ label: I18N.conversions || 'Conversions', num: true },
+				{ label: verdictLabel( 'real' ), num: true },
+				{ label: verdictLabel( 'check' ), num: true, hide: 'sm' },
+				{ label: verdictLabel( 'suspicious' ), num: true }
+			] );
+			var body = t.querySelector( 'tbody' );
+			locs.forEach( function ( it ) {
+				var tr = el( 'tr' );
+				tr.appendChild( labelCell( locationText( it ) || ( I18N.unknownCountry || 'Unknown' ), '' ) );
+				tr.appendChild( clicksCell( it.conversions, max ) );
+				tr.appendChild( numCell( it.real ) );
+				tr.appendChild( numCell( it.check ) );
+				tr.appendChild( numCell( it.suspicious ) );
+				applyHideClasses( tr, [ {}, {}, {}, { hide: 'sm' }, {} ] );
+				body.appendChild( tr );
+			} );
+			box.appendChild( t );
+		}
+
+		var nets = q.networks || [];
+		if ( nets.length ) {
+			var nt = table( [
+				{ label: I18N.network || 'Network' },
+				{ label: I18N.connection || 'Connection' },
+				{ label: I18N.conversions || 'Conversions', num: true }
+			] );
+			var nbody = nt.querySelector( 'tbody' );
+			nets.forEach( function ( it ) {
+				var tr = el( 'tr' );
+				tr.appendChild( labelCell( it.network || ( I18N.unknown || 'Unknown' ), '' ) );
+				tr.appendChild( labelCell( netTypeLabel( it.net_type ) || '-', '' ) );
+				tr.appendChild( numCell( it.conversions ) );
+				nbody.appendChild( tr );
+			} );
+			box.appendChild( nt );
+		}
+
+		var flags = q.flags || [];
+		if ( flags.length ) {
+			var list = el( 'ul', 'cvtrk-trust-flags' );
+			flags.forEach( function ( f ) {
+				if ( f.flag === 'no_signals' ) {
+					return;
+				}
+				list.appendChild( el( 'li', null, f.label + ': ' + num( f.count ) ) );
+			} );
+			if ( list.firstChild ) {
+				box.appendChild( el( 'p', 'cvtrk-sub', I18N.trustWarnings || 'Warning signs seen' ) );
+				box.appendChild( list );
+			}
+		}
 	}
 
 	function timelineMeta( label, value ) {
@@ -2394,6 +2597,17 @@
 		meta.appendChild( timelineMeta( I18N.source || 'Source', item.source || 'Direct' ) );
 		if ( item.device ) {
 			meta.appendChild( timelineMeta( I18N.device || 'Device', item.device ) );
+		}
+		var place = locationText( item );
+		if ( place ) {
+			meta.appendChild( timelineMeta( I18N.location || 'Location', place ) );
+		}
+		var network = networkText( item );
+		if ( network ) {
+			meta.appendChild( timelineMeta( I18N.network || 'Network', network ) );
+		}
+		if ( item.type === 'click' && item.trust_verdict && item.trust_verdict !== 'unscored' ) {
+			meta.appendChild( trustChip( item ) );
 		}
 		body.appendChild( meta );
 		row.appendChild( icon );
@@ -3881,6 +4095,7 @@
 					renderRegionSafely( 'top-sources', function () { renderSources( data.top_sources ); }, load );
 					renderRegionSafely( 'top-search-terms', function () { renderSearchTerms( 'top-search-terms', data.top_search_terms, data.search_keywords_enabled ); }, load );
 					renderRegionSafely( 'top-countries', function () { renderCountries( data.top_countries, data.geo_enabled ); }, load );
+					renderRegionSafely( 'conversion-quality', function () { renderConversionQuality( data.conversion_quality, data.geo_enabled, data.geo_detail, data.trust_market ); }, load );
 					renderRegionSafely( 'event-timeline', function () { renderTimeline( data.recent_events || [], data.conversion_kinds || null ); }, load );
 					renderRegionSafely( 'overview-health', function () { renderOverviewHealth( data, null, null ); }, load );
 					Promise.all( [

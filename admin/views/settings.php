@@ -255,6 +255,23 @@ if ( $cvtrk_updater ) {
 							<p class="description"><strong><?php esc_html_e( 'Privacy note:', 'convertrack-click-conversion-analytics' ); ?></strong> <?php esc_html_e( 'When enabled, the visitor\'s IP address may be sent to ip-api.com to look up the country. The IP address is never stored; only the two-letter country code is kept. A CDN country header is used first when available.', 'convertrack-click-conversion-analytics' ); ?></p>
 						</td>
 					</tr>
+					<tr>
+						<th scope="row"><?php esc_html_e( 'Click location detail', 'convertrack-click-conversion-analytics' ); ?></th>
+						<td>
+							<label>
+								<input type="checkbox" name="convertrack_settings[geo_detail]" value="1" <?php checked( ! empty( $s['geo_detail'] ), true ); ?> />
+								<?php esc_html_e( 'Also record the state, city and network (internet provider, mobile carrier, VPN or datacenter) behind each click, and score each click as Real, Check or Suspicious.', 'convertrack-click-conversion-analytics' ); ?>
+							</label>
+							<p class="description"><?php esc_html_e( 'Needs "Visitor location" above. Use it to show that conversions come from real local customers rather than bots. The IP address is still never stored; only the region code, city, provider name, network number and connection type are kept.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="cvtrk-trust-market"><?php esc_html_e( 'Service area', 'convertrack-click-conversion-analytics' ); ?></label></th>
+						<td>
+							<input type="text" class="regular-text" id="cvtrk-trust-market" name="convertrack_settings[trust_market]" value="<?php echo esc_attr( isset( $s['trust_market'] ) ? $s['trust_market'] : '' ); ?>" placeholder="US-FL" />
+							<p class="description"><?php esc_html_e( 'Country, or country and state, where your customers are, comma-separated (for example US-FL, or US-FL,US-GA). Clicks from outside are marked. Leave empty to skip this check.', 'convertrack-click-conversion-analytics' ); ?></p>
+						</td>
+					</tr>
 				</table>
 			</div>
 		</section>

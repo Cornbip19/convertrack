@@ -5066,3 +5066,28 @@ a.cvtrk-health-card:focus {
 .cvtrk-chart-summary .cvtrk-chart-summary-line + .cvtrk-chart-summary-line {
 	margin-top: 4px;
 }
+
+/* 2.17: conversion authenticity */
+.cvtrk-trust-summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 14px;
+}
+.cvtrk-trust-summary .cvtrk-badge {
+	font-size: 13px;
+}
+.cvtrk-trust-flags {
+	margin: 6px 0 0 18px;
+	list-style: disc;
+}
+.cvtrk-trust-flags li {
+	margin: 2px 0;
+}
+.cvtrk-timeline-meta.cvtrk-trust b.cvtrk-badge {
+	font-weight: 700;
+}
+[data-cvtrk="conversion-quality"] .cvtrk-table-wrap + .cvtrk-table-wrap {
+	margin-top: 14px;
+}
