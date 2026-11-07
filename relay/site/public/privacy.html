@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convertrack privacy policy</title>
+<meta name="description" content="How the Convertrack WordPress plugin and its Google sign-in service handle your data, including data received from Google APIs.">
+<style>
+  :root { --bg:#ffffff; --fg:#1d2327; --muted:#50575e; --accent:#0a7c86; --rule:#dcdcde; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111417; --fg:#f0f0f1; --muted:#b4b9be; --accent:#5fd0d8; --rule:#2c3338; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:44rem; margin:0 auto; padding:3rem 1rem 4rem; }
+  h1 { font-size:2rem; line-height:1.15; margin:0 0 .3rem; }
+  h2 { font-size:1.25rem; margin:2.2rem 0 .6rem; }
+  p, li { margin:0 0 .8rem; }
+  .meta { color:var(--muted); }
+  a { color:var(--accent); }
+  ul { padding-left:1.2rem; }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule); color:var(--muted); font-size:.95rem; }
+  nav a { margin-right:1rem; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="/">Home</a><a href="/privacy">Privacy policy</a><a href="/terms">Terms</a><a href="https://github.com/Cornbip19/convertrack">Source on GitHub</a></nav>
+  <h1>Privacy policy</h1>
+  <p class="meta">Convertrack WordPress plugin and the Convertrack sign-in service. Effective {{EFFECTIVE_DATE}}.</p>
+
+  <p>This policy explains what data the Convertrack plugin and its Google sign-in service (<code>connect.convertrack.io</code>, "the sign-in service") handle, why, and what we never do with it. "We" means {{DEVELOPER_NAME}}, the developer of Convertrack, reachable at <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a>.</p>
+
+  <h2>1. The plugin runs on your own website</h2>
+  <p>Convertrack is software you install on your WordPress site. Everything it collects about your visitors (clicks, page views, conversions) is stored in your site's own database and is never sent to us. We have no access to your site, its database or its visitors.</p>
+
+  <h2>2. Data received from Google</h2>
+  <p>When you connect Google Search Console, you sign in with your Google account and grant the plugin permission to use the Google Search Console API on your behalf. With that permission the plugin, running on your site, reads:</p>
+  <ul>
+    <li>indexing status and URL inspection results for pages of the connected website;</li>
+    <li>the list of Search Console properties your account can access, so the matching one can be selected;</li>
+    <li>search performance data for the connected website (queries, pages, clicks, impressions and positions);</li>
+    <li>the Google account email address shown in the plugin so you can see which account is connected.</li>
+  </ul>
+  <p>If you enable the optional Indexing API feature, the plugin also submits URLs of the connected website to Google for re-crawling and can resubmit your sitemap.</p>
+  <p>All of this data is stored only in your WordPress site's database, is used only to show you reports and recommendations inside your WordPress dashboard, and is deleted when you disconnect or uninstall the plugin. It is not shared with, sold to, or transferred to anyone, is not used for advertising, and is not read by humans at Convertrack.</p>
+  <p>The access and refresh tokens Google issues are stored encrypted in your site's database. They are used only to make the API requests described above.</p>
+
+  <h2>3. The sign-in service</h2>
+  <p>Google requires the sign-in to be completed through an application registered with Google. So that you do not have to create your own Google Cloud project, the sign-in service at <code>connect.convertrack.io</code> performs this step for you. It:</p>
+  <ul>
+    <li>registers your site by its address and confirms that the request came from that site;</li>
+    <li>shows a confirmation page naming your site, then forwards you to Google's consent screen;</li>
+    <li>receives the authorization code from Google and passes it straight to your site;</li>
+    <li>adds the application credentials when your site exchanges that code, and when it refreshes a token, and returns Google's answer to your site unchanged.</li>
+  </ul>
+  <p>The sign-in service has no database and stores nothing: not your site address, not authorization codes, not tokens, and not any Search Console data, which never passes through it. Its operational logs record only the request path, the HTTP status, an error code if any, the hostname of the site and the type of token request, and are kept for a short period to diagnose outages. It sets no cookies.</p>
+
+  <h2>4. Google API Services User Data Policy</h2>
+  <p>Convertrack's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+
+  <h2>5. Withdrawing access</h2>
+  <p>You can disconnect at any time with the Disconnect button in the plugin, which deletes the stored tokens from your site, or by removing Convertrack from your <a href="https://myaccount.google.com/permissions">Google account's third-party access</a> page. Uninstalling the plugin removes all data it stored.</p>
+
+  <h2>6. This website</h2>
+  <p>convertrack.io is a static site. It sets no cookies and runs no analytics or advertising scripts. Our hosting provider may record standard server logs (IP address, requested page, time) for security and reliability.</p>
+
+  <h2>7. Children</h2>
+  <p>Convertrack is a tool for website operators and is not directed at children under 16.</p>
+
+  <h2>8. Changes and contact</h2>
+  <p>We will post any change to this policy on this page with a new effective date. Questions: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a>.</p>
+
+  <footer>Convertrack is developed by {{DEVELOPER_NAME}}. <a href="/">Home</a>.</footer>
+</main>
+</body>
+</html>

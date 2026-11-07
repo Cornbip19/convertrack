@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Convertrack terms of service</title>
+<meta name="description" content="Terms of service for the Convertrack WordPress plugin and its Google sign-in service.">
+<style>
+  :root { --bg:#ffffff; --fg:#1d2327; --muted:#50575e; --accent:#0a7c86; --rule:#dcdcde; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111417; --fg:#f0f0f1; --muted:#b4b9be; --accent:#5fd0d8; --rule:#2c3338; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:17px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:44rem; margin:0 auto; padding:3rem 1rem 4rem; }
+  h1 { font-size:2rem; line-height:1.15; margin:0 0 .3rem; }
+  h2 { font-size:1.25rem; margin:2.2rem 0 .6rem; }
+  p, li { margin:0 0 .8rem; }
+  .meta { color:var(--muted); }
+  a { color:var(--accent); }
+  ul { padding-left:1.2rem; }
+  footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--rule); color:var(--muted); font-size:.95rem; }
+  nav a { margin-right:1rem; }
+</style>
+</head>
+<body>
+<main>
+  <nav><a href="/">Home</a><a href="/privacy">Privacy policy</a><a href="/terms">Terms</a><a href="https://github.com/Cornbip19/convertrack">Source on GitHub</a></nav>
+  <h1>Terms of service</h1>
+  <p class="meta">Convertrack WordPress plugin and the Convertrack sign-in service. Effective {{EFFECTIVE_DATE}}.</p>
+
+  <h2>1. The software</h2>
+  <p>Convertrack is open-source software published at <a href="https://github.com/Cornbip19/convertrack">github.com/Cornbip19/convertrack</a> under the licence stated in that repository. You install and run it on your own WordPress site at your own responsibility.</p>
+
+  <h2>2. The sign-in service</h2>
+  <p>The sign-in service at <code>connect.convertrack.io</code> is provided by {{DEVELOPER_NAME}} free of charge so that Convertrack can connect to Google Search Console without each site owner creating a Google Cloud project. It only brokers the Google sign-in and token requests described in the <a href="/privacy">privacy policy</a>. It stores no data.</p>
+  <p>You may use the sign-in service only through the Convertrack plugin, for websites you control, and in accordance with Google's terms for Search Console and its APIs. We may rate-limit, suspend or discontinue the service at any time; if it is unavailable, the plugin keeps its existing connection and you can always connect with your own Google Cloud credentials instead.</p>
+
+  <h2>3. Your Google account</h2>
+  <p>You are responsible for the Google account you connect and for the Search Console properties it can access. You can withdraw the plugin's access at any time from the plugin or from your <a href="https://myaccount.google.com/permissions">Google account permissions</a>.</p>
+
+  <h2>4. No warranty</h2>
+  <p>The software and the sign-in service are provided "as is", without warranty of any kind. To the extent permitted by law, {{DEVELOPER_NAME}} is not liable for any loss arising from their use or unavailability.</p>
+
+  <h2>5. Changes and contact</h2>
+  <p>We may update these terms by posting a new version on this page with a new effective date. Questions: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a>.</p>
+
+  <footer>Convertrack is developed by {{DEVELOPER_NAME}}. <a href="/">Home</a> · <a href="/privacy">Privacy policy</a>.</footer>
+</main>
+</body>
+</html>

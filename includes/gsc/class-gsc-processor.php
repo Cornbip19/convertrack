@@ -273,6 +273,13 @@ class Processor {
 				'convertrack_gsc_reconnect_required',
 				'convertrack_gsc_refresh_failed',
 				'convertrack_gsc_token_failed',
+				// Relay ("Sign in with Google") failures: the sign-in service or
+				// the registration, never Google's verdict on the grant.
+				'convertrack_gsc_no_site_registration',
+				'convertrack_gsc_relay_not_configured',
+				'convertrack_gsc_relay_registration_failed',
+				'convertrack_gsc_relay_unreachable',
+				'convertrack_gsc_relay_error',
 			),
 			true
 		);

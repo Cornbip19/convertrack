@@ -5067,6 +5067,49 @@ a.cvtrk-health-card:focus {
 	margin-top: 4px;
 }
 
+/* Search Console: Sign in with Google */
+
+.cvtrk-google-signin {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.cvtrk-google-signin .cvtrk-google-mark {
+	width: 18px;
+	height: 18px;
+	flex: 0 0 auto;
+	background: #fff;
+	border-radius: 50%;
+	padding: 2px;
+	box-sizing: content-box;
+}
+
+.cvtrk-tools .cvtrk-gsc-relay-note {
+	flex-basis: 100%;
+	margin: 0;
+}
+
+.cvtrk-gsc-advanced {
+	margin-top: 16px;
+}
+
+.cvtrk-gsc-advanced .cvtrk-card {
+	margin-bottom: 0;
+}
+
+.cvtrk-gsc-monitor-off {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+
+.cvtrk-gsc-monitor-off form {
+	margin: 0;
+}
+
 /* 2.17: conversion authenticity */
 .cvtrk-trust-summary {
 	display: flex;
