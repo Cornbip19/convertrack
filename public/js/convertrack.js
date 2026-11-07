@@ -91,6 +91,88 @@
 	// Capture phase so we record the click even if a handler calls stopPropagation.
 	document.addEventListener( 'click', onClick, true );
 
+	/* ----------------------------------------------------------------- *
+	 * Click authenticity signals
+	 *
+	 * Recorded with every tracked click so the server can tell a person from
+	 * a script: the pointer that pressed the element, whether a press preceded
+	 * the click, how long the page had been open, how much the visitor had
+	 * scrolled/moved/typed first, tab focus, and navigator.webdriver. Counts
+	 * only; no positions, keys or text are kept.
+	 * ----------------------------------------------------------------- */
+
+	var earlyBuffer = window.__cvtrkEarly;
+	var interactions = earlyBuffer && typeof earlyBuffer.ia === 'number' ? earlyBuffer.ia : 0;
+	var lastPress = earlyBuffer && earlyBuffer.press ? earlyBuffer.press : null;
+	var listenOpts = { passive: true, capture: true };
+
+	function onPress( e ) {
+		if ( e && e.isTrusted !== false ) {
+			lastPress = { t: nowMs(), type: e.pointerType || ( e.type === 'touchstart' ? 'touch' : 'mouse' ), target: e.target };
+		}
+	}
+	function onActivity( e ) {
+		if ( e && e.isTrusted !== false && interactions < 9999 ) {
+			interactions++;
+		}
+	}
+	try {
+		document.addEventListener( window.PointerEvent ? 'pointerdown' : 'touchstart', onPress, listenOpts );
+		if ( ! window.PointerEvent ) {
+			document.addEventListener( 'mousedown', onPress, listenOpts );
+		}
+		window.addEventListener( 'scroll', onActivity, listenOpts );
+		document.addEventListener( 'touchmove', onActivity, listenOpts );
+		document.addEventListener( 'mousemove', onActivity, listenOpts );
+		document.addEventListener( 'keydown', onActivity, listenOpts );
+	} catch ( err ) {} // eslint-disable-line no-empty
+
+	function pageAgeMs() {
+		try {
+			var perf = window.performance;
+			return perf && perf.now ? Math.max( 0, Math.round( perf.now() ) ) : 0;
+		} catch ( err ) {
+			return 0;
+		}
+	}
+
+	function trustSignals( event, el ) {
+		// Replayed early clicks carry the signals measured when they happened.
+		if ( event && event.__cvtrkSnap ) {
+			if ( event.__cvtrkSnap.tq ) {
+				return event.__cvtrkSnap.tq;
+			}
+			// A snapshot from a bootstrap without signals: the coordinates are
+			// the only evidence of a press; nothing else was measured.
+			return { pt: '', pd: event.__cvtrkSnap.detail || event.__cvtrkSnap.cx || event.__cvtrkSnap.cy ? 1 : 0, ms: 0, hf: 1, wd: navigator.webdriver ? 1 : 0 };
+		}
+		var target = event ? event.target : null;
+		var pressed = false;
+		if ( lastPress && nowMs() - lastPress.t < 1500 && lastPress.target ) {
+			try {
+				pressed = lastPress.target === target || ( el && el.contains && el.contains( lastPress.target ) ) ||
+					( lastPress.target.contains && target && lastPress.target.contains( target ) );
+			} catch ( err ) {
+				pressed = false;
+			}
+		}
+		var keyboard = ! pressed && ! ( parseInt( event && event.detail, 10 ) || 0 ) && ! ( Number( event && event.clientX ) || 0 ) && ! ( Number( event && event.clientY ) || 0 );
+		var focused = true;
+		try {
+			focused = ! document.hasFocus || document.hasFocus();
+		} catch ( err ) {
+			focused = true;
+		}
+		return {
+			pt: pressed ? String( lastPress.type || '' ) : ( keyboard ? 'keyboard' : '' ),
+			pd: pressed ? 1 : 0,
+			ms: pageAgeMs(),
+			ia: interactions,
+			hf: focused ? 1 : 0,
+			wd: navigator.webdriver ? 1 : 0
+		};
+	}
+
 	function onClick( e ) {
 		if ( privacyOptedOut() ) {
 			queue.length = 0;
@@ -283,7 +365,8 @@
 			dw: coords.dw,
 			dh: coords.dh,
 			sx: coords.sx,
-			sy: coords.sy
+			sy: coords.sy,
+			tq: trustSignals( event, el )
 		};
 	}
 

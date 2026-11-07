@@ -46,7 +46,9 @@ class Collector {
 
 		$rows         = array();
 		$now          = current_time( 'mysql' );
-		$country      = Geo::current_country();
+		$profile      = Geo::current_profile();
+		$country      = $profile['country'];
+		$market       = (string) Settings::get( 'trust_market' );
 		$last_url     = '';
 		$last_post    = 0;
 		$last_page_key = '';
@@ -59,8 +61,14 @@ class Collector {
 			if ( null === $row ) {
 				continue;
 			}
-			// Country is resolved server-side; never trust a client-supplied value.
-			$row['country'] = $country;
+			// Location is resolved server-side; never trust a client-supplied value.
+			$row['country']  = $country;
+			$row['region']   = $profile['region'];
+			$row['city']     = $profile['city'];
+			$row['network']  = $profile['network'];
+			$row['asn']      = $profile['asn'];
+			$row['net_type'] = $profile['net_type'];
+			$row = self::apply_trust( $row, is_array( $raw ) ? $raw : array(), $profile, $market );
 			$rows[]   = $row;
 			$last_url = $row['page_url'];
 			$last_post = (int) $row['post_id'];
@@ -104,6 +112,40 @@ class Collector {
 			'accepted'   => count( $rows ),
 			'duplicates' => max( 0, count( $rows ) - (int) $stored ),
 		);
+	}
+
+	/**
+	 * Score a tracked click for authenticity and keep the evidence on the row.
+	 *
+	 * Only button-like clicks are scored (they are what conversions are made
+	 * of); pageviews, scrolls and heatmap-only clicks keep a NULL score.
+	 *
+	 * @param array  $row     Sanitized row.
+	 * @param array  $raw     Raw tracker event.
+	 * @param array  $profile Geo profile.
+	 * @param string $market  Configured service area.
+	 * @return array
+	 */
+	private static function apply_trust( array $row, array $raw, array $profile, $market ) {
+		$row['pointer_type'] = '';
+		$row['dwell_ms']     = 0;
+		$row['trust_score']  = null;
+		$row['trust_flags']  = '';
+
+		if ( 'click' !== $row['event_type'] ) {
+			return $row;
+		}
+
+		$signals = Trust::signals_from_raw( $raw );
+		if ( null !== $signals ) {
+			$row['pointer_type'] = $signals['pointer'];
+			$row['dwell_ms']     = $signals['dwell_ms'];
+		}
+
+		$result              = Trust::score( $signals, $profile, (string) $row['device_type'], $market );
+		$row['trust_score']  = (int) $result['score'];
+		$row['trust_flags']  = substr( implode( ',', $result['flags'] ), 0, 191 );
+		return $row;
 	}
 
 	/**

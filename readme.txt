@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.16.1
+Stable tag: 2.17.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -108,6 +108,14 @@ Return `true` from the `convertrack_skip_tracking` filter while consent has not 
 * Change: a relay outage or error can never be mistaken for a revoked Google grant: tokens are cleared only when Google itself answers `invalid_grant`; relay and network failures are reported and retried later.
 * New: a public REST route `convertrack/v1/gsc/relay-challenge` that only ever serves a random, ten-minute registration challenge while a sign-in is being set up, so the relay can confirm the site is yours.
 * Dev: the relay lives in `relay/` (Cloudflare Worker, TypeScript, Vitest) with self-hosting instructions; it is never packaged into the plugin zip. Filter `convertrack_gsc_relay_url` to point a site at a self-hosted relay.
+
+= 2.17.0 =
+* New: Click location detail (Settings, off by default, needs Visitor location). Every event now also keeps the state/region, city, internet provider, network number and connection type (home/business internet, mobile carrier, datacenter, VPN/proxy) from the same ip-api.com lookup. The IP address is still never stored. Cloudflare region/city headers are used when present.
+* New: every tracked click gets an authenticity score from 0 to 100 and a verdict, Real, Check or Suspicious. The tracker records how the button was pressed (finger, mouse, pen or keyboard), whether a press came before the click, how long the page had been open, whether the visitor scrolled or moved first, tab focus, and whether the browser reports itself as automated. The server adds the connection type and whether the click came from inside the Service area you set (for example US-FL). Each deduction is kept as a plain-language reason.
+* New: "Are the conversions real?" card on the dashboard: the Real/Check/Suspicious split, conversions by city and state with their verdicts, the networks they came over, and the warning signs seen.
+* New: the activity timeline shows Location, Network and Verdict on each event; hover the verdict for the evidence. The timeline filter matches city, state, network and verdict.
+* New: "Conversions with location" CSV export: every conversion click with time, page, location, network, device, pointer, seconds on page, verdict, score and reasons.
+* Change: database schema 2.2.0 adds nine columns to the events table; it migrates automatically on update. Clicks recorded before the update, or sent by a page still cached with the old tracker, are marked "Not scored" or "Browser signals missing".
 
 = 2.16.1 =
 * Fix: sitemap resubmission never reached Google. The Search Console "submit sitemap" request is a PUT with no body, and the plugin sent it without a Content-Length header, so Google rejected every attempt with "HTTP 411 Length Required" before even checking the sign-in. The activity log filled with "Sitemap resubmission failed" warnings and no sitemap was ever resubmitted after a page was found not indexed. The request now declares its empty body explicitly; the Google connection itself was never affected.

@@ -19,7 +19,7 @@ class Database {
 	 */
 	const NOTES_OPTION = 'convertrack_notes';
 
-	const DB_VERSION = '2.1.0';
+	const DB_VERSION = '2.2.0';
 
 	const DB_VERSION_OPTION = 'convertrack_db_version';
 	const SCHEMA_STATUS_OPTION = 'convertrack_schema_status';
@@ -196,6 +196,15 @@ class Database {
 			scroll_x int(10) unsigned NOT NULL DEFAULT 0,
 			scroll_y int(10) unsigned NOT NULL DEFAULT 0,
 			scroll_depth tinyint(3) unsigned NOT NULL DEFAULT 0,
+			region varchar(10) NOT NULL DEFAULT '',
+			city varchar(80) NOT NULL DEFAULT '',
+			network varchar(100) NOT NULL DEFAULT '',
+			asn varchar(16) NOT NULL DEFAULT '',
+			net_type varchar(10) NOT NULL DEFAULT '',
+			pointer_type varchar(10) NOT NULL DEFAULT '',
+			dwell_ms int(10) unsigned NOT NULL DEFAULT 0,
+			trust_score tinyint(3) unsigned DEFAULT NULL,
+			trust_flags varchar(191) NOT NULL DEFAULT '',
 			occurred_at_utc datetime DEFAULT NULL,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
@@ -451,7 +460,7 @@ class Database {
 
 		$manifest = array(
 			self::events_table() => array(
-				'columns' => array( 'id', 'event_id', 'visitor_id', 'session_id', 'event_type', 'post_id', 'page_key', 'object_type', 'object_id', 'page_url', 'is_conversion', 'conversion_kind', 'conversion_goal', 'occurred_at_utc', 'created_at' ),
+				'columns' => array( 'id', 'event_id', 'visitor_id', 'session_id', 'event_type', 'post_id', 'page_key', 'object_type', 'object_id', 'page_url', 'is_conversion', 'conversion_kind', 'conversion_goal', 'region', 'city', 'network', 'net_type', 'trust_score', 'trust_flags', 'occurred_at_utc', 'created_at' ),
 				'indexes' => array( 'PRIMARY', 'event_id', 'created_at', 'page_key_created' ),
 			),
 			self::sessions_table() => array(
@@ -878,6 +887,15 @@ class Database {
 			'scroll_x',
 			'scroll_y',
 			'scroll_depth',
+			'region',
+			'city',
+			'network',
+			'asn',
+			'net_type',
+			'pointer_type',
+			'dwell_ms',
+			'trust_score',
+			'trust_flags',
 			'occurred_at_utc',
 			'created_at',
 		);
@@ -885,7 +903,9 @@ class Database {
 		$formats = array(
 			'%s', '%s', '%s', '%s', '%d', '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s',
 			'%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s',
-			'%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%s', '%s',
+			'%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d', '%d',
+			'%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s',
+			'%s', '%s',
 		);
 		$row_placeholder = '(' . implode( ',', $formats ) . ')';
 		$placeholders    = array();
@@ -912,10 +932,18 @@ class Database {
 			if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $event_date ) && $event_date < self::today() ) {
 				$historical_dates[ $event_date ] = true;
 			}
-			$placeholders[] = $row_placeholder;
-			foreach ( $columns as $col ) {
+			// trust_score is NULL for events that were not scored (pageviews,
+			// scrolls, heatmap-only clicks); prepare() cannot bind NULL, so the
+			// literal goes into this row's placeholder list instead.
+			$row_formats = $formats;
+			foreach ( $columns as $index => $col ) {
+				if ( 'trust_score' === $col && ( ! isset( $row[ $col ] ) || null === $row[ $col ] || '' === $row[ $col ] ) ) {
+					$row_formats[ $index ] = 'NULL';
+					continue;
+				}
 				$values[] = isset( $row[ $col ] ) ? $row[ $col ] : '';
 			}
+			$placeholders[] = $row_formats === $formats ? $row_placeholder : '(' . implode( ',', $row_formats ) . ')';
 		}
 
 		$table = self::events_table();
@@ -2079,7 +2107,7 @@ class Database {
 			$wpdb->prepare(
 				"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
 				        element_text, element_selector, element_href, is_conversion, conversion_kind, conversion_goal,
-				        device_type, country, source, created_at
+				        device_type, country, source, region, city, network, net_type, pointer_type, dwell_ms, trust_score, trust_flags, created_at
 				 FROM $events
 				 WHERE created_at >= %s
 				 ORDER BY created_at DESC, id DESC
@@ -2171,7 +2199,7 @@ class Database {
 				$wpdb->prepare(
 					"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
 					        element_text, element_selector, element_href, is_conversion, conversion_kind, conversion_goal,
-					        device_type, country, source, created_at
+					        device_type, country, source, region, city, network, net_type, pointer_type, dwell_ms, trust_score, trust_flags, created_at
 					 FROM $events
 					 WHERE is_conversion = 1 AND created_at >= %s
 					 ORDER BY created_at DESC, id DESC
@@ -2275,7 +2303,157 @@ class Database {
 			'device'           => (string) $row['device_type'],
 			'country'          => (string) $row['country'],
 			'source'           => '' === (string) $row['source'] ? 'Direct' : (string) $row['source'],
+			'region'           => isset( $row['region'] ) ? (string) $row['region'] : '',
+			'city'             => isset( $row['city'] ) ? (string) $row['city'] : '',
+			'network'          => isset( $row['network'] ) ? (string) $row['network'] : '',
+			'net_type'         => isset( $row['net_type'] ) ? (string) $row['net_type'] : '',
+			'pointer'          => isset( $row['pointer_type'] ) ? (string) $row['pointer_type'] : '',
+			'dwell_ms'         => isset( $row['dwell_ms'] ) ? (int) $row['dwell_ms'] : 0,
+			'trust_score'      => isset( $row['trust_score'] ) && null !== $row['trust_score'] ? (int) $row['trust_score'] : null,
+			'trust_verdict'    => Trust::verdict( isset( $row['trust_score'] ) ? $row['trust_score'] : null ),
+			'trust_flags'      => Trust::flag_labels( isset( $row['trust_flags'] ) ? $row['trust_flags'] : '' ),
 		);
+	}
+
+	/**
+	 * Conversion quality for the range: how many conversions look real, where
+	 * they came from, and over which networks. Raw events only, so the range is
+	 * bounded by raw retention; the result says from when data exists.
+	 *
+	 * @param int $days Days back, including today.
+	 * @return array { since, total, verdicts, locations, networks, flags }
+	 */
+	public static function conversion_quality( $days ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT country, region, city, network, net_type, trust_score, trust_flags, conversion_kind, session_id
+				 FROM $events
+				 WHERE is_conversion = 1 AND event_type = 'click' AND created_at >= %s
+				 ORDER BY created_at DESC, id DESC
+				 LIMIT 20000",
+				$start
+			),
+			ARRAY_A
+		);
+
+		$verdicts  = array(
+			Trust::VERDICT_REAL       => 0,
+			Trust::VERDICT_CHECK      => 0,
+			Trust::VERDICT_SUSPICIOUS => 0,
+			Trust::VERDICT_UNSCORED   => 0,
+		);
+		$locations = array();
+		$networks  = array();
+		$flags     = array();
+		$total     = 0;
+
+		foreach ( (array) $rows as $row ) {
+			$total++;
+			$verdict = Trust::verdict( $row['trust_score'] );
+			$verdicts[ $verdict ]++;
+
+			$loc_key = $row['country'] . '|' . $row['region'] . '|' . $row['city'];
+			if ( ! isset( $locations[ $loc_key ] ) ) {
+				$locations[ $loc_key ] = array(
+					'country'     => (string) $row['country'],
+					'region'      => (string) $row['region'],
+					'city'        => (string) $row['city'],
+					'conversions' => 0,
+					'real'        => 0,
+					'check'       => 0,
+					'suspicious'  => 0,
+					'unscored'    => 0,
+				);
+			}
+			$locations[ $loc_key ]['conversions']++;
+			$locations[ $loc_key ][ $verdict ]++;
+
+			if ( '' !== (string) $row['network'] || '' !== (string) $row['net_type'] ) {
+				$net_key = $row['network'] . '|' . $row['net_type'];
+				if ( ! isset( $networks[ $net_key ] ) ) {
+					$networks[ $net_key ] = array(
+						'network'     => (string) $row['network'],
+						'net_type'    => (string) $row['net_type'],
+						'conversions' => 0,
+					);
+				}
+				$networks[ $net_key ]['conversions']++;
+			}
+
+			foreach ( array_filter( explode( ',', (string) $row['trust_flags'] ) ) as $flag ) {
+				$flags[ $flag ] = isset( $flags[ $flag ] ) ? $flags[ $flag ] + 1 : 1;
+			}
+		}
+
+		$by_count = static function ( $a, $b ) {
+			return $b['conversions'] - $a['conversions'];
+		};
+		$locations = array_values( $locations );
+		$networks  = array_values( $networks );
+		usort( $locations, $by_count );
+		usort( $networks, $by_count );
+
+		arsort( $flags );
+		$flag_rows = array();
+		foreach ( $flags as $flag => $count ) {
+			$labels      = Trust::flag_labels( $flag );
+			$flag_rows[] = array( 'flag' => $flag, 'label' => $labels ? $labels[0] : $flag, 'count' => $count );
+		}
+
+		return array(
+			'since'     => self::date_days_ago( $days - 1 ),
+			'total'     => $total,
+			'verdicts'  => $verdicts,
+			'locations' => array_slice( $locations, 0, 15 ),
+			'networks'  => array_slice( $networks, 0, 10 ),
+			'flags'     => $flag_rows,
+		);
+	}
+
+	/**
+	 * Every conversion click in the range with its location and authenticity
+	 * evidence, newest first (CSV export).
+	 *
+	 * @param int $days  Days back, including today.
+	 * @param int $limit Max rows.
+	 * @return array
+	 */
+	public static function conversion_evidence( $days, $limit = 5000 ) {
+		global $wpdb;
+
+		$days   = max( 1, (int) $days );
+		$limit  = max( 1, min( 50000, (int) $limit ) );
+		$start  = self::date_days_ago( $days - 1 ) . ' 00:00:00';
+		$events = self::events_table();
+
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT id, visitor_id, session_id, event_type, post_id, page_url, page_title,
+				        element_text, element_selector, element_href, is_conversion, conversion_kind, conversion_goal,
+				        device_type, country, source, region, city, network, net_type, pointer_type, dwell_ms, trust_score, trust_flags, created_at
+				 FROM $events
+				 WHERE is_conversion = 1 AND created_at >= %s
+				 ORDER BY created_at DESC, id DESC
+				 LIMIT %d",
+				$start,
+				$limit
+			),
+			ARRAY_A
+		);
+
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$out[] = self::format_event_row( $row );
+		}
+		return $out;
 	}
 
 

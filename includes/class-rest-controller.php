@@ -334,6 +334,9 @@ class Rest_Controller {
 				'activity_hours'       => Database::activity_by_hour( $raw_days ),
 				'engagement'           => Database::engagement_breakdown( $raw_days ),
 				'conversion_kinds'     => Database::conversion_kinds( $range, 8 ),
+				'geo_detail'           => Geo::detail_enabled(),
+				'trust_market'         => (string) Settings::get( 'trust_market' ),
+				'conversion_quality'   => Database::conversion_quality( $raw_days ),
 			);
 			wp_cache_set( $cache_key, $data, 'convertrack', 15 );
 		}
