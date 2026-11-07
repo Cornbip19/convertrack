@@ -4,7 +4,7 @@ Tags: analytics, click tracking, conversion, heatmap, real-time
 Requires at least: 5.8
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.16.0
+Stable tag: 2.16.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -108,6 +108,9 @@ Return `true` from the `convertrack_skip_tracking` filter while consent has not 
 * Change: a relay outage or error can never be mistaken for a revoked Google grant: tokens are cleared only when Google itself answers `invalid_grant`; relay and network failures are reported and retried later.
 * New: a public REST route `convertrack/v1/gsc/relay-challenge` that only ever serves a random, ten-minute registration challenge while a sign-in is being set up, so the relay can confirm the site is yours.
 * Dev: the relay lives in `relay/` (Cloudflare Worker, TypeScript, Vitest) with self-hosting instructions; it is never packaged into the plugin zip. Filter `convertrack_gsc_relay_url` to point a site at a self-hosted relay.
+
+= 2.16.1 =
+* Fix: sitemap resubmission never reached Google. The Search Console "submit sitemap" request is a PUT with no body, and the plugin sent it without a Content-Length header, so Google rejected every attempt with "HTTP 411 Length Required" before even checking the sign-in. The activity log filled with "Sitemap resubmission failed" warnings and no sitemap was ever resubmitted after a page was found not indexed. The request now declares its empty body explicitly; the Google connection itself was never affected.
 
 = 2.16.0 =
 * Fix: the WordPress-dashboard widget was unreadable for anyone whose computer is in dark mode with the Modern or Midnight admin colour scheme: a dark-scheme override painted near-white numbers and pale labels onto the white box. WordPress has no dark admin surface, so the override is gone and every colour is set against white.
