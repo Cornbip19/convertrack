@@ -1,0 +1,35 @@
+# Temporary, domain-less deployment of the relay for testing: the Worker runs
+# on Cloudflare's free *.workers.dev hostname while the Google app is still in
+# "Testing" status. The production configuration (custom domain) is in
+# wrangler.toml and is not touched by this file.
+#
+#   npx wrangler deploy -c wrangler.preview.toml
+#   npx wrangler secret put GOOGLE_CLIENT_ID     -c wrangler.preview.toml
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET -c wrangler.preview.toml
+#   npx wrangler secret put RELAY_HMAC_KEY       -c wrangler.preview.toml
+#
+# The Worker answers at https://convertrack-gsc-relay-preview.<account>.workers.dev
+# and that origin's /v1/callback is what the Google OAuth client must list as
+# its authorised redirect URI. Delete the Worker once the custom domain is live.
+
+name = "convertrack-gsc-relay-preview"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+workers_dev = true
+# Keep one origin only: no per-version preview URLs.
+preview_urls = false
+
+[vars]
+# Empty: derive the public origin from each request, which is the workers.dev host.
+RELAY_PUBLIC_URL = ""
+ALLOW_INSECURE_SITES = "false"
+RELAY_OPERATOR_NAME = "Convertrack (test relay)"
+
+# Separate rate-limit namespace from production so counters never mix.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1002"
+simple = { limit = 20, period = 60 }
+
+[observability]
+enabled = true
