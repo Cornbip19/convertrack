@@ -1,0 +1,51 @@
+# Convertrack Search Console relay — a stateless OAuth broker.
+#
+# Deploy with `npx wrangler deploy` after setting the three secrets:
+#   npx wrangler secret put GOOGLE_CLIENT_ID
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+#   npx wrangler secret put RELAY_HMAC_KEY
+# For local development put the same three keys in `.dev.vars` (git-ignored).
+
+name = "convertrack-gsc-relay"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Google matches OAuth redirect URIs exactly, so the relay must answer on one
+# origin only: the custom domain. No workers.dev origin and no version
+# preview URLs (preview URLs stay on by default once workers.dev was ever
+# enabled unless this is set).
+workers_dev = false
+preview_urls = false
+
+# The custom domain registered as `https://connect.convertrack.io/v1/callback`
+# on the Google OAuth client. The zone must be in the same Cloudflare account;
+# Cloudflare creates the DNS record and the certificate on deploy. The plugin's
+# Relay::DEFAULT_URL / `convertrack_gsc_relay_url` filter must name this origin.
+routes = [
+  { pattern = "connect.convertrack.io", custom_domain = true }
+]
+
+[vars]
+# Public origin of this relay, pinned so the redirect_uri sent to Google (and
+# required at /v1/token) can never vary with the Host header. `.dev.vars`
+# overrides it with http://localhost:8787 for `wrangler dev`; an empty value
+# derives the origin from each request.
+RELAY_PUBLIC_URL = "https://connect.convertrack.io"
+# "true" lets http:// sites and non-public hosts (e.g. plugin-development.local)
+# register — for `wrangler dev` only. Production must keep this "false".
+ALLOW_INSECURE_SITES = "false"
+# Shown once on the consent interstitial: "<name> never sees your Google
+# password and keeps no copy of the connection."
+RELAY_OPERATOR_NAME = "Convertrack"
+
+# Cloudflare's rate-limiting binding (no storage, no state in the Worker).
+# POST /v1/sites is limited per client IP and per site host. When the binding is
+# absent (older Wrangler, some test runners) the Worker falls back to a
+# best-effort in-memory limiter.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }
+
+[observability]
+enabled = true

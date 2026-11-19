@@ -148,6 +148,7 @@ jobs:
           exclusions=(
             --exclude '.git' --exclude '.github' --exclude '.agents' --exclude '.codex'
             --exclude 'build' --exclude 'wporg' --exclude 'tests' --exclude 'vendor' --exclude 'node_modules'
+            --exclude 'relay'
             --exclude '*.zip' --exclude '*.log' --exclude '.env*' --exclude '.gitignore'
             --exclude 'README.md' --exclude 'composer.json' --exclude 'composer.lock'
             --exclude 'package.json' --exclude 'package-lock.json' --exclude 'phpunit.xml.dist'
@@ -167,7 +168,7 @@ jobs:
           unzip -Z1 convertrack.zip | grep -qx 'convertrack/convertrack.php'
           unzip -Z1 convertrack.zip | grep -qx 'convertrack/readme.txt'
           unzip -Z1 convertrack.zip | grep -qx 'convertrack/includes/class-updater.php'
-          ! unzip -Z1 convertrack.zip | grep -Eq '(^|/)(tests|vendor|node_modules|\.agents|\.codex|\.git)(/|$)|(^|/)\.env'
+          ! unzip -Z1 convertrack.zip | grep -Eq '(^|/)(tests|vendor|node_modules|relay|\.agents|\.codex|\.git)(/|$)|(^|/)\.env'
           ! unzip -Z1 convertrack-wordpress-org.zip | grep -q 'includes/class-updater.php'
           ! unzip -p convertrack-wordpress-org.zip convertrack-click-conversion-analytics/convertrack.php | grep -q 'Update URI:'
           sha256sum convertrack.zip > convertrack.zip.sha256

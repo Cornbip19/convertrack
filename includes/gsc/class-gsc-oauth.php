@@ -1,11 +1,18 @@
 <?php
 /**
- * Direct Google OAuth 2.0 (Authorization Code + PKCE) for Search Console.
+ * Google OAuth 2.0 (Authorization Code + PKCE) for Search Console.
  *
- * The site owner supplies their own Google Cloud OAuth client. The plugin talks
- * to Google directly: it redirects to Google's consent screen, exchanges the
- * returned code for access + refresh tokens, and refreshes/revokes them itself.
- * No third-party broker is involved.
+ * Two modes share this class (see Credentials::auth_mode()):
+ *
+ * - relay: the consent request goes through the vendor-hosted relay, which owns
+ *   the Google client, and token requests are posted through Relay::token().
+ *   The site still generates the state and PKCE verifier and stores the
+ *   tokens itself; the relay stores nothing.
+ * - direct: the site owner supplies their own Google Cloud OAuth client and the
+ *   plugin talks to Google directly. No third-party broker is involved.
+ *
+ * In both modes the stored tokens are cleared only when Google itself answers
+ * a refresh with `invalid_grant`.
  *
  * @package Convertrack
  */
@@ -21,15 +28,26 @@ class OAuth {
 	const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke';
 
 	/**
-	 * The redirect URI Google returns the browser to. Must exactly match a URI
+	 * This site's OAuth callback URL. In direct mode it must exactly match a URI
 	 * registered on the OAuth client in Google Cloud, and is used identically in
-	 * the auth request and the token exchange. Filterable so a tunnel/HTTPS host
-	 * can be used for local testing.
+	 * the auth request and the token exchange. In relay mode it is where the
+	 * relay bounces Google's code to (the relay's own callback is what Google
+	 * sees). Filterable so a tunnel/HTTPS host can be used for local testing.
 	 *
 	 * @return string
 	 */
 	public static function redirect_uri() {
 		return (string) apply_filters( 'convertrack_gsc_redirect_uri', Admin::callback_url() );
+	}
+
+	/**
+	 * Whether anything is in place to authorise with: the owner's own client
+	 * (direct mode) or a relay site registration (relay mode).
+	 *
+	 * @return bool
+	 */
+	public static function has_auth_source() {
+		return Credentials::has_client() || Credentials::has_site_registration();
 	}
 
 	/**
@@ -54,14 +72,22 @@ class OAuth {
 	}
 
 	/**
-	 * Build the Google consent-screen URL the admin's browser is sent to.
+	 * Build the URL the admin's browser is sent to: Google's consent screen in
+	 * direct mode, or the relay's confirmation page (which forwards to Google
+	 * with the relay's client) in relay mode.
 	 *
-	 * @param string $redirect_uri   Registered redirect URI.
-	 * @param string $state          Anti-CSRF state echoed back by Google.
+	 * @param string $redirect_uri   This site's callback URL (direct mode only).
+	 * @param string $state          Anti-CSRF state echoed back to the callback.
 	 * @param string $code_challenge PKCE challenge (S256).
 	 * @return string|\WP_Error
 	 */
 	public static function connect_url( $redirect_uri, $state, $code_challenge ) {
+		if ( ! self::has_auth_source() ) {
+			return new \WP_Error( 'convertrack_gsc_no_client', __( 'Enter your Google OAuth Client ID and Secret before connecting.', 'convertrack-click-conversion-analytics' ) );
+		}
+		if ( Credentials::is_relay_mode() ) {
+			return Relay::authorize_url( $state, $code_challenge );
+		}
 		if ( ! Credentials::has_client() ) {
 			return new \WP_Error( 'convertrack_gsc_no_client', __( 'Enter your Google OAuth Client ID and Secret before connecting.', 'convertrack-click-conversion-analytics' ) );
 		}
@@ -95,26 +121,44 @@ class OAuth {
 	/**
 	 * Exchange an authorization code for access + refresh tokens.
 	 *
+	 * In relay mode the exchange is posted through the relay with the relay's
+	 * callback as redirect_uri (the URI Google saw); the PKCE verifier still
+	 * proves this site started the flow.
+	 *
 	 * @param string $code          Authorization code from Google's redirect.
 	 * @param string $code_verifier PKCE verifier proving this site started the flow.
-	 * @param string $redirect_uri  Same redirect URI used to start the flow.
+	 * @param string $redirect_uri  Same redirect URI used to start the flow (direct mode).
 	 * @return true|\WP_Error
 	 */
 	public static function exchange_code( $code, $code_verifier, $redirect_uri ) {
-		if ( ! Credentials::has_client() ) {
+		if ( ! self::has_auth_source() ) {
 			return new \WP_Error( 'convertrack_gsc_no_client', __( 'Google OAuth client credentials are missing. Re-enter them and connect again.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		$result = self::post_token(
-			array(
-				'code'          => $code,
-				'client_id'     => Credentials::client_id(),
-				'client_secret' => Credentials::client_secret(),
-				'redirect_uri'  => $redirect_uri,
-				'grant_type'    => 'authorization_code',
-				'code_verifier' => $code_verifier,
-			)
-		);
+		if ( Credentials::is_relay_mode() ) {
+			$result = Relay::token(
+				array(
+					'grant_type'    => 'authorization_code',
+					'code'          => $code,
+					'code_verifier' => $code_verifier,
+					'redirect_uri'  => Relay::callback_url(),
+				)
+			);
+		} else {
+			if ( ! Credentials::has_client() ) {
+				return new \WP_Error( 'convertrack_gsc_no_client', __( 'Google OAuth client credentials are missing. Re-enter them and connect again.', 'convertrack-click-conversion-analytics' ) );
+			}
+			$result = self::post_token(
+				array(
+					'code'          => $code,
+					'client_id'     => Credentials::client_id(),
+					'client_secret' => Credentials::client_secret(),
+					'redirect_uri'  => $redirect_uri,
+					'grant_type'    => 'authorization_code',
+					'code_verifier' => $code_verifier,
+				)
+			);
+		}
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -156,7 +200,10 @@ class OAuth {
 	}
 
 	/**
-	 * Refresh the access token directly with Google.
+	 * Refresh the access token: directly with Google, or through the relay.
+	 *
+	 * Transport failures and relay-side errors come back as WP_Errors with the
+	 * tokens untouched; only a literal `invalid_grant` from Google clears them.
 	 *
 	 * @return string|\WP_Error
 	 */
@@ -165,26 +212,39 @@ class OAuth {
 		if ( '' === $refresh ) {
 			return new \WP_Error( 'convertrack_gsc_not_connected', __( 'Search Console is not connected. Please reconnect.', 'convertrack-click-conversion-analytics' ) );
 		}
-		if ( ! Credentials::has_client() ) {
+		if ( ! self::has_auth_source() ) {
 			return new \WP_Error( 'convertrack_gsc_no_client', __( 'Google OAuth client credentials are missing. Re-enter them and reconnect.', 'convertrack-click-conversion-analytics' ) );
 		}
 
-		$result = self::post_token(
-			array(
-				'client_id'     => Credentials::client_id(),
-				'client_secret' => Credentials::client_secret(),
-				'refresh_token' => $refresh,
-				'grant_type'    => 'refresh_token',
-			)
-		);
+		if ( Credentials::is_relay_mode() ) {
+			$result = Relay::token(
+				array(
+					'grant_type'    => 'refresh_token',
+					'refresh_token' => $refresh,
+				)
+			);
+		} else {
+			if ( ! Credentials::has_client() ) {
+				return new \WP_Error( 'convertrack_gsc_no_client', __( 'Google OAuth client credentials are missing. Re-enter them and reconnect.', 'convertrack-click-conversion-analytics' ) );
+			}
+			$result = self::post_token(
+				array(
+					'client_id'     => Credentials::client_id(),
+					'client_secret' => Credentials::client_secret(),
+					'refresh_token' => $refresh,
+					'grant_type'    => 'refresh_token',
+				)
+			);
+		}
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
 
 		$data  = $result['data'];
-		$error = isset( $data['error'] ) ? (string) $data['error'] : '';
+		$error = isset( $data['error'] ) && is_string( $data['error'] ) ? $data['error'] : '';
 
 		// A dead/revoked refresh token is permanent — surface a reconnect prompt.
+		// Only Google says this: the relay never emits invalid_grant itself.
 		if ( 'invalid_grant' === $error ) {
 			Credentials::clear_tokens();
 			set_transient( 'convertrack_gsc_reconnect_required', 1, MONTH_IN_SECONDS );

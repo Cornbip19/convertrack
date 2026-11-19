@@ -2,10 +2,18 @@
 /**
  * Encrypted storage for the Search Console connection.
  *
- * Direct-OAuth model: the site owner supplies their own Google Cloud OAuth
- * client (client_id + client_secret) and the plugin talks to Google directly,
- * holding the OAuth refresh token and short-lived access token. The client
- * secret and refresh token are encrypted at rest.
+ * Two ways to hold a Google OAuth grant:
+ *
+ * - "relay" (default for new installs): the site signs in through the
+ *   vendor-hosted relay, which owns the Google OAuth client. The site holds a
+ *   relay site registration (site_id + site_secret) and the tokens Google
+ *   issues; the relay only brokers.
+ * - "direct": the site owner supplies their own Google Cloud OAuth client
+ *   (client_id + client_secret) and the plugin talks to Google directly.
+ *
+ * Sites that connected before relay mode existed keep working unchanged: they
+ * hold a client and no site registration, which reads as "direct". The client
+ * secret, refresh token and relay site secret are encrypted at rest.
  *
  * @package Convertrack
  */
@@ -18,12 +26,15 @@ class Credentials {
 
 	const OPTION = 'convertrack_gsc_credentials';
 
+	const MODE_DIRECT = 'direct';
+	const MODE_RELAY  = 'relay';
+
 	/**
 	 * Fields stored encrypted at rest.
 	 *
 	 * @var string[]
 	 */
-	private static $secret_fields = array( 'access_token', 'refresh_token', 'client_secret' );
+	private static $secret_fields = array( 'access_token', 'refresh_token', 'client_secret', 'site_secret' );
 
 	/**
 	 * Get redacted credential metadata for the admin UI / REST.
@@ -33,13 +44,16 @@ class Credentials {
 	public static function public_status() {
 		$data = self::all();
 		return array(
-			'connected'      => self::is_connected(),
-			'has_client'     => self::has_client(),
-			'expires_at'     => isset( $data['expires_at'] ) ? (int) $data['expires_at'] : 0,
-			'connected_at'   => isset( $data['connected_at'] ) ? (string) $data['connected_at'] : '',
-			'scope'          => isset( $data['scope'] ) ? (string) $data['scope'] : '',
-			'google_account' => isset( $data['google_account'] ) ? (string) $data['google_account'] : '',
-			'client_id'      => self::client_id(),
+			'connected'             => self::is_connected(),
+			'has_client'            => self::has_client(),
+			'auth_mode'             => self::auth_mode(),
+			'has_site_registration' => self::has_site_registration(),
+			'relay_url'             => self::relay_url(),
+			'expires_at'            => isset( $data['expires_at'] ) ? (int) $data['expires_at'] : 0,
+			'connected_at'          => isset( $data['connected_at'] ) ? (string) $data['connected_at'] : '',
+			'scope'                 => isset( $data['scope'] ) ? (string) $data['scope'] : '',
+			'google_account'        => isset( $data['google_account'] ) ? (string) $data['google_account'] : '',
+			'client_id'             => self::client_id(),
 		);
 	}
 
@@ -60,6 +74,56 @@ class Credentials {
 	 */
 	public static function has_client() {
 		return '' !== self::client_id() && '' !== self::client_secret();
+	}
+
+	/**
+	 * How the site authorises with Google: 'direct' or 'relay'.
+	 *
+	 * An explicitly chosen mode wins. Otherwise a site holding its own client
+	 * and no relay registration is a pre-relay install and stays on direct
+	 * OAuth; everything else (including a fresh install) uses the relay. A
+	 * build with no relay configured has only direct OAuth to offer.
+	 *
+	 * @return string
+	 */
+	public static function auth_mode() {
+		$data = self::all();
+		if ( isset( $data['auth_mode'] ) && in_array( $data['auth_mode'], array( self::MODE_DIRECT, self::MODE_RELAY ), true ) ) {
+			return $data['auth_mode'];
+		}
+		if ( self::has_client() && empty( $data['site_id'] ) ) {
+			return self::MODE_DIRECT;
+		}
+		if ( class_exists( __NAMESPACE__ . '\\Relay' ) && ! Relay::is_configured() ) {
+			return self::MODE_DIRECT;
+		}
+		return self::MODE_RELAY;
+	}
+
+	/**
+	 * Whether the relay ("Sign in with Google") mode is active.
+	 *
+	 * @return bool
+	 */
+	public static function is_relay_mode() {
+		return self::MODE_RELAY === self::auth_mode();
+	}
+
+	/**
+	 * Choose the authorisation mode explicitly. Stored client credentials and
+	 * the relay registration are both kept, so switching back is one click.
+	 *
+	 * @param string $mode 'direct' or 'relay'.
+	 * @return true|\WP_Error
+	 */
+	public static function set_auth_mode( $mode ) {
+		$mode = (string) $mode;
+		if ( ! in_array( $mode, array( self::MODE_DIRECT, self::MODE_RELAY ), true ) ) {
+			return new \WP_Error( 'convertrack_gsc_bad_auth_mode', __( 'Unknown Search Console connection mode.', 'convertrack-click-conversion-analytics' ) );
+		}
+		$data              = self::all();
+		$data['auth_mode'] = $mode;
+		return self::save( $data );
 	}
 
 	/**
@@ -94,6 +158,73 @@ class Credentials {
 	public static function client_secret() {
 		$data = self::all();
 		return isset( $data['client_secret'] ) ? (string) $data['client_secret'] : '';
+	}
+
+	/**
+	 * Whether the site holds a relay site registration.
+	 *
+	 * @return bool
+	 */
+	public static function has_site_registration() {
+		return '' !== self::site_id() && '' !== self::site_secret();
+	}
+
+	/**
+	 * The relay site id (public, appears in sign-in URLs).
+	 *
+	 * @return string
+	 */
+	public static function site_id() {
+		$data = self::all();
+		return isset( $data['site_id'] ) ? (string) $data['site_id'] : '';
+	}
+
+	/**
+	 * The relay site secret (proves this site to the relay's token endpoint).
+	 *
+	 * @return string
+	 */
+	public static function site_secret() {
+		$data = self::all();
+		return isset( $data['site_secret'] ) ? (string) $data['site_secret'] : '';
+	}
+
+	/**
+	 * The relay the site registered with, so a changed relay URL triggers a
+	 * fresh registration instead of a confusing credential rejection.
+	 *
+	 * @return string
+	 */
+	public static function relay_url() {
+		$data = self::all();
+		return isset( $data['relay_url'] ) ? (string) $data['relay_url'] : '';
+	}
+
+	/**
+	 * Store a relay site registration.
+	 *
+	 * @param string $site_id     Site id issued by the relay.
+	 * @param string $site_secret Site secret issued by the relay.
+	 * @param string $relay_url   Relay origin the registration belongs to.
+	 * @return true|\WP_Error
+	 */
+	public static function store_site_registration( $site_id, $site_secret, $relay_url ) {
+		$data                = self::all();
+		$data['site_id']     = sanitize_text_field( (string) $site_id );
+		$data['site_secret'] = trim( (string) $site_secret );
+		$data['relay_url']   = esc_url_raw( untrailingslashit( (string) $relay_url ) );
+		return self::save( $data );
+	}
+
+	/**
+	 * Forget the relay site registration (the next sign-in registers again).
+	 *
+	 * @return true|\WP_Error
+	 */
+	public static function clear_site_registration() {
+		$data = self::all();
+		unset( $data['site_id'], $data['site_secret'], $data['relay_url'] );
+		return self::save( $data );
 	}
 
 	/**
@@ -172,8 +303,9 @@ class Credentials {
 	}
 
 	/**
-	 * Clear the connection tokens but keep the stored OAuth client credentials,
-	 * so the site owner does not have to re-enter their client on reconnect.
+	 * Clear the connection tokens but keep the stored OAuth client credentials
+	 * and the relay registration, so the site owner does not have to re-enter
+	 * anything on reconnect.
 	 */
 	public static function clear_tokens() {
 		$data = self::all();
@@ -269,11 +401,11 @@ class Credentials {
 			return '';
 		}
 
-		$iv = function_exists( 'random_bytes' ) ? random_bytes( 16 ) : wp_generate_password( 16, true, true );
-		$iv = substr( $iv, 0, 16 );
+		$iv     = function_exists( 'random_bytes' ) ? random_bytes( 16 ) : wp_generate_password( 16, true, true );
+		$iv     = substr( $iv, 0, 16 );
 		$cipher = openssl_encrypt( $plain, 'AES-256-CBC', self::key(), OPENSSL_RAW_DATA, $iv );
 
-		return base64_encode( $iv . $cipher );
+		return base64_encode( $iv . $cipher ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 	}
 
 	/**
@@ -288,7 +420,7 @@ class Credentials {
 			return '';
 		}
 
-		$raw = base64_decode( $encoded, true );
+		$raw = base64_decode( $encoded, true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
 		if ( false === $raw || strlen( $raw ) <= 16 ) {
 			return '';
 		}

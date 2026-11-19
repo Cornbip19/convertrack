@@ -43,7 +43,7 @@ Google Index Monitor uses separate `convertrack_gsc_*` options and tables so ana
 
 ## Search & SEO: Indexing
 
-Open **Convertrack -> Search & SEO -> Indexing** to add a Google OAuth Client ID/secret, Search Console property URL, sitemap URL, quota limit, batch size, and selected post types. The feature is disabled until configured and connected. It uses the URL Inspection API for normal URLs, sitemap resubmission for normal WordPress pages, and only calls the Google Indexing API for URLs explicitly marked eligible by code.
+Open **Convertrack -> Search & SEO -> Indexing** and click **Sign in with Google**: you choose a Google account, allow Search Console access, and monitoring turns on. The sign-in runs through a small stateless relay (see `relay/`) that holds the Google OAuth client; your site keeps its own state, PKCE verifier and encrypted tokens. To use your own Google Cloud project instead, open **Advanced: use your own Google Cloud credentials** on the same screen and paste an OAuth Client ID/secret. Then set the Search Console property URL, sitemap URL, quota limit, batch size, and selected post types. It uses the URL Inspection API for normal URLs, sitemap resubmission for normal WordPress pages, and only calls the Google Indexing API for URLs explicitly marked eligible by code.
 
 ## Search & SEO: Keyword Opportunities
 
